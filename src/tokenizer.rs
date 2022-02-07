@@ -117,7 +117,19 @@ pub struct Token{
 
 impl Display for Token{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "line:{}, size:{}, column:{} type: {:?}",self.line + 1, self.size,self.column, self.t_type)
+        if self.index < -1isize as usize {
+            write!(f, "line:{}, size:{}, column:{} type: {:?}",self.line + 1, self.size,self.column, self.t_type)
+        }else{
+            write!(f, "1")
+        }
+    }
+}
+
+impl Iterator for Tokenizer<'_>{
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
     }
 }
 
@@ -157,17 +169,27 @@ enum State{
 
 }
 
+struct tmp_name{
+    index: usize,
+    line: usize,
+    column: usize,
+}
+
 pub struct Tokenizer<'a> {
     bytes: &'a [u8],
     iterator: Chars<'a>,
+    iterations: usize,
+    index_real: usize,
     index: usize,
     line: i32,
     column: i32,
     state: State,
     last_index: usize,
+    last_index_real: usize,
     last_line: i32,
     last_column: i32,
     i_last_index: usize,
+    i_last_index_real: usize,
     i_last_line: i32,
     i_last_column: i32,
     matching: bool,
@@ -189,14 +211,18 @@ impl<'a> Tokenizer<'a>{
         Tokenizer{
             bytes: data.as_bytes(),
             iterator: data.chars(),
+            iterations: 0,
+            index_real: 0,
             index: 0,
             line: 0,
             column: 0,
             state: State::Default,
             last_index: 0,
+            last_index_real: 0,
             last_line: 0,
             last_column: 0,
             i_last_index: 0,
+            i_last_index_real: 0,
             i_last_line: 0,
             i_last_column: 0,
             matching: false,
@@ -213,12 +239,16 @@ impl<'a> Tokenizer<'a>{
     }
 
     fn create_token(&self, t_type: TokenType) -> Option<Token> {
-            Option::Some(Token{t_type,
-                size: (self.index - self.last_index) as i32,
-                index: self.last_index,
-                line: self.last_line,
-                column: self.last_column
-            })
+        let mut temp = Token{t_type,
+            size: (self.index - self.last_index) as i32,
+            index: self.last_index,
+            line: self.last_line,
+            column: self.last_column
+        };
+        if self.matching {
+            temp.size -= 1;
+        }
+        Option::Some(temp)
     }
 
     fn create_token_c(size: i32 ,index: usize, line: i32, column:i32, t_type: TokenType) -> Option<Token> {
@@ -232,6 +262,7 @@ impl<'a> Tokenizer<'a>{
 
     fn create_number_token(&self, mut num: String) -> Option<Token>{
 
+        let original:String = num.to_string();
         let suffixes = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64"];
         let prefixes = ["0x", "0b"];
 
@@ -261,7 +292,7 @@ impl<'a> Tokenizer<'a>{
             _ => base = 10
         }
 
-        let t_type: TokenType;
+        let mut t_type: TokenType;
 
         macro_rules! parse_to_token{
             ($a: path, $b: ident) => {
@@ -308,6 +339,12 @@ impl<'a> Tokenizer<'a>{
                 }
             }
         }
+        match t_type{
+            TokenType::ERROR(string) =>{
+                t_type = TokenType::ERROR(format!("{} for: {}", string, original))
+            }
+            _ => {}
+        }
 
         self.create_token(t_type)
     }
@@ -353,18 +390,28 @@ impl<'a> Tokenizer<'a>{
     }
 
     fn default_reset(&mut self, matching:bool, tok:TokenType){
-        self.new_token = self.create_token(tok);
         self.matching = matching;
+        self.new_token = self.create_token(tok);
         self.state = State::Default;
     }
 
-    fn get_escape_code(code: String) -> Option<char>{
-
-        Option::None
-    }
-
     pub fn curr_str(&self) -> String {
-        String::from_utf8_lossy(&self.bytes[self.last_index as usize + 1..self.index as usize]).to_string()
+        if self.matching{
+            String::from_utf8_lossy(&self.bytes[self.last_index_real as usize..(self.index_real - self.c.len_utf8()) as usize]).to_string()
+        }else{
+            String::from_utf8_lossy(&self.bytes[self.last_index_real as usize..self.index_real as usize]).to_string()
+        }
+    }
+    fn ntm(&mut self){
+        self.i_last_index = self.index;
+        self.i_last_index_real = self.index_real;
+        self.i_last_line = self.line;
+        self.i_last_column = self.column;
+
+        self.index += 1;
+        self.index_real += self.c.len_utf8();
+        self.column += 1;
+        self.stop_reset = false;
     }
 
     pub fn tokenize(mut self) -> Vec<Token>{
@@ -375,6 +422,8 @@ impl<'a> Tokenizer<'a>{
                 match self.iterator.next(){
                     Some(char) => {
                         self.c = char;
+                        self.iterations += 1;
+                        self.ntm();
                     }
                     None => {
                         return tokens;
@@ -389,6 +438,7 @@ impl<'a> Tokenizer<'a>{
                     State::Default => {
                         match self.c {
                             ' ' | '\t' => {
+                                self.last_index_real = self.index_real;
                                 self.last_index = self.index;
                                 self.last_line = self.line;
                                 self.last_column = self.column;
@@ -400,6 +450,7 @@ impl<'a> Tokenizer<'a>{
                                 self.column = 0;
                                 self.line += 1;
                                 self.last_index = self.index;
+                                self.last_index_real = self.index_real;
                                 self.last_line = self.line;
                                 self.last_column = self.column;
                             }
@@ -536,14 +587,14 @@ impl<'a> Tokenizer<'a>{
                                 self.state = State::Default;
                             }
                             (_,0) => {
+                                self.matching = true;
                                 self.new_token = self.create_token(TokenType::Dot);
                                 self.state = State::Default;
-                                self.matching = true;
                             }
                             _ =>{
+                                self.matching = true;
                                 self.new_token = self.create_token(TokenType::ERROR(format!("Incorrect number of dots: {}", val + 1).into()));
                                 self.state = State::Default;
-                                self.matching = true;
                             }
                         }
                     }
@@ -716,8 +767,8 @@ impl<'a> Tokenizer<'a>{
                                 self.new_token = self.create_token(TokenType::Equals)
                             }
                             _ =>{
-                                self.new_token = self.create_token(TokenType::Assignment);
                                 self.matching = true;
+                                self.new_token = self.create_token(TokenType::Assignment);
                             }
                         }
                         self.state = State::Default;
@@ -728,9 +779,9 @@ impl<'a> Tokenizer<'a>{
                                 self.state = State::Identifier;
                             }
                             _ =>{
+                                self.matching = true;
                                 let ident = self.curr_str();
                                 self.new_token = self.create_identifier_or_keyword(ident);//self.create_token(TokenType::Identifier(ident.to_string()));
-                                self.matching = true;
                                 self.state = State::Default;
                             }
                         }
@@ -752,8 +803,8 @@ impl<'a> Tokenizer<'a>{
                             _ => {
                                 //let num = self.curr_str();
                                 //self.new_token = self.create_token(TokenType::I32Literal(num.parse::<i32>().expect(num.as_str())));
-                                self.new_token = self.create_number_token(self.curr_str());
                                 self.matching = true;
+                                self.new_token = self.create_number_token(self.curr_str());
                                 self.state = State::Default;
                             }
                         }
@@ -764,53 +815,58 @@ impl<'a> Tokenizer<'a>{
                                 self.line += 1;
                                 self.column = 0;
                                 self.last_index = self.index;
+                                self.last_index_real = self.index_real;
                                 self.last_line = self.line;
                                 self.last_column = self.column;
                                 self.state = State::Default;
                             }
                             _ => {
+                                self.matching = true;
                                 self.new_token = self.create_token(TokenType::ERROR(String::from("Strange carriage return")));
                                 self.state = State::Default;
                             }
                         }
                     }
-                    _ => {
-                        self.new_token = self.create_token(TokenType::ERROR(format!("Invalid State: {:?}", self.state)));
-                        self.state = State::Default;
-                        self.matching = true;
-                    }
+                    //_ => {
+                    //    self.new_token = self.create_token(TokenType::ERROR(format!("Invalid State: {:?}", self.state)));
+                    //    self.state = State::Default;
+                    //    self.matching = true;
+                    //}
                 }
                 match self.new_token{
                     None => {}
                     Some(mut tok) => {
+
+                        self.new_token = Option::None;
+
+                        println!("Tok: {} -> STR: '{}'", tok, self.curr_str());
+
                         if self.matching {
-                            tok.size -= 1;
+                            //tok.size -= 1;
                             if !self.stop_reset {
                                 self.last_index = self.i_last_index;
+                                self.last_index_real = self.i_last_index_real;
                                 self.last_line = self.i_last_line;
                                 self.last_column = self.i_last_column;
+                            }
+
+                            if !self.stop_reset && false{
+                                self.last_index = self.index;
+                                self.last_index_real = self.index_real;
+                                self.last_line = self.line;
+                                self.last_column = self.column
                             }
                         }else{
                             if !self.stop_reset {
                                 self.last_index = self.index;
+                                self.last_index_real = self.index_real ;
                                 self.last_line = self.line;
                                 self.last_column = self.column
                             }
                         }
-
-                        self.new_token = Option::None;
                         tokens.push(tok);
                     }
                 }
-            }
-            if !self.matching{
-                self.i_last_index = self.index;
-                self.i_last_line = self.line;
-                self.i_last_column = self.column;
-
-                self.index += 1;
-                self.column += 1;
-                self.stop_reset = false;
             }
         }
     }

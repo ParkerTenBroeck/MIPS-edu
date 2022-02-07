@@ -1,3 +1,9 @@
+"hellp".12
+).12
+  hellp.12
+ hellp . 12
+12
+ 12
 
 i32 test(){
     i32 a = 44;
@@ -14,7 +20,7 @@ i32 test(){
 i32 main2(){
     i32 a = 1;
     i32 b = 2;
-    char* testString = "as\nd\"";
+    char* testString = 'as\nd\'';
     return test() + a + b;
 
     1i8
@@ -81,7 +87,8 @@ i32 main2(){
     '\x2t'
     '\x20'
 
-    "\u{20}"
-
+    "こ".12
     "\u{100000}こにちは"
+
+    "\u{20}"
 }
