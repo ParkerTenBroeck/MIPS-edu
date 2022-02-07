@@ -8,6 +8,6 @@ fn main() {
 
     let tmp = Tokenizer::new(&file).tokenize();
     for t in tmp{
-        //println!("{}", t);
+        println!("{}", t);
     }
 }

@@ -142,7 +142,6 @@ enum State{
 
     Identifier,
 
-
     StringStart,
     StringNormal,
     StringEscape,
@@ -166,10 +165,9 @@ enum State{
     ShiftLeft,
     ShiftRight,
     EscapeCharacter(Box<State>, i32)
-
 }
 
-struct tmp_name{
+struct FileIndex{
     index: usize,
     line: usize,
     column: usize,
@@ -835,26 +833,18 @@ impl<'a> Tokenizer<'a>{
                 }
                 match self.new_token{
                     None => {}
-                    Some(mut tok) => {
+                    Some(tok) => {
 
                         self.new_token = Option::None;
 
                         println!("Tok: {} -> STR: '{}'", tok, self.curr_str());
 
                         if self.matching {
-                            //tok.size -= 1;
                             if !self.stop_reset {
                                 self.last_index = self.i_last_index;
                                 self.last_index_real = self.i_last_index_real;
                                 self.last_line = self.i_last_line;
                                 self.last_column = self.i_last_column;
-                            }
-
-                            if !self.stop_reset && false{
-                                self.last_index = self.index;
-                                self.last_index_real = self.index_real;
-                                self.last_line = self.line;
-                                self.last_column = self.column
                             }
                         }else{
                             if !self.stop_reset {
