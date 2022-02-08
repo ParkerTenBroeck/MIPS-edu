@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::mem;
 use std::str::Chars;
 
 #[derive(Debug)]
@@ -109,14 +110,17 @@ pub enum TokenType{
 
 pub struct Token{
     t_type: TokenType,
-    size: i32,
+    size: usize,
     index: usize,
-    line: i32,
-    column: i32
+    index_real:usize,
+    size_real:usize,
+    line: usize,
+    column: usize
 }
 
 impl Display for Token{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+
         if self.index < -1isize as usize {
             write!(f, "line:{}, size:{}, column:{} type: {:?}",self.line + 1, self.size,self.column, self.t_type)
         }else{
@@ -129,292 +133,7 @@ impl Iterator for Tokenizer<'_>{
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
 
-#[derive(Debug)]
-enum State{
-    Default,
-    CarriageReturn,
-
-    NumberLiteral(i32),
-
-    Identifier,
-
-    StringStart,
-    StringNormal,
-    StringEscape,
-    CharLiteralStart,
-    CharLiteralNormal(),
-    CharLiteralEscape(),
-
-    Equal,
-    Dot(i32),
-    Minus,
-    Bang,
-    LessThan,
-    GreaterThan,
-    And,
-    Or,
-    Xor,
-    Plus,
-    Star,
-    Div,
-    Mod,
-    ShiftLeft,
-    ShiftRight,
-    EscapeCharacter(Box<State>, i32)
-}
-
-struct FileIndex{
-    index: usize,
-    line: usize,
-    column: usize,
-}
-
-pub struct Tokenizer<'a> {
-    bytes: &'a [u8],
-    iterator: Chars<'a>,
-    iterations: usize,
-    index_real: usize,
-    index: usize,
-    line: i32,
-    column: i32,
-    state: State,
-    last_index: usize,
-    last_index_real: usize,
-    last_line: i32,
-    last_column: i32,
-    i_last_index: usize,
-    i_last_index_real: usize,
-    i_last_line: i32,
-    i_last_column: i32,
-    matching: bool,
-    stop_reset: bool,
-    new_token: Option<Token>,
-
-    string:String,
-    char_literal:char,
-
-    escape_start_index:usize,
-    escape_start_line:i32,
-    escape_start_column:i32,
-    escape_error:bool,
-    c:char,
-}
-
-impl<'a> Tokenizer<'a>{
-    pub fn new(data:&'a String) -> Tokenizer<'a>{
-        Tokenizer{
-            bytes: data.as_bytes(),
-            iterator: data.chars(),
-            iterations: 0,
-            index_real: 0,
-            index: 0,
-            line: 0,
-            column: 0,
-            state: State::Default,
-            last_index: 0,
-            last_index_real: 0,
-            last_line: 0,
-            last_column: 0,
-            i_last_index: 0,
-            i_last_index_real: 0,
-            i_last_line: 0,
-            i_last_column: 0,
-            matching: false,
-            stop_reset: false,
-            new_token: None,
-            string: String::new(),
-            char_literal: '\0',
-            escape_start_index: 0,
-            escape_start_line: 0,
-            escape_start_column: 0,
-            escape_error: false,
-            c: '\0'
-        }
-    }
-
-    fn create_token(&self, t_type: TokenType) -> Option<Token> {
-        let mut temp = Token{t_type,
-            size: (self.index - self.last_index) as i32,
-            index: self.last_index,
-            line: self.last_line,
-            column: self.last_column
-        };
-        if self.matching {
-            temp.size -= 1;
-        }
-        Option::Some(temp)
-    }
-
-    fn create_token_c(size: i32 ,index: usize, line: i32, column:i32, t_type: TokenType) -> Option<Token> {
-        Option::Some(Token{t_type,
-            size,
-            index,
-            line,
-            column
-        })
-    }
-
-    fn create_number_token(&self, mut num: String) -> Option<Token>{
-
-        let original:String = num.to_string();
-        let suffixes = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64"];
-        let prefixes = ["0x", "0b"];
-
-        let mut suffix: &str = "";
-        let mut prefix = "";
-        for suf in suffixes{
-            if num.ends_with(suf){
-                suffix = suf;
-                num = num.as_str()[0..num.len() - suf.len()].to_string();
-                break;
-            }
-        }
-        for pre in prefixes{
-            if num.starts_with(pre){
-                prefix = pre;
-                num = num.replacen(pre, "", 1);
-                break;
-            }
-        }
-
-        num = num.replace("_","");
-
-        let base;
-        match prefix{
-            "0x" => base = 16,
-            "0b" => base = 2,
-            _ => base = 10
-        }
-
-        let mut t_type: TokenType;
-
-        macro_rules! parse_to_token{
-            ($a: path, $b: ident) => {
-                match num.parse::<$a>(){
-                    Ok(val) => t_type = TokenType::$b(val),
-                    Err(val) => t_type = TokenType::ERROR(val.to_string())
-                }
-            }
-        }
-
-        macro_rules! parse_to_token_base{
-            ($a: ident, $b: ident, $c: ident) => {
-                match $a::from_str_radix(num.as_str(), $c){
-                    Ok(val) => t_type = TokenType::$b(val),
-                    Err(val) => t_type = TokenType::ERROR(val.to_string())
-                }
-            }
-        }
-
-        match (suffix, base){
-            ("i8", _) => parse_to_token_base!(i8, I8Literal, base),
-            ("i16", _) => parse_to_token_base!(i16, I16Literal, base),
-            ("i32", _) => parse_to_token_base!(i32, I32Literal, base),
-            ("i64", _) => parse_to_token_base!(i64, I64Literal, base),
-            ("i128", _) => parse_to_token_base!(i128, I128Literal, base),
-            ("u8", _) => parse_to_token_base!(u8, U8Literal, base),
-            ("u16", _) => parse_to_token_base!(u16, U16Literal, base),
-            ("u32", _) => parse_to_token_base!(u32, U32Literal, base),
-            ("u64", _) => parse_to_token_base!(u64, U64Literal, base),
-            ("u128", _) => parse_to_token_base!(u128, U128Literal, base),
-            ("f32", 10) => parse_to_token!(f32, F32Literal),
-            ("f64", 10) => parse_to_token!(f64, F64Literal),
-            ("f32" | "f64", _) =>
-                t_type = TokenType::ERROR("Cannot have non base 10 floating point literal".into()),
-            (_, base) => {
-                if base == 10{
-                    if num.contains("e") || num.contains("E") || num.contains("."){
-                        parse_to_token!(f32, F32Literal)
-                    }else{
-                        parse_to_token_base!(i32, I32Literal, base)
-                    }
-                }else{
-                    parse_to_token_base!(i32, I32Literal, base)
-                }
-            }
-        }
-        match t_type{
-            TokenType::ERROR(string) =>{
-                t_type = TokenType::ERROR(format!("{} for: {}", string, original))
-            }
-            _ => {}
-        }
-
-        self.create_token(t_type)
-    }
-
-    fn create_identifier_or_keyword(&self, ident: String) -> Option<Token>{
-
-        let t_type: TokenType;
-        match ident.as_str(){
-            "void" => t_type = TokenType::VoidKeyword,
-            "struct" => t_type = TokenType::StructKeyword,
-            "asm" => t_type = TokenType::AsmKeyword,
-            "const" => t_type = TokenType::ConstKeyword,
-            "static" => t_type = TokenType::StaticKeyword,
-            "sizeof" => t_type = TokenType::SizeofKeyword,
-            "enum" => t_type = TokenType::EnumKeyword,
-            "if" => t_type = TokenType::IfKeyword,
-            "else" => t_type = TokenType::ElseKeyword,
-            "while" => t_type = TokenType::WhileKeyword,
-            "do" => t_type = TokenType::DoKeyword,
-            "for" => t_type = TokenType::ForKeyword,
-            "return" => t_type = TokenType::ReturnKeyword,
-            "break" => t_type = TokenType::BreakKeyword,
-            "switch" => t_type = TokenType::SwitchKeyword,
-            "case" => t_type = TokenType::CaseKeyword,
-            "goto" => t_type = TokenType::GotoKeyword,
-            "restrict" => t_type = TokenType::RestrictKeyword,
-            "usize" => t_type = TokenType::USizeKeyword,
-            "isize" => t_type = TokenType::ISizeKeyword,
-            "i8" => t_type = TokenType::I8Keyword,
-            "i16" => t_type = TokenType::I16Keyword,
-            "i32" => t_type = TokenType::I32Keyword,
-            "u8" => t_type = TokenType::U8Keyword,
-            "u16" => t_type = TokenType::U16Keyword,
-            "u32" => t_type = TokenType::U32Keyword,
-            "char" => t_type = TokenType::CharKeyword,
-            "bool" => t_type = TokenType::BoolKeyword,
-            "true" => t_type = TokenType::BoolLiteral(true),
-            "false" => t_type = TokenType::BoolLiteral(false),
-            _=> t_type = TokenType::Identifier(ident)
-        }
-
-        self.create_token(t_type)
-    }
-
-    fn default_reset(&mut self, matching:bool, tok:TokenType){
-        self.matching = matching;
-        self.new_token = self.create_token(tok);
-        self.state = State::Default;
-    }
-
-    pub fn curr_str(&self) -> String {
-        if self.matching{
-            String::from_utf8_lossy(&self.bytes[self.last_index_real as usize..(self.index_real - self.c.len_utf8()) as usize]).to_string()
-        }else{
-            String::from_utf8_lossy(&self.bytes[self.last_index_real as usize..self.index_real as usize]).to_string()
-        }
-    }
-    fn ntm(&mut self){
-        self.i_last_index = self.index;
-        self.i_last_index_real = self.index_real;
-        self.i_last_line = self.line;
-        self.i_last_column = self.column;
-
-        self.index += 1;
-        self.index_real += self.c.len_utf8();
-        self.column += 1;
-        self.stop_reset = false;
-    }
-
-    pub fn tokenize(mut self) -> Vec<Token>{
-        let mut tokens = Vec::new();
-        
         loop{
             if !self.matching {
                 match self.iterator.next(){
@@ -424,7 +143,7 @@ impl<'a> Tokenizer<'a>{
                         self.ntm();
                     }
                     None => {
-                        return tokens;
+                        return None;
                     }
                 }
                 self.matching = true;
@@ -432,25 +151,25 @@ impl<'a> Tokenizer<'a>{
 
             while self.matching {
                 self.matching = false;
-                match self.state {
+                match &self.state {
                     State::Default => {
                         match self.c {
                             ' ' | '\t' => {
-                                self.last_index_real = self.index_real;
-                                self.last_index = self.index;
-                                self.last_line = self.line;
-                                self.last_column = self.column;
+                                self.start_curr.index_real = self.current.index_real;
+                                self.start_curr.index = self.current.index;
+                                self.start_curr.line = self.current.line;
+                                self.start_curr.column = self.current.column;
                             }
                             '\r' => {
                                 self.state = State::CarriageReturn;
                             }
                             '\n' => {
-                                self.column = 0;
-                                self.line += 1;
-                                self.last_index = self.index;
-                                self.last_index_real = self.index_real;
-                                self.last_line = self.line;
-                                self.last_column = self.column;
+                                self.current.column = 0;
+                                self.current.line += 1;
+                                self.start_curr.index = self.current.index;
+                                self.start_curr.index_real = self.current.index_real;
+                                self.start_curr.line = self.current.line;
+                                self.start_curr.column = self.current.column;
                             }
 
                             '"' => self.state = State::StringStart,
@@ -596,12 +315,23 @@ impl<'a> Tokenizer<'a>{
                             }
                         }
                     }
-                    State::EscapeCharacter(state, val) =>{
-                        let state = *state;
+                    State::EscapeCharacter(_,_) =>{
+                        let mut t = State::Default;
+                        mem::swap(&mut self.state, &mut t);
+                        let state;
+                        let val;
+                        match t {
+                            State::EscapeCharacter(i_state,i_val) => {
+                                state = *i_state;
+                                val = i_val;
+                            }
+                            _ => {panic!()}
+                        }
                         if val == 0 {
-                            self.escape_start_index = self.i_last_index;
-                            self.escape_start_line = self.i_last_line;
-                            self.escape_start_column = self.i_last_column;
+                            self.escape_start.index = self.last.index;
+                            self.escape_start.index_real = self.last.index_real;
+                            self.escape_start.line = self.last.line;
+                            self.escape_start.column = self.last.column;
                             self.escape_error = false;
                         }
                         match (self.c, val){
@@ -658,7 +388,7 @@ impl<'a> Tokenizer<'a>{
                             ('0'..='9'|'a'..='f'|'A'..='F', 11..=12) => {
                                 if !self.escape_error {
                                     self.char_literal = (((self.char_literal as u8 ) << 4)
-                                            | u8::from_str_radix(self.c.to_string().as_str(), 16).unwrap()) as char;
+                                        | u8::from_str_radix(self.c.to_string().as_str(), 16).unwrap()) as char;
                                 }else{
                                     self.char_literal = '\0';
                                 }
@@ -676,7 +406,9 @@ impl<'a> Tokenizer<'a>{
                                 self.stop_reset = true;
                                 self.matching = true;
 
-                                self.new_token = Tokenizer::create_token_c((self.index - self.escape_start_index + 2) as i32, self.escape_start_index,self.escape_start_line, self.escape_start_column - 1,
+                                self.new_token = Tokenizer::create_token_c(self.current.index - self.escape_start.index + 2, self.escape_start.index,
+                                                                           self.current.index_real - self.escape_start.index_real + 2, self.escape_start.index_real,
+                                                                           self.escape_start.line, self.escape_start.column - 1,
                                                                            TokenType::ERROR(format!("Invalid character in escape sequence: {}", self.c)));
                             }
                         }
@@ -810,12 +542,12 @@ impl<'a> Tokenizer<'a>{
                     State::CarriageReturn => {
                         match self.c {
                             '\n' => {
-                                self.line += 1;
-                                self.column = 0;
-                                self.last_index = self.index;
-                                self.last_index_real = self.index_real;
-                                self.last_line = self.line;
-                                self.last_column = self.column;
+                                self.current.line += 1;
+                                self.current.column = 0;
+                                self.start_curr.index = self.current.index;
+                                self.start_curr.index_real = self.current.index_real;
+                                self.start_curr.line = self.current.line;
+                                self.start_curr.column = self.current.column;
                                 self.state = State::Default;
                             }
                             _ => {
@@ -825,37 +557,326 @@ impl<'a> Tokenizer<'a>{
                             }
                         }
                     }
-                    //_ => {
-                    //    self.new_token = self.create_token(TokenType::ERROR(format!("Invalid State: {:?}", self.state)));
-                    //    self.state = State::Default;
-                    //    self.matching = true;
-                    //}
                 }
-                match self.new_token{
+                match &self.new_token{
                     None => {}
-                    Some(tok) => {
-
-                        self.new_token = Option::None;
-
-                        println!("Tok: {} -> STR: '{}'", tok, self.curr_str());
+                    Some(_) => {
 
                         if self.matching {
                             if !self.stop_reset {
-                                self.last_index = self.i_last_index;
-                                self.last_index_real = self.i_last_index_real;
-                                self.last_line = self.i_last_line;
-                                self.last_column = self.i_last_column;
+                                self.start_curr.index = self.last.index;
+                                self.start_curr.index_real = self.last.index_real;
+                                self.start_curr.line = self.last.line;
+                                self.start_curr.column = self.last.column;
                             }
                         }else{
                             if !self.stop_reset {
-                                self.last_index = self.index;
-                                self.last_index_real = self.index_real ;
-                                self.last_line = self.line;
-                                self.last_column = self.column
+                                self.start_curr.index = self.current.index;
+                                self.start_curr.index_real = self.current.index_real ;
+                                self.start_curr.line = self.current.line;
+                                self.start_curr.column = self.current.column
                             }
                         }
-                        tokens.push(tok);
+                        let mut new = Option::None;
+                        mem::swap(&mut self.new_token,&mut new);
+                        return new;
                     }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum State{
+    Default,
+    CarriageReturn,
+
+    NumberLiteral(i32),
+
+    Identifier,
+
+    StringStart,
+    StringNormal,
+    StringEscape,
+    CharLiteralStart,
+    CharLiteralNormal(),
+    CharLiteralEscape(),
+
+    Equal,
+    Dot(i32),
+    Minus,
+    Bang,
+    LessThan,
+    GreaterThan,
+    And,
+    Or,
+    Xor,
+    Plus,
+    Star,
+    Div,
+    Mod,
+    ShiftLeft,
+    ShiftRight,
+    EscapeCharacter(Box<State>, i32)
+}
+
+struct FileIndex{
+    index: usize,
+    index_real: usize,
+    line: usize,
+    column: usize,
+}
+
+impl FileIndex {
+    pub fn new() -> FileIndex{
+        FileIndex{
+            index: 0,
+            index_real: 0,
+            line: 0,
+            column: 0,
+        }
+    }
+}
+
+pub struct Tokenizer<'a> {
+    bytes: &'a [u8],
+    iterator: Chars<'a>,
+    iterations: usize,
+
+    c:char,
+    state: State,
+    matching: bool,
+    stop_reset: bool,
+    new_token: Option<Token>,
+
+    current: FileIndex,
+    start_curr: FileIndex,
+    last: FileIndex,
+    escape_start: FileIndex,
+
+    escape_error:bool,
+    string:String,
+    char_literal:char,
+}
+
+impl<'a> Tokenizer<'a>{
+    pub fn new(data:&'a String) -> Tokenizer<'a>{
+        Tokenizer{
+            bytes: data.as_bytes(),
+            iterator: data.chars(),
+            iterations: 0,
+            state: State::Default,
+            
+            current: FileIndex::new(),
+            last: FileIndex::new(),
+            start_curr: FileIndex::new(),
+            escape_start: FileIndex::new(),
+
+            matching: false,
+            stop_reset: false,
+            new_token: None,
+            string: String::new(),
+            char_literal: '\0',
+            escape_error: false,
+            c: '\0'
+        }
+    }
+
+    fn create_token(&self, t_type: TokenType) -> Option<Token> {
+        let mut temp = Token{t_type,
+            index: self.start_curr.index,
+            size: (self.current.index - self.start_curr.index),
+            size_real: (self.current.index_real - self.start_curr.index_real),
+            index_real: self.start_curr.index_real,
+            line: self.start_curr.line,
+            column: self.start_curr.column
+        };
+        if self.matching {
+            temp.size -= 1;
+            temp.size_real -= self.c.len_utf8();
+        }
+        Option::Some(temp)
+    }
+
+    fn create_token_c(size: usize ,index: usize,size_real: usize ,index_real: usize, line: usize, column:usize, t_type: TokenType) -> Option<Token> {
+        Option::Some(Token{t_type,
+            size,
+            index,
+            size_real,
+            index_real,
+            line,
+            column
+        })
+    }
+
+    fn create_number_token(&self, mut num: String) -> Option<Token>{
+
+        let original:String = num.to_string();
+        let suffixes = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64"];
+        let prefixes = ["0x", "0b"];
+
+        let mut suffix: &str = "";
+        let mut prefix = "";
+        for suf in suffixes{
+            if num.ends_with(suf){
+                suffix = suf;
+                num = num.as_str()[0..num.len() - suf.len()].to_string();
+                break;
+            }
+        }
+        for pre in prefixes{
+            if num.starts_with(pre){
+                prefix = pre;
+                num = num.replacen(pre, "", 1);
+                break;
+            }
+        }
+
+        num = num.replace("_","");
+
+        let base;
+        match prefix{
+            "0x" => base = 16,
+            "0b" => base = 2,
+            _ => base = 10
+        }
+
+        let mut t_type: TokenType;
+
+        macro_rules! parse_to_token{
+            ($a: path, $b: ident) => {
+                match num.parse::<$a>(){
+                    Ok(val) => t_type = TokenType::$b(val),
+                    Err(val) => t_type = TokenType::ERROR(val.to_string())
+                }
+            }
+        }
+
+        macro_rules! parse_to_token_base{
+            ($a: ident, $b: ident, $c: ident) => {
+                match $a::from_str_radix(num.as_str(), $c){
+                    Ok(val) => t_type = TokenType::$b(val),
+                    Err(val) => t_type = TokenType::ERROR(val.to_string())
+                }
+            }
+        }
+
+        match (suffix, base){
+            ("i8", _) => parse_to_token_base!(i8, I8Literal, base),
+            ("i16", _) => parse_to_token_base!(i16, I16Literal, base),
+            ("i32", _) => parse_to_token_base!(i32, I32Literal, base),
+            ("i64", _) => parse_to_token_base!(i64, I64Literal, base),
+            ("i128", _) => parse_to_token_base!(i128, I128Literal, base),
+            ("u8", _) => parse_to_token_base!(u8, U8Literal, base),
+            ("u16", _) => parse_to_token_base!(u16, U16Literal, base),
+            ("u32", _) => parse_to_token_base!(u32, U32Literal, base),
+            ("u64", _) => parse_to_token_base!(u64, U64Literal, base),
+            ("u128", _) => parse_to_token_base!(u128, U128Literal, base),
+            ("f32", 10) => parse_to_token!(f32, F32Literal),
+            ("f64", 10) => parse_to_token!(f64, F64Literal),
+            ("f32" | "f64", _) =>
+                t_type = TokenType::ERROR("Cannot have non base 10 floating point literal".into()),
+            (_, base) => {
+                if base == 10{
+                    if num.contains("e") || num.contains("E") || num.contains("."){
+                        parse_to_token!(f32, F32Literal)
+                    }else{
+                        parse_to_token_base!(i32, I32Literal, base)
+                    }
+                }else{
+                    parse_to_token_base!(i32, I32Literal, base)
+                }
+            }
+        }
+        match t_type{
+            TokenType::ERROR(string) =>{
+                t_type = TokenType::ERROR(format!("{} for: {}", string, original))
+            }
+            _ => {}
+        }
+
+        self.create_token(t_type)
+    }
+
+    fn create_identifier_or_keyword(&self, ident: String) -> Option<Token>{
+
+        let t_type: TokenType;
+        match ident.as_str(){
+            "void" => t_type = TokenType::VoidKeyword,
+            "struct" => t_type = TokenType::StructKeyword,
+            "asm" => t_type = TokenType::AsmKeyword,
+            "const" => t_type = TokenType::ConstKeyword,
+            "static" => t_type = TokenType::StaticKeyword,
+            "sizeof" => t_type = TokenType::SizeofKeyword,
+            "enum" => t_type = TokenType::EnumKeyword,
+            "if" => t_type = TokenType::IfKeyword,
+            "else" => t_type = TokenType::ElseKeyword,
+            "while" => t_type = TokenType::WhileKeyword,
+            "do" => t_type = TokenType::DoKeyword,
+            "for" => t_type = TokenType::ForKeyword,
+            "return" => t_type = TokenType::ReturnKeyword,
+            "break" => t_type = TokenType::BreakKeyword,
+            "switch" => t_type = TokenType::SwitchKeyword,
+            "case" => t_type = TokenType::CaseKeyword,
+            "goto" => t_type = TokenType::GotoKeyword,
+            "restrict" => t_type = TokenType::RestrictKeyword,
+            "usize" => t_type = TokenType::USizeKeyword,
+            "isize" => t_type = TokenType::ISizeKeyword,
+            "i8" => t_type = TokenType::I8Keyword,
+            "i16" => t_type = TokenType::I16Keyword,
+            "i32" => t_type = TokenType::I32Keyword,
+            "u8" => t_type = TokenType::U8Keyword,
+            "u16" => t_type = TokenType::U16Keyword,
+            "u32" => t_type = TokenType::U32Keyword,
+            "char" => t_type = TokenType::CharKeyword,
+            "bool" => t_type = TokenType::BoolKeyword,
+            "true" => t_type = TokenType::BoolLiteral(true),
+            "false" => t_type = TokenType::BoolLiteral(false),
+            _=> t_type = TokenType::Identifier(ident)
+        }
+
+        self.create_token(t_type)
+    }
+
+    fn default_reset(&mut self, matching:bool, tok:TokenType){
+        self.matching = matching;
+        self.new_token = self.create_token(tok);
+        self.state = State::Default;
+    }
+
+    pub(crate) fn str_from_token(&self, token: &Token) -> String {
+        String::from_utf8_lossy(&self.bytes[token.index_real..token.index_real + token.size_real]).to_string()
+    }
+
+    pub fn curr_str(&self) -> String {
+        if self.matching{
+            String::from_utf8_lossy(&self.bytes[self.start_curr.index_real as usize..(self.current.index_real - self.c.len_utf8()) as usize]).to_string()
+        }else{
+            String::from_utf8_lossy(&self.bytes[self.start_curr.index_real as usize..self.current.index_real as usize]).to_string()
+        }
+    }
+    fn ntm(&mut self){
+        self.last.index = self.current.index;
+        self.last.index_real = self.current.index_real;
+        self.last.line = self.current.line;
+        self.last.column = self.current.column;
+
+        self.current.index += 1;
+        self.current.index_real += self.c.len_utf8();
+        self.current.column += 1;
+        self.stop_reset = false;
+    }
+
+    pub fn tokenize(&mut self) -> Vec<Token>{
+        let mut tokens = Vec::new();
+        loop{
+            match self.next(){
+                None => {
+                    return tokens;
+                }
+                Some(tok) => {
+                    tokens.push(tok)
                 }
             }
         }
