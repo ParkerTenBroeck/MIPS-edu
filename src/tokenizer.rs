@@ -155,10 +155,7 @@ impl Iterator for Tokenizer<'_>{
                     State::Default => {
                         match self.c {
                             ' ' | '\t' => {
-                                self.start_curr.index_real = self.current.index_real;
-                                self.start_curr.index = self.current.index;
-                                self.start_curr.line = self.current.line;
-                                self.start_curr.column = self.current.column;
+                                self.start_curr = self.current;
                             }
                             '\r' => {
                                 self.state = State::CarriageReturn;
@@ -166,10 +163,7 @@ impl Iterator for Tokenizer<'_>{
                             '\n' => {
                                 self.current.column = 0;
                                 self.current.line += 1;
-                                self.start_curr.index = self.current.index;
-                                self.start_curr.index_real = self.current.index_real;
-                                self.start_curr.line = self.current.line;
-                                self.start_curr.column = self.current.column;
+                                self.start_curr = self.current;
                             }
 
                             '"' => self.state = State::StringStart,
@@ -328,10 +322,11 @@ impl Iterator for Tokenizer<'_>{
                             _ => {panic!()}
                         }
                         if val == 0 {
-                            self.escape_start.index = self.last.index;
-                            self.escape_start.index_real = self.last.index_real;
-                            self.escape_start.line = self.last.line;
-                            self.escape_start.column = self.last.column;
+                            //self.escape_start.index = self.last.index;
+                            //self.escape_start.index_real = self.last.index_real;
+                            //self.escape_start.line = self.last.line;
+                            //self.escape_start.column = self.last.column;
+                            self.escape_start = self.last;
                             self.escape_error = false;
                         }
                         match (self.c, val){
@@ -531,8 +526,6 @@ impl Iterator for Tokenizer<'_>{
                                 self.state =State::NumberLiteral(0);
                             }
                             _ => {
-                                //let num = self.curr_str();
-                                //self.new_token = self.create_token(TokenType::I32Literal(num.parse::<i32>().expect(num.as_str())));
                                 self.matching = true;
                                 self.new_token = self.create_number_token(self.curr_str());
                                 self.state = State::Default;
@@ -544,10 +537,7 @@ impl Iterator for Tokenizer<'_>{
                             '\n' => {
                                 self.current.line += 1;
                                 self.current.column = 0;
-                                self.start_curr.index = self.current.index;
-                                self.start_curr.index_real = self.current.index_real;
-                                self.start_curr.line = self.current.line;
-                                self.start_curr.column = self.current.column;
+                                self.start_curr = self.current;
                                 self.state = State::Default;
                             }
                             _ => {
@@ -564,17 +554,11 @@ impl Iterator for Tokenizer<'_>{
 
                         if self.matching {
                             if !self.stop_reset {
-                                self.start_curr.index = self.last.index;
-                                self.start_curr.index_real = self.last.index_real;
-                                self.start_curr.line = self.last.line;
-                                self.start_curr.column = self.last.column;
+                                self.start_curr = self.last;
                             }
                         }else{
                             if !self.stop_reset {
-                                self.start_curr.index = self.current.index;
-                                self.start_curr.index_real = self.current.index_real ;
-                                self.start_curr.line = self.current.line;
-                                self.start_curr.column = self.current.column
+                                self.start_curr = self.current;
                             }
                         }
                         let mut new = Option::None;
@@ -621,6 +605,7 @@ enum State{
     EscapeCharacter(Box<State>, i32)
 }
 
+#[derive(Copy, Clone)]
 struct FileIndex{
     index: usize,
     index_real: usize,
@@ -857,10 +842,7 @@ impl<'a> Tokenizer<'a>{
         }
     }
     fn ntm(&mut self){
-        self.last.index = self.current.index;
-        self.last.index_real = self.current.index_real;
-        self.last.line = self.current.line;
-        self.last.column = self.current.column;
+        self.last = self.current;
 
         self.current.index += 1;
         self.current.index_real += self.c.len_utf8();
@@ -870,6 +852,7 @@ impl<'a> Tokenizer<'a>{
 
     pub fn tokenize(&mut self) -> Vec<Token>{
         let mut tokens = Vec::new();
+
         loop{
             match self.next(){
                 None => {

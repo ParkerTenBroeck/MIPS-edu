@@ -11,6 +11,8 @@ fn main() {
     let tmp = tokenizer.tokenize();
 
     for t in tmp{
+        let test = tokenizer.str_from_token(&t);
+        println!("asd{}asd", test);
         println!("token: {} string: '{}'", t, tokenizer.str_from_token(&t));
     }
 }
