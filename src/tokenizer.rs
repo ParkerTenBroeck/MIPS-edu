@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::mem;
 use std::str::Chars;
+use crate::tokenizer::State::Default;
 
 #[derive(Debug)]
 pub enum TokenType{
@@ -107,9 +108,9 @@ pub enum TokenType{
     ERROR(String)
 }
 
-
+#[derive(Debug)]
 pub struct Token{
-    t_type: TokenType,
+    pub t_type: TokenType,
     size: usize,
     index: usize,
     index_real:usize,
@@ -135,6 +136,20 @@ impl Iterator for Tokenizer<'_>{
     fn next(&mut self) -> Option<Self::Item> {
 
         loop{
+
+            match (&self.state, self.c){
+                (State::EOF, '\0') => {
+                    return Option::None;
+                }
+                (State::Default, '\0') =>{}
+                (_, '\0') => {
+                    let tmp = self.create_token(TokenType::ERROR(format!("Invalid State at EOF: {:?}", self.state)));
+                    self.state = Default;
+                    return tmp;
+                }
+                _ => {}
+            }
+
             if !self.matching {
                 match self.iterator.next(){
                     Some(char) => {
@@ -143,17 +158,33 @@ impl Iterator for Tokenizer<'_>{
                         self.ntm();
                     }
                     None => {
-                        return None;
+                        match self.state{
+                            State::Default => {
+                                return Option::None;
+                            }
+                            _ => {
+                                self.c = '\0';
+                                self.iterations +=1;
+                                self.ntm();
+                            }
+                        }
+
                     }
                 }
                 self.matching = true;
             }
 
             while self.matching {
+
+
+
                 self.matching = false;
                 match &self.state {
                     State::Default => {
                         match self.c {
+                            '\0' => {
+                                self.state = State::EOF;
+                            }
                             ' ' | '\t' => {
                                 self.start_curr = self.current;
                             }
@@ -547,6 +578,9 @@ impl Iterator for Tokenizer<'_>{
                             }
                         }
                     }
+                    State::EOF => {
+
+                    }
                 }
                 match &self.new_token{
                     None => {}
@@ -602,7 +636,9 @@ enum State{
     Mod,
     ShiftLeft,
     ShiftRight,
-    EscapeCharacter(Box<State>, i32)
+    EscapeCharacter(Box<State>, i32),
+
+    EOF
 }
 
 #[derive(Copy, Clone)]
@@ -652,7 +688,7 @@ impl<'a> Tokenizer<'a>{
             iterator: data.chars(),
             iterations: 0,
             state: State::Default,
-            
+
             current: FileIndex::new(),
             last: FileIndex::new(),
             start_curr: FileIndex::new(),
@@ -666,6 +702,24 @@ impl<'a> Tokenizer<'a>{
             escape_error: false,
             c: '\0'
         }
+    }
+
+    pub fn reset(&mut self){
+        self.iterations = 0;
+        self.state = State::Default;
+
+        self.current = FileIndex::new();
+        self.last = FileIndex::new();
+        self.start_curr = FileIndex::new();
+        self.escape_start = FileIndex::new();
+
+        self.matching = false;
+        self.stop_reset = false;
+        self.new_token = None;
+        self.string = String::new();
+        self.char_literal = '\0';
+        self.escape_error = false;
+        self.c = '\0';
     }
 
     fn create_token(&self, t_type: TokenType) -> Option<Token> {
