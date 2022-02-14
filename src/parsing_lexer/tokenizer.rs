@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::mem;
 use std::str::Chars;
-use crate::tokenizer::State::Default;
+
 
 #[derive(Debug)]
 pub enum TokenType{
@@ -110,7 +110,7 @@ pub enum TokenType{
 
 #[derive(Debug)]
 pub struct Token{
-    pub t_type: TokenType,
+    pub(in crate::parsing_lexer)  t_type: TokenType,
     size: usize,
     index: usize,
     index_real:usize,
@@ -119,6 +119,11 @@ pub struct Token{
     column: usize
 }
 
+impl Token{
+    pub fn get_token_type(&self) -> &TokenType{
+        &self.t_type
+    }
+}
 impl Display for Token{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 
@@ -144,7 +149,7 @@ impl Iterator for Tokenizer<'_>{
                 (State::Default, '\0') =>{}
                 (_, '\0') => {
                     let tmp = self.create_token(TokenType::ERROR(format!("Invalid State at EOF: {:?}", self.state)));
-                    self.state = Default;
+                    self.state = State::Default;
                     return tmp;
                 }
                 _ => {}
@@ -681,6 +686,16 @@ pub struct Tokenizer<'a> {
     char_literal:char,
 }
 
+trait Test {
+    fn from_u8(byte: &[u8]) -> Chars;
+}
+
+impl Test for Chars<'_>{
+    fn from_u8(byte: &[u8]) -> Chars {
+        std::str::from_utf8(byte).expect("").chars()
+    }
+}
+
 impl<'a> Tokenizer<'a>{
     pub fn new(data:&'a String) -> Tokenizer<'a>{
         Tokenizer{
@@ -707,6 +722,8 @@ impl<'a> Tokenizer<'a>{
     pub fn reset(&mut self){
         self.iterations = 0;
         self.state = State::Default;
+        self.iterator = Chars::from_u8(self.bytes);
+
 
         self.current = FileIndex::new();
         self.last = FileIndex::new();
@@ -919,4 +936,3 @@ impl<'a> Tokenizer<'a>{
         }
     }
 }
-

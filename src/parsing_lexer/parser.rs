@@ -1,10 +1,10 @@
+
 use std::collections::LinkedList;
 use std::fmt::{Debug, Formatter};
 use std::iter::Peekable;
 use std::mem;
 use std::mem::MaybeUninit;
-use crate::Tokenizer;
-use crate::tokenizer::{Token, TokenType};
+use crate::parsing_lexer::tokenizer::{Token, Tokenizer, TokenType};
 
 enum ReducerResponse{
     Reduce(NonTerminal),
@@ -18,6 +18,12 @@ enum NonTerminal {
     Terminal(Token),
     AddSub(Option<Box<dyn TreeNode>>),
     Constant(Constant),
+}
+
+impl Default for NonTerminal{
+    fn default() -> Self {
+        NonTerminal::NOTHING
+    }
 }
 
 impl Debug for dyn TreeNode{
@@ -62,8 +68,10 @@ trait Reducer{
     fn needed_components(&mut self) -> usize;
 }
 
-trait TreeNode{
+pub trait TreeNode{
+    fn test(&self){
 
+    }
 }
 
 struct NOTHING{
@@ -104,17 +112,22 @@ struct AddSubReducer{
 impl Reducer for AddSubReducer{
     fn reduce(&mut self, stack_slice: &mut [NonTerminal]) -> ReducerResponse {
         return match stack_slice {
-            [NonTerminal::AddSub(left),
+            [t1 @ NonTerminal::AddSub(_),
             NonTerminal::Terminal(operator @ Token { t_type: TokenType::Plus | TokenType::Minus, .. }),
             NonTerminal::AddSub(right)] => {
-                let left = steal(left);
-                let operator = steal(operator);
-                let right = steal(right);
-                ReducerResponse::Reduce(NonTerminal::AddSub(Option::Some(Box::new(BinaryOperator {
-                    left_size: left.expect(""),
-                    operator: operator,
-                    right_size: right.expect("")
-                }))))
+
+                //let test = mem::take(stack_slice.get_mut(0).unwrap());
+                //mem::drop();
+                //mem::forget()
+                //let left = steal(left);
+                //let operator = steal(operator);
+                //let right = steal(right);
+                ReducerResponse::NoMatch
+                //ReducerResponse::Reduce(NonTerminal::AddSub(Option::Some(Box::new(BinaryOperator {
+                //    left_size: left.expect(""),
+                //    operator: operator,
+                //    right_size: right.expect("")
+                //}))))
             }
             _ => { ReducerResponse::NoMatch }
         }
@@ -183,14 +196,14 @@ impl<'a> Parser<'a>{
 
     fn get_stack_slice(&mut self, size: usize) -> &mut [NonTerminal]{
         let len = self.non_terminal_stack.len();
-        if(len < size){
+        if len < size {
             &mut self.non_terminal_stack[0..len]
         }else{
             &mut self.non_terminal_stack[len-size..len]
         }
     }
 
-    pub fn parse(&mut self){
+    pub fn parse(&mut self) -> Result<Box<dyn TreeNode>, &str>{
 
         let mut reducers = LinkedList::new();
         mem::swap(&mut self.reducer_layers, &mut reducers);
@@ -239,7 +252,16 @@ impl<'a> Parser<'a>{
 
         }
         self.reducer_layers = reducers;
+
+        if self.non_terminal_stack.len() != 1{
+            Result::Err("Failed to reduce")
+        }else{
+            match self.non_terminal_stack.pop(){
+                Some(NonTerminal::AddSub(Some(val))) => {
+                    Result::Ok(val)
+                }
+                _ =>{Result::Err("How")}
+            }
+        }
     }
-
-
 }

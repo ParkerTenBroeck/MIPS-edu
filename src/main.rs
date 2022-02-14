@@ -1,20 +1,21 @@
-use crate::parser::Parser;
-use crate::tokenizer::Tokenizer;
+mod parsing_lexer;
+mod mtest;
 
-mod tokenizer;
-mod parser;
+use crate::parsing_lexer::parser::Parser;
+use crate::parsing_lexer::tokenizer::Tokenizer;
+
 
 fn main() {
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
     println!("\nPrinting test.cl");
 
     let mut tokenizer = Tokenizer::new(&file);
-    //let tmp = tokenizer.tokenize();
+    let tmp = tokenizer.tokenize();
 
-    //for t in tmp{
-    //    println!("token: {} string: '{}'", t, tokenizer.str_from_token(&t));
-    //}
-    //tokenizer.reset();
+    for t in tmp{
+        println!("token: {} string: '{}'", t, tokenizer.str_from_token(&t));
+    }
+    tokenizer.reset();
 
     let mut parser = Parser::new(tokenizer);
 

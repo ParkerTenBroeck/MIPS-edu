@@ -1,4 +1,4 @@
-'test' '\x2t'
+'Test' '\x2t'
 
 
 '\x41'
@@ -11,7 +11,7 @@
 12
  12
 
-i32 test(){
+i32 Test(){
     i32 a = 44;
     i32 b=55;
     i32 c=b;
@@ -27,7 +27,7 @@ i32 main2(){
     i32 a = 1;
     i32 b = 2;
     char* testString = 'as\nd\'';
-    return test() + a + b;
+    return Test() + a + b;
 
     1i8
     2i16
