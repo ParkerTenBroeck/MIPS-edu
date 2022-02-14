@@ -64,8 +64,10 @@ macro_rules! sum3 {
     ($num:expr, $obj:ident, $a:pat , $($rest:pat ),+, $inside:block) => {
         if let Option::Some($a) = $obj.get_mut($num){
             sum3!($num + 1, $obj, $($rest),+, $inside);
-        }else{
+        }else if $obj.len() == $num{
 
+        }else{
+            return;
         }
 
     };
@@ -76,7 +78,16 @@ macro_rules! sum3 {
             }else{
 
             }
-        }
+        }else{}
+
+    };
+}
+
+macro_rules! test{
+    ($name:ident) => {
+      fn $name(){
+
+      }
     };
 }
 
@@ -84,6 +95,8 @@ enum Test{
     NOTHING,
     Val(i32)
 }
+
+test!(thisisaname);
 
 fn test(){
     let test:&mut [Test] = Vec::new().as_mut_slice();
@@ -95,4 +108,56 @@ fn test(){
 
 fn print(num: &mut i32){
     println!("{}", num)
+}
+
+pub(super) fn add_sub_3(stack_slice: &mut [NonTerminal]) -> ReducerResponse {
+    if let Option::Some(NonTerminal::AddSub(left)) = stack_slice.get_mut(0) {
+        if let Option::Some(NonTerminal::Terminal(
+                                operator @ Token {
+                                    t_type: TokenType::Plus | TokenType::Minus,
+                                    ..
+                                },
+                            )) = stack_slice.get_mut(0 + 1)
+        {
+            if stack_slice.len() == 0 + 1 + 1 + 1 {
+                if let Option::Some(NonTerminal::AddSub(right)) =
+                stack_slice.get_mut(0 + 1 + 1)
+                {
+                    match stack_slice {
+                        [NonTerminal::AddSub(left), NonTerminal::Terminal(
+                            operator @ Token {
+                                t_type: TokenType::Plus | TokenType::Minus,
+                                ..
+                            },
+                        ), NonTerminal::AddSub(right)] => {
+                            return {
+                                ReducerResponse::Reduce(NonTerminal::AddSub(Option::Some(
+                                    Box::new(BinaryOperator {
+                                        left_size: mem::take(left).expect(""),
+                                        operator: steal(operator),
+                                        right_size: mem::take(right).expect(""),
+                                    }),
+                                )))
+                            };
+                        }
+                        _ => {
+                            return ReducerResponse::NoMatch;
+                        }
+                    }
+                } else {
+                    return ReducerResponse::NoMatch;
+                }
+            } else {
+                return ReducerResponse::NoMatch;
+            };
+        } else if stack_slice.len() == 0 + 1 {
+            return ReducerResponse::PossibleMatch;
+        } else {
+            return ReducerResponse::NoMatch;
+        };
+    } else if stack_slice.len() == 0 {
+        return ReducerResponse::PossibleMatch;
+    } else {
+        return ReducerResponse::NoMatch;
+    };
 }

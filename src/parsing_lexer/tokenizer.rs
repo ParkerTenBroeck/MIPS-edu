@@ -119,11 +119,11 @@ pub struct Token{
     column: usize
 }
 
-impl Token{
-    pub fn get_token_type(&self) -> &TokenType{
-        &self.t_type
-    }
-}
+//impl Token{
+//    pub fn get_token_type(&self) -> &TokenType{
+//        &self.t_type
+//    }
+//}
 impl Display for Token{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 

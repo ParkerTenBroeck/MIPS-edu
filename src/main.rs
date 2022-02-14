@@ -1,5 +1,5 @@
 mod parsing_lexer;
-mod mtest;
+//mod mtest;
 
 use crate::parsing_lexer::parser::Parser;
 use crate::parsing_lexer::tokenizer::Tokenizer;
