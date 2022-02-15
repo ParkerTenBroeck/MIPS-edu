@@ -108,7 +108,7 @@ pub enum TokenType{
     ERROR(String)
 }
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct Token{
     pub(in crate::parsing_lexer)  t_type: TokenType,
     size: usize,

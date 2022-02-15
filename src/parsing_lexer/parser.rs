@@ -12,27 +12,26 @@ enum ReducerResponse {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum NonTerminal {
-    NOTHING,
     Terminal(Token),
     PrimaryExpression(Option<Box<dyn TreeNode>>),
     PostFixExpression(Option<Box<dyn TreeNode>>),
     UnaryExpression(Option<Box<dyn TreeNode>>),
     CastExpression(Option<Box<dyn TreeNode>>),
-    MultiplicationExpression(Option<Box<dyn TreeNode>>),
+    MultiplicativeExpression(Option<Box<dyn TreeNode>>),
     AdditiveExpression(Option<Box<dyn TreeNode>>),
-}
-
-impl Default for NonTerminal {
-    fn default() -> Self {
-        NonTerminal::NOTHING
-    }
-}
-
-impl Debug for dyn TreeNode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TreeNode")
-    }
+    ShiftExpression(Option<Box<dyn TreeNode>>),
+    RelationalExpression(Option<Box<dyn TreeNode>>),
+    EqualityExpression(Option<Box<dyn TreeNode>>),
+    AndExpression(Option<Box<dyn TreeNode>>),
+    ExclusiveOrExpression(Option<Box<dyn TreeNode>>),
+    InclusiveOrExpression(Option<Box<dyn TreeNode>>),
+    LogicalAndExpression(Option<Box<dyn TreeNode>>),
+    LogicalOrExpression(Option<Box<dyn TreeNode>>),
+    AssignmentExpression(Option<Box<dyn TreeNode>>),
+    Expression(Option<Box<dyn TreeNode>>),
+    Program(Option<Program>),
 }
 
 pub struct Parser<'a> {
@@ -74,10 +73,35 @@ impl Reducer {
     }
 }
 
-pub trait TreeNode {
+pub trait TreeNode: Debug {
     fn test(&self) {}
 }
 
+#[derive(Debug)]
+struct Program{
+
+}
+
+impl TreeNode for Program{
+
+}
+
+impl Debug for Token{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.t_type)
+    }
+}
+
+#[derive(Debug)]
+struct UnaryOperator {
+    left_size: Box<dyn TreeNode>,
+    operator: Token,
+    right_size: Box<dyn TreeNode>,
+}
+
+impl TreeNode for UnaryOperator {}
+
+#[derive(Debug)]
 struct BinaryOperator {
     left_size: Box<dyn TreeNode>,
     operator: Token,
@@ -106,19 +130,27 @@ impl<'a> Parser<'a> {
                     .push_front(Reducer::new(matching_functions::$name, $num));
             };
         }
-        add_reducer!(add_sub_3, 3);
-        add_reducer!(add_sub_1, 1);
+        add_reducer!(additive_3, 3);
+        add_reducer!(additive_1, 1);
+        add_reducer!(multiplicative_3, 3);
+        add_reducer!(multiplicative_1, 1);
         add_reducer!(constant_1, 1);
 
         return tmp;
     }
 
-    fn get_stack_slice(&mut self, size: usize) -> &mut [NonTerminal] {
+    fn get_stack_slice(&mut self, size: usize, index: usize) -> &mut [NonTerminal] {
         let len = self.non_terminal_stack.len();
+        let mut end = len as isize - index as isize;
+        let start = 0;
         if len < size {
             &mut self.non_terminal_stack[0..len]
         } else {
-            &mut self.non_terminal_stack[len - size..len]
+            let mut start = len as isize - size as isize - index as isize;
+            if start < 0{
+                start = 0;
+            }
+            &mut self.non_terminal_stack[start as usize..end as usize]
         }
     }
 
@@ -126,25 +158,44 @@ impl<'a> Parser<'a> {
         let mut reducers = LinkedList::new();
         mem::swap(&mut self.reducer_layers, &mut reducers);
 
+        let mut matched = false;
+        let mut index:usize = 0;
         'main_loop: loop {
-            println!("{:?}", self.non_terminal_stack);
-            let mut cont = false;
+            let mut cont = matched;
+
+            if !matched {
+                match self.token_stream.next() {
+                    None => {
+                        cont |= false;
+                    }
+                    Some(token) => {
+                        self.non_terminal_stack.push(NonTerminal::Terminal(token));
+                        cont |= true;
+                    }
+                }
+            }
+            matched = false;
+
+            println!("index: {}  = {:?}",index, self.non_terminal_stack);
 
             for reducer in &mut reducers {
                 let num = reducer.needed;
                 let reduce = reducer.function;
                 let size = self.non_terminal_stack.len();
 
-                match reduce(self.get_stack_slice(num)) {
+                match reduce(self.get_stack_slice(num, index)) {
                     ReducerResponse::Reduce(response_val) => {
                         for _ in 0..num - (size - self.non_terminal_stack.len()) {
                             self.non_terminal_stack.pop();
                         }
+                        index = 0;
                         self.non_terminal_stack.push(response_val);
-                        //cont |= true;
+                        matched = true;
                         continue 'main_loop;
                     }
                     ReducerResponse::PossibleMatch => {
+
+                        println!("Possible Match");
                         if cont {
                             continue 'main_loop;
                         } else {
@@ -156,22 +207,15 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-
-            match self.token_stream.next() {
-                None => {
-                    cont |= false;
-                }
-                Some(token) => {
-                    self.non_terminal_stack.push(NonTerminal::Terminal(token));
-                    cont |= true;
-                }
-            }
+            index += 1;
+            println!("No match");
 
             if !cont {
                 break;
             }
         }
         self.reducer_layers = reducers;
+
 
         if self.non_terminal_stack.len() != 1 {
             Result::Err("Failed to reduce")
@@ -227,6 +271,55 @@ mod matching_functions {
         };
     }
 
+
+    macro_rules! match_fn_binary{
+        ($name:ident,$left:ident,$right:ident, $result:ident, $operator:pat) => {
+            match_fn!(
+                $name,
+                NonTerminal::$left(left),
+                NonTerminal::Terminal(
+                    operator @ Token {
+                        t_type: $operator,
+                        ..
+                    },
+                ),
+                NonTerminal::$right(right),
+                {
+                    NonTerminal::$result(Option::Some(Box::new(BinaryOperator {
+                        left_size: mem::take(left).unwrap(),
+                        operator: steal(operator),
+                        right_size: mem::take(right).unwrap(),
+                    })))
+                }
+            );
+        };
+    }
+
+    macro_rules! match_fn_transform{
+        ($name:ident, $from:ident, $to:ident)  => {
+            match_fn!($name, NonTerminal::$from(constant), {
+                NonTerminal::$to(Option::Some(mem::take(constant).unwrap()))
+            });
+        }
+    }
+
+    macro_rules! default_expression_match{
+        ($name3:ident,$name1:ident,$left:ident,$right:ident, $operator:pat) => {
+            match_fn_binary!($name3, $left, $left, $right,$operator);
+            match_fn_transform!($name1, $right, $left);
+        };
+    }
+
+
+    default_expression_match!(multiplicative_3, multiplicative_1,
+        MultiplicativeExpression, PrimaryExpression,
+        TokenType::Star | TokenType::Slash | TokenType::Percent);
+
+    default_expression_match!(additive_3, additive_1,
+        AdditiveExpression, MultiplicativeExpression,
+        TokenType::Plus | TokenType::Minus);
+
+
     fn steal<T>(item: &mut T) -> T {
         unsafe {
             let mut deref: T = MaybeUninit::zeroed().assume_init();
@@ -236,37 +329,25 @@ mod matching_functions {
     }
 
     match_fn!(
-        add_sub_3,
-        NonTerminal::AdditiveExpression(left),
-        NonTerminal::Terminal(
-            operator @ Token {
-                t_type: TokenType::Plus | TokenType::Minus,
-                ..
-            },
-        ),
-        NonTerminal::AdditiveExpression(right),
-        {
-            NonTerminal::AdditiveExpression(Option::Some(Box::new(BinaryOperator {
-                left_size: mem::take(left).unwrap(),
-                operator: steal(operator),
-                right_size: mem::take(right).unwrap(),
-            })))
-        }
-    );
-
-    match_fn!(add_sub_1, NonTerminal::PrimaryExpression(constant), {
-        NonTerminal::AdditiveExpression(Option::Some(mem::take(constant).unwrap()))
-    });
-
-    match_fn!(
         constant_1,
         NonTerminal::Terminal(
             token @ Token {
                 t_type:
                     TokenType::CharLiteral(_)
                     | TokenType::StringLiteral(_)
+                    | TokenType::BoolLiteral(_)
+                    | TokenType::F32Literal(_)
+                    | TokenType::F64Literal(_)
+                    | TokenType::I8Literal(_)
+                    | TokenType::I16Literal(_)
                     | TokenType::I32Literal(_)
-                    | TokenType::I64Literal(_),
+                    | TokenType::I64Literal(_)
+                    | TokenType::I128Literal(_)
+                    | TokenType::U8Literal(_)
+                    | TokenType::U16Literal(_)
+                    | TokenType::U32Literal(_)
+                    | TokenType::U64Literal(_)
+                    | TokenType::U128Literal(_),
                 ..
             },
         ),
