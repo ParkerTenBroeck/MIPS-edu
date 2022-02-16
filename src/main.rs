@@ -1,7 +1,7 @@
 mod parsing_lexer;
 //mod mtest;
 
-use crate::parsing_lexer::parser::Parser;
+use crate::parsing_lexer::parser::{Parser, PrintVisitor, TreeNode};
 use crate::parsing_lexer::tokenizer::Tokenizer;
 
 
@@ -21,5 +21,14 @@ fn main() {
 
     let result = parser.parse();
 
-    println!("{:?}", result);
+    match result {
+        Ok(ok) => {
+            let mut test = PrintVisitor::new();
+            ok.accept(Box::new(&mut test));
+            println!("{}", ok);
+        }
+        Err(err) => {
+            println!("{}", err);
+        }
+    }
 }
