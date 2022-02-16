@@ -299,6 +299,13 @@ impl<'a> Parser<'a> {
 
         let mut matched = false;
         let mut index: usize = 0;
+
+        let mut look_ahead_index = index;
+
+        let mut last_match = 0;
+        let mut last_match_index = index;
+        let mut look_ahead = false;
+
         'main_loop: loop {
             let mut cont = matched;
 
@@ -318,11 +325,12 @@ impl<'a> Parser<'a> {
 
             println!("index: {}  = {:?}", index, self.non_terminal_stack);
 
+            let mut i = -1;
             for reducer in &mut reducers {
+                i += 1;
                 let num = reducer.needed;
                 let reduce = reducer.function;
                 let size = self.non_terminal_stack.len();
-                //println!("stack slice {:?}", self.get_stack_slice(num, index));
 
                 match reduce(self.get_stack_slice(num, index)) {
                     ReducerResponse::Reduce(response_val) => {
@@ -334,38 +342,52 @@ impl<'a> Parser<'a> {
 
                         self.non_terminal_stack.insert(size - index, response_val);
 
-                        index = 0;
+
                         matched = true;
+
+                        //last_match = i;
+                        //last_match_index = size;
+                        look_ahead = index != 0;
+                        index = 0;
+
                         continue 'main_loop;
                     }
                     ReducerResponse::PossibleMatch => {
                         println!("Possible Match");
-                        if cont {
+                        if cont{
+                            look_ahead = true;
                             continue 'main_loop;
                         } else {
                             continue;
                         }
                     }
                     ReducerResponse::NoMatch => {
-                        for s in 1..size {
-                            match reduce(self.get_stack_slice(s, index)) {
-                                ReducerResponse::Reduce(_) => {}
-                                ReducerResponse::PossibleMatch => {
-                                    println!("Possible Match 2");
-                                    if cont {
-                                        continue 'main_loop;
-                                    } else {
-                                        continue;
+                        //if look_ahead{
+
+                        //}else{
+                        if !look_ahead{
+                            for s in 1..size {
+                                match reduce(self.get_stack_slice(s, index)) {
+                                    ReducerResponse::Reduce(_) => {}
+                                    ReducerResponse::PossibleMatch => {
+                                        println!("Possible Match 2");
+                                        if cont {
+                                            continue 'main_loop;
+                                        } else {
+                                            continue;
+                                        }
                                     }
+                                    ReducerResponse::NoMatch => {}
                                 }
-                                ReducerResponse::NoMatch => {}
                             }
                         }
+                        //}
                         continue;
                     }
                 }
             }
             index += 1;
+            //look_ahead_index = index - last_match_index;
             println!("No Match");
 
             if !cont {
