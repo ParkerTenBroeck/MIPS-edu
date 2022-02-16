@@ -15,21 +15,6 @@ enum ReducerResponse {
 #[allow(dead_code)]
 enum NonTerminal {
     Terminal(Token),
-    PrimaryExpression(Option<Box<dyn TreeNode>>),
-    PostFixExpression(Option<Box<dyn TreeNode>>),
-    UnaryExpression(Option<Box<dyn TreeNode>>),
-    CastExpression(Option<Box<dyn TreeNode>>),
-    MultiplicativeExpression(Option<Box<dyn TreeNode>>),
-    AdditiveExpression(Option<Box<dyn TreeNode>>),
-    ShiftExpression(Option<Box<dyn TreeNode>>),
-    RelationalExpression(Option<Box<dyn TreeNode>>),
-    EqualityExpression(Option<Box<dyn TreeNode>>),
-    AndExpression(Option<Box<dyn TreeNode>>),
-    ExclusiveOrExpression(Option<Box<dyn TreeNode>>),
-    InclusiveOrExpression(Option<Box<dyn TreeNode>>),
-    LogicalAndExpression(Option<Box<dyn TreeNode>>),
-    LogicalOrExpression(Option<Box<dyn TreeNode>>),
-    AssignmentExpression(Option<Box<dyn TreeNode>>),
     Expression(Option<Box<dyn TreeNode>>),
     Program(Option<Program>),
 }
@@ -233,47 +218,26 @@ impl<'a> Parser<'a> {
                     .push_front(Reducer::new(matching_functions::$name, $num));
             };
         }
-        add_reducer!(expression_1, 1);
-        add_reducer!(assignment_1, 1);
-        add_reducer!(logical_or_1, 1);
-        add_reducer!(logical_or_3, 3);
-        add_reducer!(logical_and_1, 1);
-        add_reducer!(logical_and_3, 3);
-        add_reducer!(or_1, 1);
-        add_reducer!(or_3, 3);
-        add_reducer!(xor_1, 1);
-        add_reducer!(xor_3, 3);
-        add_reducer!(and_1, 1);
-        add_reducer!(and_3, 3);
-        add_reducer!(equality_1, 1);
-        add_reducer!(equality_3, 3);
-        add_reducer!(relational_1, 1);
-        add_reducer!(relational_3, 3);
-        add_reducer!(shift_1, 1);
-        add_reducer!(shift_3, 3);
 
-        add_reducer!(additive_1, 1);
-        add_reducer!(multiplicative_1, 1);
+        add_reducer!(assignment_3, 3);
+
+        add_reducer!(logical_or_3, 3);
+        add_reducer!(logical_and_3, 3);
+        add_reducer!(or_3, 3);
+        add_reducer!(xor_3, 3);
+        add_reducer!(and_3, 3);
+        add_reducer!(equality_3, 3);
+        add_reducer!(relational_3, 3);
+        add_reducer!(shift_3, 3);
 
         add_reducer!(unary_cast_2, 2);
 
         add_reducer!(additive_3, 3);
         add_reducer!(multiplicative_3, 3);
 
-        add_reducer!(cast_1, 1);
-
-        add_reducer!(assignment_3, 3);
-
-        add_reducer!(unary_1, 1);
-        add_reducer!(postfix_1, 1);
         add_reducer!(primary_const_1, 1);
         add_reducer!(primary_ident_1, 1);
         add_reducer!(primary_expr_3, 3);
-
-        add_reducer!(postfix_acc_3, 3);
-        add_reducer!(postfix_arr_4, 4);
-        add_reducer!(postfix_func_3, 3);
-        add_reducer!(postfix_func_4, 4);
 
         return tmp;
     }
@@ -365,7 +329,7 @@ impl<'a> Parser<'a> {
                         //if look_ahead{
 
                         //}else{
-                        if !look_ahead{
+                        //if !look_ahead{
                             for s in 1..size {
                                 match reduce(self.get_stack_slice(s, index)) {
                                     ReducerResponse::Reduce(_) => {}
@@ -380,7 +344,7 @@ impl<'a> Parser<'a> {
                                     ReducerResponse::NoMatch => {}
                                 }
                             }
-                        }
+                        //}
                         //}
                         continue;
                     }
@@ -489,10 +453,10 @@ mod matching_functions {
         };
     }
 
-    match_fn_transform!(assignment_1, LogicalOrExpression, AssignmentExpression);
+    match_fn_transform!(assignment_1, Expression, Expression);
     match_fn!(
         assignment_3,
-        NonTerminal::UnaryExpression(left),
+        NonTerminal::Expression(left),
         NonTerminal::Terminal(
             operator @ Token {
                 t_type:
@@ -510,9 +474,9 @@ mod matching_functions {
                 ..
             },
         ),
-        NonTerminal::LogicalOrExpression(right),
+        NonTerminal::Expression(right),
         {
-            NonTerminal::AssignmentExpression(Option::Some(Box::new(BinaryOperator {
+            NonTerminal::Expression(Option::Some(Box::new(BinaryOperator {
                 left_size: left.take().unwrap(),
                 operator: steal(operator),
                 right_size: right.take().unwrap(),
@@ -520,11 +484,11 @@ mod matching_functions {
         }
     );
 
-    match_fn_transform!(postfix_1, PrimaryExpression, PostFixExpression);
+    match_fn_transform!(postfix_1, Expression, Expression);
 
     match_fn!(
         postfix_arr_4,
-        NonTerminal::PostFixExpression(arr),
+        NonTerminal::Expression(arr),
         NonTerminal::Terminal(
             lbra @ Token {
                 t_type: TokenType::LBracket,
@@ -538,12 +502,12 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::PostFixExpression(None) }
+        { NonTerminal::Expression(None) }
     );
 
     match_fn!(
         postfix_func_4,
-        NonTerminal::PostFixExpression(arr),
+        NonTerminal::Expression(arr),
         NonTerminal::Terminal(
             lpar @ Token {
                 t_type: TokenType::LPar,
@@ -557,12 +521,12 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::PostFixExpression(None) }
+        { NonTerminal::Expression(None) }
     );
 
     match_fn!(
         postfix_func_3,
-        NonTerminal::PostFixExpression(func),
+        NonTerminal::Expression(func),
         NonTerminal::Terminal(
             lpar @ Token {
                 t_type: TokenType::LPar,
@@ -575,12 +539,12 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::PostFixExpression(None) }
+        { NonTerminal::Expression(None) }
     );
 
     match_fn!(
         postfix_acc_3,
-        NonTerminal::PostFixExpression(item),
+        NonTerminal::Expression(item),
         NonTerminal::Terminal(
             lpar @ Token {
                 t_type: TokenType::Arrow | TokenType::Dot,
@@ -593,52 +557,52 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::PostFixExpression(None) }
+        { NonTerminal::Expression(None) }
     );
 
-    match_fn_transform!(unary_1, PostFixExpression, UnaryExpression);
+    match_fn_transform!(unary_1, Expression, Expression);
     match_fn!(unary_cast_2,
     NonTerminal::Terminal(operator @ Token{
         t_type: TokenType::Star | TokenType::Minus | TokenType::BitwiseNot, ..
-    }), NonTerminal::CastExpression(val),
+    }), NonTerminal::Expression(val),
         {
-        NonTerminal::UnaryExpression(Some(Box::new(UnaryOperator{
+        NonTerminal::Expression(Some(Box::new(UnaryOperator{
                 expresion: val.take().unwrap(),
                 operator: steal(operator),
             })))
     });
 
-    match_fn_transform!(cast_1, UnaryExpression, CastExpression);
+    match_fn_transform!(cast_1, Expression, Expression);
 
     default_expression_match!(
         multiplicative_3,
         multiplicative_1,
-        MultiplicativeExpression,
-        CastExpression,
+        Expression,
+        Expression,
         TokenType::Star | TokenType::Slash | TokenType::Percent
     );
 
     default_expression_match!(
         additive_3,
         additive_1,
-        AdditiveExpression,
-        MultiplicativeExpression,
+        Expression,
+        Expression,
         TokenType::Plus | TokenType::Minus
     );
 
     default_expression_match!(
         shift_3,
         shift_1,
-        ShiftExpression,
-        AdditiveExpression,
+        Expression,
+        Expression,
         TokenType::ShiftRight | TokenType::ShiftLeft
     );
 
     default_expression_match!(
         relational_3,
         relational_1,
-        RelationalExpression,
-        ShiftExpression,
+        Expression,
+        Expression,
         TokenType::LessThan
             | TokenType::GreaterThan
             | TokenType::LessThanEq
@@ -648,48 +612,48 @@ mod matching_functions {
     default_expression_match!(
         equality_3,
         equality_1,
-        EqualityExpression,
-        RelationalExpression,
+        Expression,
+        Expression,
         TokenType::Equals | TokenType::NotEquals
     );
 
     default_expression_match!(
         and_3,
         and_1,
-        AndExpression,
-        EqualityExpression,
+        Expression,
+        Expression,
         TokenType::Ampersand
     );
 
     default_expression_match!(
         xor_3,
         xor_1,
-        ExclusiveOrExpression,
-        AndExpression,
+        Expression,
+        Expression,
         TokenType::BitwiseXor
     );
 
     default_expression_match!(
         or_3,
         or_1,
-        InclusiveOrExpression,
-        ExclusiveOrExpression,
+        Expression,
+        Expression,
         TokenType::BitwiseOr
     );
 
     default_expression_match!(
         logical_and_3,
         logical_and_1,
-        LogicalAndExpression,
-        InclusiveOrExpression,
+        Expression,
+        Expression,
         TokenType::LogicalAnd
     );
 
     default_expression_match!(
         logical_or_3,
         logical_or_1,
-        LogicalOrExpression,
-        LogicalAndExpression,
+        Expression,
+        Expression,
         TokenType::LogicalOr
     );
 
@@ -726,7 +690,7 @@ mod matching_functions {
             },
         ),
         {
-            NonTerminal::PrimaryExpression(Option::Some(Box::new(Terminal {
+            NonTerminal::Expression(Option::Some(Box::new(Terminal {
                 constant: steal(token),
             })))
         }
@@ -740,7 +704,7 @@ mod matching_functions {
             },
         ),
         {
-            NonTerminal::PrimaryExpression(Option::Some(Box::new(Terminal {
+            NonTerminal::Expression(Option::Some(Box::new(Terminal {
                 constant: steal(token),
             })))
         }
@@ -760,8 +724,8 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::PrimaryExpression(expression.take()) }
+        { NonTerminal::Expression(expression.take()) }
     );
 
-    match_fn_transform!(expression_1, AssignmentExpression, Expression);
+    match_fn_transform!(expression_1, Expression, Expression);
 }
