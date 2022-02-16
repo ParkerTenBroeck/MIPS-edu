@@ -1,5 +1,7 @@
 'Test' '\x2t'
 
+hello = (8+4/2+1) | 12.5 > 12-asd && true
+hello = (8+4/2+1) | 12.5 > 12-asd && true
 
 '\x41'
 't'

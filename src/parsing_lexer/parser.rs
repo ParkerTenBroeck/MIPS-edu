@@ -79,35 +79,33 @@ impl Reducer {
     }
 }
 
-pub trait Visitor{
-    fn visit_binary_op(&mut self, node: &BinaryOperator){
-
-    }
-    fn visit_terminal(&mut self, terminal: &Token){
-
-    }
-    fn visit_unknown(&mut self){
-
-    }
+pub trait Visitor {
+    fn visit_binary_op(&mut self, node: &BinaryOperator) {}
+    fn visit_unary_op(&mut self, node: &UnaryOperator) {}
+    fn visit_terminal(&mut self, terminal: &Token) {}
+    fn visit_unknown(&mut self) {}
 }
-pub struct PrintVisitor{
+
+pub struct PrintVisitor {
     indent: usize,
 }
-impl PrintVisitor{
-    pub fn new() -> Self{
-        PrintVisitor{
-            indent: 0,
-        }
+
+impl PrintVisitor {
+    pub fn new() -> Self {
+        PrintVisitor { indent: 0 }
     }
-    fn print_indent(&self){
-        if self.indent < 1{return}
-        for i in 0..self.indent - 1{
+    fn print_indent(&self) {
+        if self.indent < 1 {
+            return;
+        }
+        for i in 0..self.indent - 1 {
             print!("|  ");
         }
         print!("|--");
     }
 }
-impl Visitor for PrintVisitor{
+
+impl Visitor for PrintVisitor {
     fn visit_binary_op(&mut self, node: &BinaryOperator) {
         self.print_indent();
         self.indent += 1;
@@ -117,16 +115,23 @@ impl Visitor for PrintVisitor{
         node.right_size.accept(Box::new(self));
         self.indent -= 1;
     }
+    fn visit_unary_op(&mut self, node: &UnaryOperator) {
+        self.print_indent();
+        self.indent += 1;
+        println!("Visited Unary");
+        self.visit_terminal(&node.operator);
+        node.expresion.accept(Box::new(self));
+        self.indent -= 1;
+    }
     fn visit_terminal(&mut self, terminal: &Token) {
         self.print_indent();
         println!("Terminal: {}", terminal.t_type);
     }
-    fn visit_unknown(&mut self){
+    fn visit_unknown(&mut self) {
         self.print_indent();
         println!("Visited Unknown");
     }
 }
-
 
 pub trait TreeNode: Debug + Display {
     fn accept(&self, visitor: Box<&mut dyn Visitor>) {
@@ -151,22 +156,23 @@ impl Debug for Token {
     }
 }
 
-/*
 #[derive(Debug)]
-struct UnaryOperator {
-    left_size: Box<dyn TreeNode>,
+pub struct UnaryOperator {
     operator: Token,
-    right_size: Box<dyn TreeNode>,
+    expresion: Box<dyn TreeNode>,
 }
 
 impl Display for UnaryOperator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        write!(f, "({} {})", self.operator, self.expresion)
     }
 }
 
-impl TreeNode for UnaryOperator {}
-*/
+impl TreeNode for UnaryOperator {
+    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+        visitor.visit_unary_op(self);
+    }
+}
 
 #[derive(Debug)]
 pub struct BinaryOperator {
@@ -227,8 +233,8 @@ impl<'a> Parser<'a> {
                     .push_front(Reducer::new(matching_functions::$name, $num));
             };
         }
-        add_reducer!(expression_1,1);
-        add_reducer!(assignment_1,1);
+        add_reducer!(expression_1, 1);
+        add_reducer!(assignment_1, 1);
         add_reducer!(logical_or_1, 1);
         add_reducer!(logical_or_3, 3);
         add_reducer!(logical_and_1, 1);
@@ -245,10 +251,15 @@ impl<'a> Parser<'a> {
         add_reducer!(relational_3, 3);
         add_reducer!(shift_1, 1);
         add_reducer!(shift_3, 3);
+
         add_reducer!(additive_1, 1);
-        add_reducer!(additive_3, 3);
         add_reducer!(multiplicative_1, 1);
+
+        add_reducer!(unary_cast_2, 2);
+
+        add_reducer!(additive_3, 3);
         add_reducer!(multiplicative_3, 3);
+
         add_reducer!(cast_1, 1);
 
         add_reducer!(assignment_3, 3);
@@ -258,7 +269,6 @@ impl<'a> Parser<'a> {
         add_reducer!(primary_const_1, 1);
         add_reducer!(primary_ident_1, 1);
         add_reducer!(primary_expr_3, 3);
-
 
         add_reducer!(postfix_acc_3, 3);
         add_reducer!(postfix_arr_4, 4);
@@ -329,7 +339,7 @@ impl<'a> Parser<'a> {
                         continue 'main_loop;
                     }
                     ReducerResponse::PossibleMatch => {
-                        //println!("Possible Match");
+                        println!("Possible Match");
                         if cont {
                             continue 'main_loop;
                         } else {
@@ -341,6 +351,7 @@ impl<'a> Parser<'a> {
                             match reduce(self.get_stack_slice(s, index)) {
                                 ReducerResponse::Reduce(_) => {}
                                 ReducerResponse::PossibleMatch => {
+                                    println!("Possible Match 2");
                                     if cont {
                                         continue 'main_loop;
                                     } else {
@@ -355,6 +366,7 @@ impl<'a> Parser<'a> {
                 }
             }
             index += 1;
+            println!("No Match");
 
             if !cont {
                 break;
@@ -461,80 +473,119 @@ mod matching_functions {
         NonTerminal::UnaryExpression(left),
         NonTerminal::Terminal(
             operator @ Token {
-                t_type: TokenType::Assignment |
-                    TokenType::AssignmentAdd |
-                    TokenType::AssignmentSub |
-                    TokenType::AssignmentMul |
-                    TokenType::AssignmentDiv |
-                    TokenType::AssignmentMod |
-                    TokenType::AssignmentAnd |
-                    TokenType::AssignmentOr |
-                    TokenType::AssignmentXor |
-                    TokenType::AssignmentShiftRight |
-                    TokenType::AssignmentShiftLeft,
+                t_type:
+                    TokenType::Assignment
+                    | TokenType::AssignmentAdd
+                    | TokenType::AssignmentSub
+                    | TokenType::AssignmentMul
+                    | TokenType::AssignmentDiv
+                    | TokenType::AssignmentMod
+                    | TokenType::AssignmentAnd
+                    | TokenType::AssignmentOr
+                    | TokenType::AssignmentXor
+                    | TokenType::AssignmentShiftRight
+                    | TokenType::AssignmentShiftLeft,
                 ..
             },
         ),
         NonTerminal::LogicalOrExpression(right),
         {
-            NonTerminal::AssignmentExpression(Option::Some(Box::new(BinaryOperator{
+            NonTerminal::AssignmentExpression(Option::Some(Box::new(BinaryOperator {
                 left_size: left.take().unwrap(),
                 operator: steal(operator),
-                right_size: right.take().unwrap()
+                right_size: right.take().unwrap(),
             })))
         }
     );
 
     match_fn_transform!(postfix_1, PrimaryExpression, PostFixExpression);
 
-    match_fn!(postfix_arr_4,
+    match_fn!(
+        postfix_arr_4,
         NonTerminal::PostFixExpression(arr),
         NonTerminal::Terminal(
-            lbra @ Token {t_type: TokenType::LBracket,..},
+            lbra @ Token {
+                t_type: TokenType::LBracket,
+                ..
+            },
         ),
         NonTerminal::Expression(index),
         NonTerminal::Terminal(
-            rbra @ Token {t_type: TokenType::RBracket,..},
-        ),{
-        NonTerminal::PostFixExpression(None)
-    });
+            rbra @ Token {
+                t_type: TokenType::RBracket,
+                ..
+            },
+        ),
+        { NonTerminal::PostFixExpression(None) }
+    );
 
-    match_fn!(postfix_func_4,
+    match_fn!(
+        postfix_func_4,
         NonTerminal::PostFixExpression(arr),
         NonTerminal::Terminal(
-            lpar @ Token {t_type: TokenType::LPar,..},
+            lpar @ Token {
+                t_type: TokenType::LPar,
+                ..
+            },
         ),
         NonTerminal::Expression(index),
         NonTerminal::Terminal(
-            rpar @ Token {t_type: TokenType::RPar,..},
-        ),{
-        NonTerminal::PostFixExpression(None)
-    });
+            rpar @ Token {
+                t_type: TokenType::RPar,
+                ..
+            },
+        ),
+        { NonTerminal::PostFixExpression(None) }
+    );
 
-    match_fn!(postfix_func_3,
+    match_fn!(
+        postfix_func_3,
         NonTerminal::PostFixExpression(func),
         NonTerminal::Terminal(
-            lpar @ Token {t_type: TokenType::LPar,..},
+            lpar @ Token {
+                t_type: TokenType::LPar,
+                ..
+            },
         ),
         NonTerminal::Terminal(
-            rpar @ Token {t_type: TokenType::RPar,..},
-        ),{
-        NonTerminal::PostFixExpression(None)
-    });
+            rpar @ Token {
+                t_type: TokenType::RPar,
+                ..
+            },
+        ),
+        { NonTerminal::PostFixExpression(None) }
+    );
 
-    match_fn!(postfix_acc_3,
+    match_fn!(
+        postfix_acc_3,
         NonTerminal::PostFixExpression(item),
         NonTerminal::Terminal(
-            lpar @ Token {t_type: TokenType::Arrow | TokenType::Dot,..},
+            lpar @ Token {
+                t_type: TokenType::Arrow | TokenType::Dot,
+                ..
+            },
         ),
         NonTerminal::Terminal(
-            rpar @ Token {t_type: TokenType::Identifier(_),..},
-        ),{
-        NonTerminal::PostFixExpression(None)
-    });
-
+            rpar @ Token {
+                t_type: TokenType::Identifier(_),
+                ..
+            },
+        ),
+        { NonTerminal::PostFixExpression(None) }
+    );
 
     match_fn_transform!(unary_1, PostFixExpression, UnaryExpression);
+    match_fn!(unary_cast_2,
+    NonTerminal::Terminal(operator @ Token{
+        t_type: TokenType::Star | TokenType::Minus | TokenType::BitwiseNot, ..
+    }), NonTerminal::CastExpression(val),
+        {
+        NonTerminal::UnaryExpression(Some(Box::new(UnaryOperator{
+                expresion: val.take().unwrap(),
+                operator: steal(operator),
+            })))
+    });
+
     match_fn_transform!(cast_1, UnaryExpression, CastExpression);
 
     default_expression_match!(
@@ -621,7 +672,7 @@ mod matching_functions {
     );
 
     fn steal<T>(item: &mut T) -> T {
-        let test = (8-4*2+1) | 125 > 12 && false;
+        let test = (8 - 4 * 2 + 1) | 125 > 12 && false;
         unsafe {
             let mut deref: T = MaybeUninit::zeroed().assume_init();
             mem::swap(item, &mut deref);
@@ -687,9 +738,7 @@ mod matching_functions {
                 ..
             },
         ),
-        {
-            NonTerminal::PrimaryExpression(expression.take())
-        }
+        { NonTerminal::PrimaryExpression(expression.take()) }
     );
 
     match_fn_transform!(expression_1, AssignmentExpression, Expression);
