@@ -1,8 +1,31 @@
+#[macro_use] extern crate lalrpop_util;
 mod parsing_lexer;
-//mod mtest;
 
-use crate::parsing_lexer::parser::{Parser, PrintVisitor, TreeNode};
-use crate::parsing_lexer::tokenizer::Tokenizer;
+use parsing_lexer::ast::PrintVisitor;
+use parsing_lexer::gen_parser;
+use parsing_lexer::lexer::Lexer;
+use parsing_lexer::tokenizer::Tokenizer;
+
+
+#[test]
+fn calculator4() {
+    let file = std::fs::read_to_string("test2.cl").expect("bruh");
+
+    let tokenizer = Lexer::new(Tokenizer::new(&file));
+    //let tmp = tokenizer.tokenize();
+
+    match gen_parser::ExprParser::new().parse(tokenizer) {
+        Ok(val) => {
+            let mut test = PrintVisitor::new();
+            val.accept(Box::new(&mut test));
+            println!("{}", val);
+        }
+        Err(val) => {
+            println!("{:?}", val);
+        }
+    }
+    //assert_eq!(&format!("{:?}", expr), "((22 * 44) + 66)");
+}
 
 
 fn main() {
@@ -17,6 +40,7 @@ fn main() {
     }
     tokenizer.reset();
 
+    /*
     let mut parser = Parser::new(tokenizer);
 
     let result = parser.parse();
@@ -31,4 +55,5 @@ fn main() {
             println!("{}", err);
         }
     }
+     */
 }

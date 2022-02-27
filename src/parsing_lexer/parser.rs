@@ -15,6 +15,21 @@ enum ReducerResponse {
 #[allow(dead_code)]
 enum NonTerminal {
     Terminal(Token),
+    PrimaryExpression(Option<Box<dyn TreeNode>>),
+    PostFixExpression(Option<Box<dyn TreeNode>>),
+    UnaryExpression(Option<Box<dyn TreeNode>>),
+    CastExpression(Option<Box<dyn TreeNode>>),
+    MultiplicativeExpression(Option<Box<dyn TreeNode>>),
+    AdditiveExpression(Option<Box<dyn TreeNode>>),
+    ShiftExpression(Option<Box<dyn TreeNode>>),
+    RelationalExpression(Option<Box<dyn TreeNode>>),
+    EqualityExpression(Option<Box<dyn TreeNode>>),
+    AndExpression(Option<Box<dyn TreeNode>>),
+    ExclusiveOrExpression(Option<Box<dyn TreeNode>>),
+    InclusiveOrExpression(Option<Box<dyn TreeNode>>),
+    LogicalAndExpression(Option<Box<dyn TreeNode>>),
+    LogicalOrExpression(Option<Box<dyn TreeNode>>),
+    AssignmentExpression(Option<Box<dyn TreeNode>>),
     Expression(Option<Box<dyn TreeNode>>),
     Program(Option<Program>),
 }
@@ -218,26 +233,48 @@ impl<'a> Parser<'a> {
                     .push_front(Reducer::new(matching_functions::$name, $num));
             };
         }
-
-        add_reducer!(assignment_3, 3);
-
+        add_reducer!(expression_1, 1);
+        add_reducer!(assignment_1, 1);
+        add_reducer!(logical_or_1, 1);
         add_reducer!(logical_or_3, 3);
+        add_reducer!(logical_and_1, 1);
         add_reducer!(logical_and_3, 3);
+        add_reducer!(or_1, 1);
         add_reducer!(or_3, 3);
+        add_reducer!(xor_1, 1);
         add_reducer!(xor_3, 3);
+        add_reducer!(and_1, 1);
         add_reducer!(and_3, 3);
+        add_reducer!(equality_1, 1);
         add_reducer!(equality_3, 3);
+        add_reducer!(relational_1, 1);
         add_reducer!(relational_3, 3);
+        add_reducer!(shift_1, 1);
         add_reducer!(shift_3, 3);
 
-        add_reducer!(unary_cast_2, 2);
+
+        add_reducer!(additive_1, 1);
+        add_reducer!(multiplicative_1, 1);
+
+        //add_reducer!(unary_cast_2, 2);
 
         add_reducer!(additive_3, 3);
         add_reducer!(multiplicative_3, 3);
 
+        add_reducer!(cast_1, 1);
+
+        add_reducer!(assignment_3, 3);
+
+        add_reducer!(unary_1, 1);
+        add_reducer!(postfix_1, 1);
         add_reducer!(primary_const_1, 1);
         add_reducer!(primary_ident_1, 1);
         add_reducer!(primary_expr_3, 3);
+
+        add_reducer!(postfix_acc_3, 3);
+        add_reducer!(postfix_arr_4, 4);
+        add_reducer!(postfix_func_3, 3);
+        add_reducer!(postfix_func_4, 4);
 
         return tmp;
     }
@@ -269,11 +306,13 @@ impl<'a> Parser<'a> {
         let mut last_match = 0;
         let mut last_match_index = index;
         let mut look_ahead = false;
+        let mut last_possible_reducer = 0;
+        let mut last_possible_index = 0;
 
         'main_loop: loop {
             let mut cont = matched;
 
-            if !matched && index == 0 {
+            if !matched && index == 0{
                 match self.token_stream.next() {
                     None => {
                         cont |= false;
@@ -287,7 +326,7 @@ impl<'a> Parser<'a> {
             }
             matched = false;
 
-            println!("index: {}  = {:?}", index, self.non_terminal_stack);
+            println!("lookahead: {} index: {}  = {:?}",look_ahead, index, self.non_terminal_stack);
 
             let mut i = -1;
             for reducer in &mut reducers {
@@ -308,18 +347,27 @@ impl<'a> Parser<'a> {
 
 
                         matched = true;
-
                         //last_match = i;
                         //last_match_index = size;
-                        look_ahead = index != 0;
+                        //look_ahead = index > look_ahead_index;
+                        //if look_ahead{
+                        //    index = look_ahead_index;
+                        //}else{
                         index = 0;
+                        //last_possible_reducer = -1;
+                        //last_possible_index = 0;
+                        //}
 
                         continue 'main_loop;
                     }
                     ReducerResponse::PossibleMatch => {
                         println!("Possible Match");
-                        if cont{
-                            look_ahead = true;
+
+                        //last_possible_reducer = i;
+                        //last_possible_index = index;
+                        if cont {
+                            //look_ahead = true;
+                            //look_ahead_index = self.non_terminal_stack.len();
                             continue 'main_loop;
                         } else {
                             continue;
@@ -330,8 +378,13 @@ impl<'a> Parser<'a> {
 
                         //}else{
                         //if !look_ahead{
+                        //if i <= last_possible_reducer {
                             for s in 1..size {
-                                match reduce(self.get_stack_slice(s, index)) {
+                                let mut s: isize = s as isize;
+                                while last_possible_index > size - s as usize - index{
+                                    s -= 1;
+                                }
+                                match reduce(self.get_stack_slice(s as usize, index)) {
                                     ReducerResponse::Reduce(_) => {}
                                     ReducerResponse::PossibleMatch => {
                                         println!("Possible Match 2");
@@ -344,6 +397,7 @@ impl<'a> Parser<'a> {
                                     ReducerResponse::NoMatch => {}
                                 }
                             }
+                        //}
                         //}
                         //}
                         continue;
@@ -453,10 +507,10 @@ mod matching_functions {
         };
     }
 
-    match_fn_transform!(assignment_1, Expression, Expression);
+    match_fn_transform!(assignment_1, LogicalOrExpression, AssignmentExpression);
     match_fn!(
         assignment_3,
-        NonTerminal::Expression(left),
+        NonTerminal::UnaryExpression(left),
         NonTerminal::Terminal(
             operator @ Token {
                 t_type:
@@ -474,9 +528,9 @@ mod matching_functions {
                 ..
             },
         ),
-        NonTerminal::Expression(right),
+        NonTerminal::LogicalOrExpression(right),
         {
-            NonTerminal::Expression(Option::Some(Box::new(BinaryOperator {
+            NonTerminal::AssignmentExpression(Option::Some(Box::new(BinaryOperator {
                 left_size: left.take().unwrap(),
                 operator: steal(operator),
                 right_size: right.take().unwrap(),
@@ -484,11 +538,11 @@ mod matching_functions {
         }
     );
 
-    match_fn_transform!(postfix_1, Expression, Expression);
+    match_fn_transform!(postfix_1, PrimaryExpression, PostFixExpression);
 
     match_fn!(
         postfix_arr_4,
-        NonTerminal::Expression(arr),
+        NonTerminal::PostFixExpression(arr),
         NonTerminal::Terminal(
             lbra @ Token {
                 t_type: TokenType::LBracket,
@@ -502,12 +556,12 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::Expression(None) }
+        { NonTerminal::PostFixExpression(None) }
     );
 
     match_fn!(
         postfix_func_4,
-        NonTerminal::Expression(arr),
+        NonTerminal::PostFixExpression(arr),
         NonTerminal::Terminal(
             lpar @ Token {
                 t_type: TokenType::LPar,
@@ -521,12 +575,12 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::Expression(None) }
+        { NonTerminal::PostFixExpression(None) }
     );
 
     match_fn!(
         postfix_func_3,
-        NonTerminal::Expression(func),
+        NonTerminal::PostFixExpression(func),
         NonTerminal::Terminal(
             lpar @ Token {
                 t_type: TokenType::LPar,
@@ -539,12 +593,12 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::Expression(None) }
+        { NonTerminal::PostFixExpression(None) }
     );
 
     match_fn!(
         postfix_acc_3,
-        NonTerminal::Expression(item),
+        NonTerminal::PostFixExpression(item),
         NonTerminal::Terminal(
             lpar @ Token {
                 t_type: TokenType::Arrow | TokenType::Dot,
@@ -557,52 +611,52 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::Expression(None) }
+        { NonTerminal::PostFixExpression(None) }
     );
 
-    match_fn_transform!(unary_1, Expression, Expression);
+    match_fn_transform!(unary_1, PostFixExpression, UnaryExpression);
     match_fn!(unary_cast_2,
     NonTerminal::Terminal(operator @ Token{
         t_type: TokenType::Star | TokenType::Minus | TokenType::BitwiseNot, ..
-    }), NonTerminal::Expression(val),
+    }), NonTerminal::CastExpression(val),
         {
-        NonTerminal::Expression(Some(Box::new(UnaryOperator{
+        NonTerminal::UnaryExpression(Some(Box::new(UnaryOperator{
                 expresion: val.take().unwrap(),
                 operator: steal(operator),
             })))
     });
 
-    match_fn_transform!(cast_1, Expression, Expression);
+    match_fn_transform!(cast_1, UnaryExpression, CastExpression);
 
     default_expression_match!(
         multiplicative_3,
         multiplicative_1,
-        Expression,
-        Expression,
+        MultiplicativeExpression,
+        CastExpression,
         TokenType::Star | TokenType::Slash | TokenType::Percent
     );
 
     default_expression_match!(
         additive_3,
         additive_1,
-        Expression,
-        Expression,
+        AdditiveExpression,
+        MultiplicativeExpression,
         TokenType::Plus | TokenType::Minus
     );
 
     default_expression_match!(
         shift_3,
         shift_1,
-        Expression,
-        Expression,
+        ShiftExpression,
+        AdditiveExpression,
         TokenType::ShiftRight | TokenType::ShiftLeft
     );
 
     default_expression_match!(
         relational_3,
         relational_1,
-        Expression,
-        Expression,
+        RelationalExpression,
+        ShiftExpression,
         TokenType::LessThan
             | TokenType::GreaterThan
             | TokenType::LessThanEq
@@ -612,48 +666,48 @@ mod matching_functions {
     default_expression_match!(
         equality_3,
         equality_1,
-        Expression,
-        Expression,
+        EqualityExpression,
+        RelationalExpression,
         TokenType::Equals | TokenType::NotEquals
     );
 
     default_expression_match!(
         and_3,
         and_1,
-        Expression,
-        Expression,
+        AndExpression,
+        EqualityExpression,
         TokenType::Ampersand
     );
 
     default_expression_match!(
         xor_3,
         xor_1,
-        Expression,
-        Expression,
+        ExclusiveOrExpression,
+        AndExpression,
         TokenType::BitwiseXor
     );
 
     default_expression_match!(
         or_3,
         or_1,
-        Expression,
-        Expression,
+        InclusiveOrExpression,
+        ExclusiveOrExpression,
         TokenType::BitwiseOr
     );
 
     default_expression_match!(
         logical_and_3,
         logical_and_1,
-        Expression,
-        Expression,
+        LogicalAndExpression,
+        InclusiveOrExpression,
         TokenType::LogicalAnd
     );
 
     default_expression_match!(
         logical_or_3,
         logical_or_1,
-        Expression,
-        Expression,
+        LogicalOrExpression,
+        LogicalAndExpression,
         TokenType::LogicalOr
     );
 
@@ -690,7 +744,7 @@ mod matching_functions {
             },
         ),
         {
-            NonTerminal::Expression(Option::Some(Box::new(Terminal {
+            NonTerminal::PrimaryExpression(Option::Some(Box::new(Terminal {
                 constant: steal(token),
             })))
         }
@@ -704,7 +758,7 @@ mod matching_functions {
             },
         ),
         {
-            NonTerminal::Expression(Option::Some(Box::new(Terminal {
+            NonTerminal::PrimaryExpression(Option::Some(Box::new(Terminal {
                 constant: steal(token),
             })))
         }
@@ -724,8 +778,8 @@ mod matching_functions {
                 ..
             },
         ),
-        { NonTerminal::Expression(expression.take()) }
+        { NonTerminal::PrimaryExpression(expression.take()) }
     );
 
-    match_fn_transform!(expression_1, Expression, Expression);
+    match_fn_transform!(expression_1, AssignmentExpression, Expression);
 }

@@ -1,0 +1,75 @@
+use super::ast::{*}; // (0)
+
+use crate::parsing_lexer::tokenizer::{Token, TokenType};
+
+grammar;
+
+pub Program: Program = {
+
+}
+
+pub Expr:  Box<dyn TreeNode> = {
+    AdditiveExpression,
+};
+
+pub AdditiveExpression:  Box<dyn TreeNode> = { // (1)
+    AdditiveExpression AdditiveOp MultiplicativeExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    MultiplicativeExpression,
+};
+
+AdditiveOp: Token = { // (3)
+    "+" => <>,
+    "-" => <>,
+};
+
+MultiplicativeExpression:  Box<dyn TreeNode> = {
+    MultiplicativeExpression MultiplicativeOp CastExpression => Box::new(BinaryOperator::new(<>)),
+    CastExpression,
+};
+
+MultiplicativeOp: Token = {
+    "*" => <>,
+    "/" => <>,
+};
+
+CastExpression: Box<dyn TreeNode> = {
+    UnaryExpression => <>,
+}
+
+UnaryOp: Token = {
+    "-" => <>,
+    "+" => <>,
+    "*" => <>,
+}
+
+UnaryExpression: Box<dyn TreeNode> = {
+    UnaryOp CastExpression => Box::new(UnaryOperator::new(<>)),
+    PostFixExpression => <>,
+}
+
+PostFixExpression: Box<dyn TreeNode> = {
+    PrimaryExpression => <>,
+}
+
+PrimaryExpression:  Box<dyn TreeNode> = {
+    "NUMBER" => Box::new(Terminal::new(<>)),
+    "(" <Expr> ")"
+};
+
+extern {
+    type Location = usize;
+    type Error = Token;
+
+    enum Token {
+        "[" => Token { t_type: TokenType::LBracket,..},
+        "]" => Token { t_type: TokenType::RBracket,..},
+        "(" => Token { t_type: TokenType::LPar,..},
+        ")" => Token { t_type: TokenType::RPar,..},
+        "NUMBER" => Token { t_type: TokenType::I32Literal(_),..},
+        "*" => Token { t_type: TokenType::Star,..},
+        "+" => Token { t_type: TokenType::Plus,..},
+        "-" => Token { t_type: TokenType::Minus,..},
+        "/" => Token { t_type: TokenType::Slash,..},
+
+    }
+}

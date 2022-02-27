@@ -3,7 +3,7 @@ use std::mem;
 use std::str::Chars;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType{
     VoidKeyword,
     StructKeyword,
@@ -108,7 +108,7 @@ pub enum TokenType{
     ERROR(String)
 }
 
-//#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token{
     pub(in crate::parsing_lexer)  t_type: TokenType,
     size: usize,
@@ -117,6 +117,15 @@ pub struct Token{
     size_real:usize,
     line: usize,
     column: usize
+}
+
+impl Token {
+    pub(crate) fn get_real_size(&self) -> usize {
+        self.size_real
+    }
+    pub(crate) fn get_real_index(&self) -> usize {
+        self.index_real
+    }
 }
 
 //impl Token{
