@@ -1,7 +1,8 @@
 #[macro_use] extern crate lalrpop_util;
 mod parsing_lexer;
 
-use parsing_lexer::ast::PrintVisitor;
+
+use parsing_lexer::ast::*;
 use parsing_lexer::gen_parser;
 use parsing_lexer::lexer::Lexer;
 use parsing_lexer::tokenizer::Tokenizer;
@@ -12,9 +13,8 @@ fn calculator4() {
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
 
     let tokenizer = Lexer::new(Tokenizer::new(&file));
-    //let tmp = tokenizer.tokenize();
 
-    match gen_parser::ExprParser::new().parse(tokenizer) {
+    match gen_parser::ProgramParser::new().parse(tokenizer) {
         Ok(val) => {
             let mut test = PrintVisitor::new();
             val.accept(Box::new(&mut test));

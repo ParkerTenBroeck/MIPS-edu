@@ -1,4 +1,4 @@
-use super::ast::{*}; // (0)
+use super::ast::{*};
 
 use crate::parsing_lexer::tokenizer::{Token, TokenType};
 
@@ -8,16 +8,90 @@ pub Program: Program = {
 
 }
 
-pub Expr:  Box<dyn TreeNode> = {
-    AdditiveExpression,
+FunctionDefinition: FunctionDef = {
+
+}
+
+AssignmentExpression: Box<dyn TreeNode> = {
+    UnaryExpression AssignmentOperator Expression => Box::new(Program{}),
+    Expression => <>
+}
+
+AssignmentOperator: Token = {
+    "=" => <>,
+    "+=" => <>,
+    "-=" => <>,
+    "*=" => <>,
+    "/=" => <>,
+    ">>=" => <>,
+    "<<=" => <>,
+    "&=" => <>,
+    "^=" => <>,
+    "|=" => <>,
+}
+
+TypeSpecifier: TypeSpecifier = {
+
+}
+
+ExpressionStatement: Box<dyn TreeNode> = {
+    <Expression> ";",
+}
+
+Expression:  Box<dyn TreeNode> = {
+    LogicalOrExpression,
 };
 
-pub AdditiveExpression:  Box<dyn TreeNode> = { // (1)
+LogicalOrExpression:  Box<dyn TreeNode> = {
+    LogicalOrExpression "||" LogicalAndExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    LogicalAndExpression,
+};
+
+LogicalAndExpression:  Box<dyn TreeNode> = {
+    LogicalAndExpression "&&" InclusiveOrExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    InclusiveOrExpression,
+};
+
+InclusiveOrExpression:  Box<dyn TreeNode> = {
+    InclusiveOrExpression "|" ExclusiveOrExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    ExclusiveOrExpression,
+};
+
+ExclusiveOrExpression:  Box<dyn TreeNode> = {
+    ExclusiveOrExpression "^" AndExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    AndExpression,
+};
+
+AndExpression:  Box<dyn TreeNode> = {
+    AndExpression "&" EqualityExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    EqualityExpression,
+};
+
+EqualityExpression:  Box<dyn TreeNode> = {
+    EqualityExpression EqualityOp ShiftExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    ShiftExpression,
+};
+EqualityOp: Token = {
+    "<" => <>,
+    ">" => <>,
+    "<=" => <>,
+    ">=" => <>,
+};
+
+ShiftExpression:  Box<dyn TreeNode> = {
+    ShiftExpression ShiftOp AdditiveExpression => Box::new(BinaryOperator::new(<>)), // (2)
+    AdditiveExpression,
+};
+ShiftOp: Token = {
+    ">>" => <>,
+    "<<" => <>,
+};
+
+AdditiveExpression:  Box<dyn TreeNode> = {
     AdditiveExpression AdditiveOp MultiplicativeExpression => Box::new(BinaryOperator::new(<>)), // (2)
     MultiplicativeExpression,
 };
-
-AdditiveOp: Token = { // (3)
+AdditiveOp: Token = {
     "+" => <>,
     "-" => <>,
 };
@@ -26,7 +100,6 @@ MultiplicativeExpression:  Box<dyn TreeNode> = {
     MultiplicativeExpression MultiplicativeOp CastExpression => Box::new(BinaryOperator::new(<>)),
     CastExpression,
 };
-
 MultiplicativeOp: Token = {
     "*" => <>,
     "/" => <>,
@@ -40,6 +113,9 @@ UnaryOp: Token = {
     "-" => <>,
     "+" => <>,
     "*" => <>,
+    "&" => <>,
+    "!" => <>,
+    "~" => <>,
 }
 
 UnaryExpression: Box<dyn TreeNode> = {
@@ -53,7 +129,10 @@ PostFixExpression: Box<dyn TreeNode> = {
 
 PrimaryExpression:  Box<dyn TreeNode> = {
     "NUMBER" => Box::new(Terminal::new(<>)),
-    "(" <Expr> ")"
+    "BOOLEAN" => Box::new(Terminal::new(<>)),
+    "STRING" => Box::new(Terminal::new(<>)),
+    "IDENTIFIER" => Box::new(Terminal::new(<>)),
+    "(" <Expression> ")"
 };
 
 extern {
@@ -61,15 +140,103 @@ extern {
     type Error = Token;
 
     enum Token {
+
+
+        "void" => Token { t_type: TokenType::VoidKeyword,..},
+        "struct" => Token { t_type: TokenType::StructKeyword,..},
+        "asm" => Token { t_type: TokenType::AsmKeyword,..},
+        "const" => Token { t_type: TokenType::ConstKeyword,..},
+        "static" => Token { t_type: TokenType::StaticKeyword,..},
+        "sizeof" => Token { t_type: TokenType::SizeofKeyword,..},
+        "enum" => Token { t_type: TokenType::EnumKeyword,..},
+
+        "if" => Token { t_type: TokenType::IfKeyword,..},
+        "else" => Token { t_type: TokenType::ElseKeyword,..},
+        "while" => Token { t_type: TokenType::WhileKeyword,..},
+        "do" => Token { t_type: TokenType::DoKeyword,..},
+        "return" => Token { t_type: TokenType::ReturnKeyword,..},
+        "for" => Token { t_type: TokenType::ForKeyword,..},
+        "break" => Token { t_type: TokenType::BreakKeyword,..},
+        "switch" => Token { t_type: TokenType::SwitchKeyword,..},
+        "case" => Token { t_type: TokenType::CaseKeyword,..},
+        "goto" => Token { t_type: TokenType::GotoKeyword,..},
+        "restrict" => Token { t_type: TokenType::RestrictKeyword,..},
+
+        "isize" => Token { t_type: TokenType::ISizeKeyword,..},
+        "i8" => Token { t_type: TokenType::I8Keyword,..},
+        "i16" => Token { t_type: TokenType::I16Keyword,..},
+        "i32" => Token { t_type: TokenType::I32Keyword,..},
+        "i64" => Token { t_type: TokenType::I64Keyword,..},
+        "i128" => Token { t_type: TokenType::I128Keyword,..},
+
+        "usize" => Token { t_type: TokenType::USizeKeyword,..},
+        "u8" => Token { t_type: TokenType::U8Keyword,..},
+        "u16" => Token { t_type: TokenType::U16Keyword,..},
+        "u32" => Token { t_type: TokenType::U32Keyword,..},
+        "u64" => Token { t_type: TokenType::U64Keyword,..},
+        "u128" => Token { t_type: TokenType::U128Keyword,..},
+
+        "char" => Token { t_type: TokenType::CharKeyword,..},
+        "char" => Token { t_type: TokenType::CharKeyword,..},
+
+        "{" => Token { t_type: TokenType::LBrace,..},
+        "}" => Token { t_type: TokenType::RBrace,..},
         "[" => Token { t_type: TokenType::LBracket,..},
         "]" => Token { t_type: TokenType::RBracket,..},
         "(" => Token { t_type: TokenType::LPar,..},
         ")" => Token { t_type: TokenType::RPar,..},
-        "NUMBER" => Token { t_type: TokenType::I32Literal(_),..},
+
         "*" => Token { t_type: TokenType::Star,..},
         "+" => Token { t_type: TokenType::Plus,..},
         "-" => Token { t_type: TokenType::Minus,..},
         "/" => Token { t_type: TokenType::Slash,..},
+        "%" => Token { t_type: TokenType::Percent,..},
+        "&" => Token { t_type: TokenType::Ampersand,..},
+        "~" => Token { t_type: TokenType::BitwiseNot,..},
+        "|" => Token { t_type: TokenType::BitwiseOr,..},
+        "^" => Token { t_type: TokenType::BitwiseXor,..},
+        "<<" => Token { t_type: TokenType::ShiftLeft,..},
+        ">>" => Token { t_type: TokenType::ShiftRight,..},
+        "!" => Token { t_type: TokenType::LogicalNot,..},
+        "&&" => Token { t_type: TokenType::LogicalAnd,..},
+        "||" => Token { t_type: TokenType::LogicalOr,..},
 
+
+        "." => Token { t_type: TokenType::Dot,..},
+        "->" => Token { t_type: TokenType::Arrow,..},
+        "," => Token { t_type: TokenType::Comma,..},
+        ":" => Token { t_type: TokenType::Colon,..},
+        ";" => Token { t_type: TokenType::Semicolon,..},
+        "?" => Token { t_type: TokenType::QuestionMark,..},
+        "..." => Token { t_type: TokenType::DotDotDot,..},
+        "++" => Token { t_type: TokenType::Increment,..},
+        "--" => Token { t_type: TokenType::Decrement,..},
+
+
+        "<" => Token { t_type: TokenType::LessThan,..},
+        "<=" => Token { t_type: TokenType::LessThanEq,..},
+        ">" => Token { t_type: TokenType::GreaterThan,..},
+        ">=" => Token { t_type: TokenType::GreaterThanEq,..},
+        "==" => Token { t_type: TokenType::Equals,..},
+        "!=" => Token { t_type: TokenType::NotEquals,..},
+
+
+        "+=" => Token { t_type: TokenType::AssignmentAdd,..},
+        "-=" => Token { t_type: TokenType::AssignmentSub,..},
+        "*=" => Token { t_type: TokenType::AssignmentMul,..},
+        "/=" => Token { t_type: TokenType::AssignmentDiv,..},
+        "%=" => Token { t_type: TokenType::AssignmentMod,..},
+        "&=" => Token { t_type: TokenType::AssignmentAnd,..},
+        "|=" => Token { t_type: TokenType::AssignmentOr,..},
+        "^=" => Token { t_type: TokenType::AssignmentXor,..},
+        "<<=" => Token { t_type: TokenType::AssignmentShiftLeft,..},
+        ">>=" => Token { t_type: TokenType::AssignmentShiftRight,..},
+        "=" => Token { t_type: TokenType::Assignment,..},
+
+        "IDENTIFIER" => Token { t_type: TokenType::Identifier(_),..},
+        "NUMBER" => Token { t_type: TokenType::I32Literal(_),..},
+        "CHAR" => Token { t_type: TokenType::CharLiteral(_),..},
+        "BOOLEAN" => Token { t_type: TokenType::BoolLiteral(_),..},
+        "STRING" => Token { t_type: TokenType::StringLiteral(_),..},
     }
 }

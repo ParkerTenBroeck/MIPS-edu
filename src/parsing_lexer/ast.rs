@@ -62,15 +62,43 @@ pub trait TreeNode: Debug + Display {
 }
 
 #[derive(Debug)]
-struct Program {}
+pub struct Program {
 
-impl TreeNode for Program {}
+}
+
+fn test(){
+    let test: &mut &mut &&&&&&&&&&mut&&&&&&&&&&&&&&&&&&&&&&&&i32 = &mut &mut &&&&&&&&&&mut&&&&&&&&&&&&&&&&&&&&&&&&2;
+    let t = ************************************test;
+}
+
+
+impl TreeNode for Program {
+    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+
+    }
+}
 
 impl Display for Program {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "")
     }
 }
+
+#[derive(Debug)]
+pub struct FunctionDef{
+
+}
+
+impl TreeNode for FunctionDef{
+
+}
+
+impl Display for FunctionDef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
+    }
+}
+
 
 #[derive(Debug)]
 pub struct UnaryOperator {
