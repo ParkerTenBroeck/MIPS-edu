@@ -1,20 +1,51 @@
 use super::ast::{*};
 
 use crate::parsing_lexer::tokenizer::{Token, TokenType};
+use std::collections::LinkedList;
 
 grammar;
 
-pub Program: Program = {
-
+pub Program: FunctionDef = {
+    FunctionDefinition
 }
 
 FunctionDefinition: FunctionDef = {
+    "fn" <ident:"IDENTIFIER"> "(" ")" "{" <S:StatementList> "}" => FunctionDef::new(ident,S),
+}
 
+TypeSpecifier: () = {
+    "IDENTIFIER"
+
+    "isize",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+
+    "usize",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+
+    "char",
+}
+
+StatementList: LinkedList<Box<dyn TreeNode>> = {
+    <ExpressionStatement> => {let mut test = LinkedList::new();test.push_back(<>) ;test},
+    <mut L:StatementList> <E:ExpressionStatement>  => {L.push_back(E); L},
+}
+
+ExpressionStatement: Box<dyn TreeNode> = {
+    <AssignmentExpression> ";",
 }
 
 AssignmentExpression: Box<dyn TreeNode> = {
-    UnaryExpression AssignmentOperator Expression => Box::new(Program{}),
-    Expression => <>
+    "IDENTIFIER" AssignmentOperator Expression => Box::new(Assignment::assignment(<>)),
+    TypeSpecifier "IDENTIFIER" AssignmentOperator Expression => Box::new(Assignment::declaration(<>)),
+    Expression,
 }
 
 AssignmentOperator: Token = {
@@ -30,13 +61,6 @@ AssignmentOperator: Token = {
     "|=" => <>,
 }
 
-TypeSpecifier: TypeSpecifier = {
-
-}
-
-ExpressionStatement: Box<dyn TreeNode> = {
-    <Expression> ";",
-}
 
 Expression:  Box<dyn TreeNode> = {
     LogicalOrExpression,
@@ -149,6 +173,8 @@ extern {
         "static" => Token { t_type: TokenType::StaticKeyword,..},
         "sizeof" => Token { t_type: TokenType::SizeofKeyword,..},
         "enum" => Token { t_type: TokenType::EnumKeyword,..},
+        "fn" => Token { t_type: TokenType::FnKeyword,..},
+        "pub" => Token { t_type: TokenType::PubKeyword,..},
 
         "if" => Token { t_type: TokenType::IfKeyword,..},
         "else" => Token { t_type: TokenType::ElseKeyword,..},
@@ -176,7 +202,6 @@ extern {
         "u64" => Token { t_type: TokenType::U64Keyword,..},
         "u128" => Token { t_type: TokenType::U128Keyword,..},
 
-        "char" => Token { t_type: TokenType::CharKeyword,..},
         "char" => Token { t_type: TokenType::CharKeyword,..},
 
         "{" => Token { t_type: TokenType::LBrace,..},

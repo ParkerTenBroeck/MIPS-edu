@@ -1,7 +1,10 @@
+use std::collections::LinkedList;
 use std::fmt::{Debug, Display, Formatter};
 use parsing_lexer::tokenizer::{Token, TokenType};
 
 pub trait Visitor {
+    fn visit_function_def(&mut self, _node: &FunctionDef) {}
+    fn visit_assignment(&mut self, _node: &Assignment) {}
     fn visit_binary_op(&mut self, _node: &BinaryOperator) {}
     fn visit_unary_op(&mut self, _node: &UnaryOperator) {}
     fn visit_terminal(&mut self, _terminal: &Token) {}
@@ -27,7 +30,37 @@ impl PrintVisitor {
     }
 }
 
+fn test(){
+}
+
 impl Visitor for PrintVisitor {
+    fn visit_function_def(&mut self, node: &FunctionDef) {
+        self.print_indent();
+        self.indent += 1;
+        println!("Visited Function Definition");
+        self.visit_terminal(&node.ident);
+        for i in node.statements.iter(){
+            //self.visit
+        }
+    }
+    fn visit_assignment(&mut self, node: &Assignment) {
+        self.print_indent();
+        self.indent += 1;
+        println!("Visited Assignment");
+        match node.type_specifier{
+            None => {}
+            Some(_val) => {
+                if node.declaration{
+
+                }
+                //accept this
+            }
+        }
+        self.visit_terminal(&node.ident);
+        self.visit_terminal(&node.operator);
+        node.right_side.accept(Box::new(self));
+        self.indent -= 1;
+    }
     fn visit_binary_op(&mut self, node: &BinaryOperator) {
         self.print_indent();
         self.indent += 1;
@@ -66,14 +99,8 @@ pub struct Program {
 
 }
 
-fn test(){
-    let test: &mut &mut &&&&&&&&&&mut&&&&&&&&&&&&&&&&&&&&&&&&i32 = &mut &mut &&&&&&&&&&mut&&&&&&&&&&&&&&&&&&&&&&&&2;
-    let t = ************************************test;
-}
-
-
 impl TreeNode for Program {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, _visitor: Box<&mut dyn Visitor>) {
 
     }
 }
@@ -86,11 +113,23 @@ impl Display for Program {
 
 #[derive(Debug)]
 pub struct FunctionDef{
+    ident: Token,
+    statements: LinkedList<Box<dyn TreeNode>>,
+}
 
+impl FunctionDef{
+    pub fn new(ident: Token, statements: LinkedList<Box<dyn TreeNode>>) -> Self{
+        FunctionDef{
+            ident,
+            statements,
+        }
+    }
 }
 
 impl TreeNode for FunctionDef{
-
+    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+        visitor.visit_function_def(self);
+    }
 }
 
 impl Display for FunctionDef {
@@ -99,7 +138,7 @@ impl Display for FunctionDef {
     }
 }
 
-
+//Unary Operator
 #[derive(Debug)]
 pub struct UnaryOperator {
     operator: Token,
@@ -126,7 +165,9 @@ impl TreeNode for UnaryOperator {
         visitor.visit_unary_op(self);
     }
 }
+//Unary Operator
 
+//Binary Operator
 #[derive(Debug)]
 pub struct BinaryOperator {
     left_size: Box<dyn TreeNode>,
@@ -162,7 +203,54 @@ impl TreeNode for BinaryOperator {
         visitor.visit_binary_op(self);
     }
 }
+//Binary Operator
 
+//Assignment
+#[derive(Debug)]
+pub struct Assignment{
+    type_specifier: Option<()>,
+    ident: Token,
+    operator: Token,
+    right_side: Box<dyn TreeNode>,
+    declaration: bool,
+}
+
+impl Assignment{
+    pub fn assignment(ident: Token, operator: Token, right_side: Box<dyn TreeNode>) -> Self{
+         Assignment{
+             ident,
+             operator,
+             right_side,
+             type_specifier: None,
+             declaration: false,
+         }
+    }
+    pub fn declaration(type_specifier: (), ident: Token, operator: Token, right_side: Box<dyn TreeNode>) -> Self{
+        Assignment{
+            ident,
+            type_specifier: Some(type_specifier),
+            operator,
+            right_side,
+            declaration: false,
+        }
+    }
+}
+
+impl Display for Assignment {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl TreeNode for Assignment{
+    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+        visitor.visit_assignment(self);
+    }
+}
+
+//Assignment
+
+//Terminal
 #[derive(Debug)]
 pub struct Terminal {
     constant: Token,
@@ -193,3 +281,4 @@ impl TreeNode for Terminal {
         visitor.visit_terminal(&self.constant);
     }
 }
+//Terminal

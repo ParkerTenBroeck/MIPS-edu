@@ -12,6 +12,8 @@ pub enum TokenType{
     StaticKeyword,
     SizeofKeyword,
     EnumKeyword,
+    FnKeyword,
+    PubKeyword,
 
     IfKeyword,
     ElseKeyword,
@@ -879,6 +881,8 @@ impl<'a> Tokenizer<'a>{
             "static" => t_type = TokenType::StaticKeyword,
             "sizeof" => t_type = TokenType::SizeofKeyword,
             "enum" => t_type = TokenType::EnumKeyword,
+            "fn" => t_type = TokenType::FnKeyword,
+            "pub" => t_type = TokenType::PubKeyword,
             "if" => t_type = TokenType::IfKeyword,
             "else" => t_type = TokenType::ElseKeyword,
             "while" => t_type = TokenType::WhileKeyword,
