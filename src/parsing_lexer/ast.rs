@@ -30,9 +30,6 @@ impl PrintVisitor {
     }
 }
 
-fn test(){
-}
-
 impl Visitor for PrintVisitor {
     fn visit_function_def(&mut self, node: &FunctionDef) {
         self.print_indent();
@@ -40,7 +37,7 @@ impl Visitor for PrintVisitor {
         println!("Visited Function Definition");
         self.visit_terminal(&node.ident);
         for i in node.statements.iter(){
-            //self.visit
+            i.accept(Box::new(self));
         }
     }
     fn visit_assignment(&mut self, node: &Assignment) {
@@ -166,6 +163,19 @@ impl TreeNode for UnaryOperator {
     }
 }
 //Unary Operator
+
+//Function Call
+#[derive(Debug)]
+pub struct FunctionCall{
+    ident: Token,
+}
+
+fn test(){
+    let test = test;
+
+}
+
+//Function Call
 
 //Binary Operator
 #[derive(Debug)]

@@ -14,6 +14,9 @@ pub enum TokenType{
     EnumKeyword,
     FnKeyword,
     PubKeyword,
+    SuperKeyword,
+    SelfKeyword,
+
 
     IfKeyword,
     ElseKeyword,
@@ -69,6 +72,7 @@ pub enum TokenType{
     Arrow,
     Comma,
     Colon,
+    ColonColon,
     Semicolon,
     QuestionMark,
     DotDotDot,
@@ -883,6 +887,8 @@ impl<'a> Tokenizer<'a>{
             "enum" => t_type = TokenType::EnumKeyword,
             "fn" => t_type = TokenType::FnKeyword,
             "pub" => t_type = TokenType::PubKeyword,
+            "self" => t_type = TokenType::SelfKeyword,
+            "super" => t_type = TokenType::SuperKeyword,
             "if" => t_type = TokenType::IfKeyword,
             "else" => t_type = TokenType::ElseKeyword,
             "while" => t_type = TokenType::WhileKeyword,

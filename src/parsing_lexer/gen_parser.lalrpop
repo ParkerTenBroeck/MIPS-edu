@@ -10,7 +10,7 @@ pub Program: FunctionDef = {
 }
 
 FunctionDefinition: FunctionDef = {
-    "fn" <ident:"IDENTIFIER"> "(" ")" "{" <S:StatementList> "}" => FunctionDef::new(ident,S),
+    "fn" <ident:"IDENTIFIER"> "(" ")" "{" <sl:StatementList> "}" => FunctionDef::new(ident,sl),
 }
 
 TypeSpecifier: () = {
@@ -35,7 +35,7 @@ TypeSpecifier: () = {
 
 StatementList: LinkedList<Box<dyn TreeNode>> = {
     <ExpressionStatement> => {let mut test = LinkedList::new();test.push_back(<>) ;test},
-    <mut L:StatementList> <E:ExpressionStatement>  => {L.push_back(E); L},
+    <mut l:StatementList> <e:ExpressionStatement>  => {l.push_back(e); l},
 }
 
 ExpressionStatement: Box<dyn TreeNode> = {
@@ -61,6 +61,11 @@ AssignmentOperator: Token = {
     "|=" => <>,
 }
 
+
+ExpressionList: LinkedList<Box<dyn TreeNode>> = {
+    Expression => {let mut test = LinkedList::new(); test.push_back(<>); test},
+    <mut l:ExpressionList> "," <e:Expression> => {l.push_back(e); l},
+}
 
 Expression:  Box<dyn TreeNode> = {
     LogicalOrExpression,
@@ -95,6 +100,7 @@ EqualityExpression:  Box<dyn TreeNode> = {
     EqualityExpression EqualityOp ShiftExpression => Box::new(BinaryOperator::new(<>)), // (2)
     ShiftExpression,
 };
+
 EqualityOp: Token = {
     "<" => <>,
     ">" => <>,
@@ -175,6 +181,9 @@ extern {
         "enum" => Token { t_type: TokenType::EnumKeyword,..},
         "fn" => Token { t_type: TokenType::FnKeyword,..},
         "pub" => Token { t_type: TokenType::PubKeyword,..},
+        "super" => Token { t_type: TokenType::SuperKeyword,..},
+        "self" => Token { t_type: TokenType::SelfKeyword,..},
+
 
         "if" => Token { t_type: TokenType::IfKeyword,..},
         "else" => Token { t_type: TokenType::ElseKeyword,..},
