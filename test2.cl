@@ -1,6 +1,6 @@
 
 fn test(){
-    test = 12 + 5 * 3 * -2;
+    let i32 test = 2;
     functionCallTest();
-    i32 test = 2;
+    test = 12 + 5 * 3 * -2;
 }

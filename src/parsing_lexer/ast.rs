@@ -44,15 +44,7 @@ impl Visitor for PrintVisitor {
         self.print_indent();
         self.indent += 1;
         println!("Visited Assignment");
-        match node.type_specifier{
-            None => {}
-            Some(_val) => {
-                if node.declaration{
 
-                }
-                //accept this
-            }
-        }
         self.visit_terminal(&node.ident);
         self.visit_terminal(&node.operator);
         node.right_side.accept(Box::new(self));
@@ -170,11 +162,6 @@ pub struct FunctionCall{
     ident: Token,
 }
 
-fn test(){
-    let test = test;
-
-}
-
 //Function Call
 
 //Binary Operator
@@ -218,11 +205,9 @@ impl TreeNode for BinaryOperator {
 //Assignment
 #[derive(Debug)]
 pub struct Assignment{
-    type_specifier: Option<()>,
     ident: Token,
     operator: Token,
     right_side: Box<dyn TreeNode>,
-    declaration: bool,
 }
 
 impl Assignment{
@@ -231,18 +216,7 @@ impl Assignment{
              ident,
              operator,
              right_side,
-             type_specifier: None,
-             declaration: false,
          }
-    }
-    pub fn declaration(type_specifier: (), ident: Token, operator: Token, right_side: Box<dyn TreeNode>) -> Self{
-        Assignment{
-            ident,
-            type_specifier: Some(type_specifier),
-            operator,
-            right_side,
-            declaration: false,
-        }
     }
 }
 

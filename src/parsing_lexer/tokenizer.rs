@@ -236,6 +236,7 @@ impl Iterator for Tokenizer<'_>{
                             '+' => self.state = State::Plus,
                             '*' => self.state = State::Star,
                             '=' => self.state = State::Equal,
+                            ':' => self.state = State::Colon,
 
                             '(' => self.new_token = self.create_token(TokenType::LPar),
                             ')' => self.new_token = self.create_token(TokenType::RPar),
@@ -244,7 +245,6 @@ impl Iterator for Tokenizer<'_>{
                             '[' => self.new_token = self.create_token(TokenType::LBracket),
                             ']' => self.new_token = self.create_token(TokenType::RBracket),
                             ';' => self.new_token = self.create_token(TokenType::Semicolon),
-                            ':' => self.new_token = self.create_token(TokenType::Colon),
                             ',' => self.new_token = self.create_token(TokenType::Comma),
                             '~' => self.new_token = self.create_token(TokenType::BitwiseNot),
                             '?' => self.new_token = self.create_token(TokenType::QuestionMark),
@@ -256,6 +256,12 @@ impl Iterator for Tokenizer<'_>{
                                 let message = format!("Unexpected Char: {}", self.c);
                                 self.new_token = self.create_token(TokenType::ERROR(message));
                             }
+                        }
+                    }
+                    State::Colon => {
+                        match self.c{
+                            ':' => self.default_reset(false, TokenType::ColonColon),
+                            _ => self.default_reset(true, TokenType::Colon),
                         }
                     }
                     State::ShiftLeft => {
@@ -645,6 +651,7 @@ enum State{
     CharLiteralNormal(),
     CharLiteralEscape(),
 
+    Colon,
     Equal,
     Dot(i32),
     Minus,
@@ -907,7 +914,7 @@ impl<'a> Tokenizer<'a>{
             "i16" => t_type = TokenType::I16Keyword,
             "i32" => t_type = TokenType::I32Keyword,
             "i64" => t_type = TokenType::I64Keyword,
-            "i128" => t_type = TokenType::I64Keyword,
+            "i128" => t_type = TokenType::I128Keyword,
             "u8" => t_type = TokenType::U8Keyword,
             "u16" => t_type = TokenType::U16Keyword,
             "u32" => t_type = TokenType::U32Keyword,

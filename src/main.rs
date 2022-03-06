@@ -1,5 +1,6 @@
 #[macro_use] extern crate lalrpop_util;
 mod parsing_lexer;
+mod virtual_cpu;
 
 
 use parsing_lexer::ast::*;
@@ -24,6 +25,7 @@ fn calculator4() {
             println!("{:?}", val);
         }
     }
+
     //assert_eq!(&format!("{:?}", expr), "((22 * 44) + 66)");
 }
 
