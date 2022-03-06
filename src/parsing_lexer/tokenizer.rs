@@ -16,7 +16,7 @@ pub enum TokenType{
     PubKeyword,
     SuperKeyword,
     SelfKeyword,
-
+    LetKeyword,
 
     IfKeyword,
     ElseKeyword,
@@ -889,6 +889,7 @@ impl<'a> Tokenizer<'a>{
             "pub" => t_type = TokenType::PubKeyword,
             "self" => t_type = TokenType::SelfKeyword,
             "super" => t_type = TokenType::SuperKeyword,
+            "let" => t_type = TokenType::LetKeyword,
             "if" => t_type = TokenType::IfKeyword,
             "else" => t_type = TokenType::ElseKeyword,
             "while" => t_type = TokenType::WhileKeyword,
