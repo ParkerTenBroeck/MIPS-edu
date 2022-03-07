@@ -34,9 +34,13 @@ impl Memory{
 
     #[inline(always)]
     pub fn get_u32(&mut self, address: u32) -> u32{
-        use std::convert::TryInto;
         let tmp = (address & 0xFFFF) as usize >> 4;
         self.get_page(address).page[tmp]
+        //32::from_ne_bytes(tmp.try_into().unwrap())
+    }
+    pub fn get_i32(&mut self, address: u32) -> i32{
+        let tmp = (address & 0xFFFF) as usize >> 4;
+        self.get_page(address).page[tmp] as i32
         //32::from_ne_bytes(tmp.try_into().unwrap())
     }
     /*

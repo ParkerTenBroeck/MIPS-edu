@@ -2,7 +2,7 @@
 mod parsing_lexer;
 mod virtual_cpu;
 
-
+use std::thread;
 use std::time::SystemTime;
 use parsing_lexer::ast::*;
 use parsing_lexer::gen_parser;
@@ -11,12 +11,37 @@ use parsing_lexer::tokenizer::Tokenizer;
 use virtual_cpu::cpu::MipsCpu;
 
 
+static mut CPU_TEST: Option<MipsCpu> = Option::None;
+
+
+fn do_it(){
+    #[allow(unused_must_use)]
+    unsafe {
+        CPU_TEST = Option::Some(MipsCpu::new());
+        for i in 0..65536{
+            CPU_TEST.as_mut().unwrap().mem.get_u32(i << 16);
+        }
+
+        let handle = thread::spawn(|| {
+            // some work here
+            let start = SystemTime::now();
+            CPU_TEST.as_mut().unwrap().start();
+            let since_the_epoch = SystemTime::now()
+                .duration_since(start)
+                .expect("Time went backwards");
+            println!("{:?}", since_the_epoch);
+        });
+
+        CPU_TEST.as_mut().unwrap().stop();
+
+        handle.join();
+    }
+}
+
 #[test]
 fn calculator4() {
 
-    let mut test = MipsCpu::new();
-    test.start();
-
+    do_it();
     if true {return;}
 
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
@@ -41,17 +66,7 @@ fn calculator4() {
 fn main() {
 
 
-    let mut test = MipsCpu::new();
-    for i in 0..65536{
-        test.mem.get_u32(i << 16);
-    }
-    let start = SystemTime::now();
-    test.start();
-    let since_the_epoch = SystemTime::now()
-        .duration_since(start)
-        .expect("Time went backwards");
-    println!("{:?}", since_the_epoch);
-
+    do_it();
     if true {return;}
 
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
