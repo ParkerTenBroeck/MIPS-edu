@@ -3,14 +3,22 @@ mod parsing_lexer;
 mod virtual_cpu;
 
 
+use std::time::SystemTime;
 use parsing_lexer::ast::*;
 use parsing_lexer::gen_parser;
 use parsing_lexer::lexer::Lexer;
 use parsing_lexer::tokenizer::Tokenizer;
+use virtual_cpu::cpu::MipsCpu;
 
 
 #[test]
 fn calculator4() {
+
+    let mut test = MipsCpu::new();
+    test.start();
+
+    if true {return;}
+
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
 
     let tokenizer = Lexer::new(Tokenizer::new(&file));
@@ -31,6 +39,21 @@ fn calculator4() {
 
 
 fn main() {
+
+
+    let mut test = MipsCpu::new();
+    for i in 0..65536{
+        test.mem.get_u32(i << 16);
+    }
+    let start = SystemTime::now();
+    test.start();
+    let since_the_epoch = SystemTime::now()
+        .duration_since(start)
+        .expect("Time went backwards");
+    println!("{:?}", since_the_epoch);
+
+    if true {return;}
+
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
     println!("\nPrinting test.cl");
 

@@ -6,12 +6,23 @@ pub struct MipsCpu{
     lo: u32,
     hi: u32,
     running: bool,
-    mem: Memory,
+    pub mem: Memory,
 }
 
+macro_rules! jump_immediate_address{
+    ($expr:expr) => {
+        $expr & 0b00000011111111111111111111111111
+    }
+}
+
+macro_rules! jump_immediate_offset{
+    ($expr:expr) => {
+        ($expr as i32 << 6) >> 4
+    }
+}
 
 impl MipsCpu{
-    fn new() -> Self{
+    pub fn new() -> Self{
         MipsCpu{
             pc: 0,
             reg: [0;32],
@@ -22,28 +33,53 @@ impl MipsCpu{
         }
     }
 
-    fn start(&mut self){
-        self.running = true;
-
-        while{
-            let op = self.mem.get_u32(self.pc);
-
-            
-
-            pc += 4;
-
-            self.running //do while self.running
-        }{}
-    }
-
-    fn stop(&mut self){
+    pub fn stop(&mut self){
         self.running = false;
     }
 
-    fn reset(&mut self){
+    pub fn reset(&mut self){
         self.pc = 0;
         self.reg = [0;32];
         self.lo = 0;
         self.hi = 0;
+    }
+
+    #[allow(arithmetic_overflow)]
+    pub fn start(&mut self){
+        if self.running {return;}
+
+        self.running = true;
+
+        let test: u32 = (4i32 - 8i32) as u32;
+
+        while{
+            let op = self.mem.get_u32(self.pc);
+
+            //prevent overflow
+            self.pc = self.pc.wrapping_add(4);
+
+            match op >> 26{
+                0 => {
+                    match op & 0b111111{
+                        _ => {}
+                    }
+                }
+                //Jump formatted instruction
+                0b000010 => {//jump
+                    //self.pc = self.pc as i32 + jump_immediate_offset!(op);
+                }
+                0b000011 => {//jal
+
+                }
+                0b011010 => {//trap
+
+                }
+                _ => {}
+            }
+            if self.pc == 0 {
+                self.stop();
+            }
+            self.running //do while self.running
+        }{}
     }
 }
