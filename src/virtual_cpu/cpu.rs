@@ -83,6 +83,8 @@ macro_rules! register_a{
     }
 }
 
+
+
 impl MipsCpu{
     pub fn new() -> Self{
         MipsCpu{
@@ -116,13 +118,15 @@ impl MipsCpu{
     }
 
     fn arithmetic_error(&mut self){
-
+        //clike::virtual_cpu::cpu::MipsCpu::start()
     }
 
     #[allow(arithmetic_overflow)]
     pub fn start(&mut self){
         if self.running || !self.finished {return;}
 
+        //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
+        //the version written in c++ seems to be around 17% faster
         //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
         self.mem.copy_into_raw(0, &[0x64027FFF, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000]);
 

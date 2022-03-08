@@ -14,6 +14,7 @@ use virtual_cpu::cpu::MipsCpu;
 static mut CPU_TEST: Option<MipsCpu> = Option::None;
 
 
+
 fn do_it(){
     #[allow(unused_must_use)]
     unsafe {
@@ -22,19 +23,19 @@ fn do_it(){
         //    CPU_TEST.as_mut().unwrap().mem.get_u32_alligned(i << 16);
         //}
 
-        let handle = thread::spawn(|| {
+        //let handle = thread::spawn(|| {
             // some work here
+            println!("start thread");
             let start = SystemTime::now();
             CPU_TEST.as_mut().unwrap().start();
             let since_the_epoch = SystemTime::now()
                 .duration_since(start)
                 .expect("Time went backwards");
             println!("{:?}", since_the_epoch);
-        });
+        //});
 
-        CPU_TEST.as_mut().unwrap().stop();
-
-        handle.join();
+        //CPU_TEST.as_mut().unwrap().stop();
+        //handle.join();
     }
 }
 
