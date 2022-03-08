@@ -18,9 +18,9 @@ fn do_it(){
     #[allow(unused_must_use)]
     unsafe {
         CPU_TEST = Option::Some(MipsCpu::new());
-        for i in 0..65536{
-            CPU_TEST.as_mut().unwrap().mem.get_u32(i << 16);
-        }
+        //for i in 0..65536{
+        //    CPU_TEST.as_mut().unwrap().mem.get_u32_alligned(i << 16);
+        //}
 
         let handle = thread::spawn(|| {
             // some work here
@@ -64,8 +64,6 @@ fn calculator4() {
 
 
 fn main() {
-
-
     do_it();
     if true {return;}
 

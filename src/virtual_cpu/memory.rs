@@ -1,3 +1,4 @@
+use std::{mem, ptr};
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
@@ -5,6 +6,41 @@ const INIT: Option<Box<Page>> = None;
 
 pub struct Memory{
     page_table: Box<[Option<Box<Page>>; SEG_SIZE]>,
+}
+
+
+macro_rules! get_mem {
+    // Arguments are module name and function name of function to test bench
+    ($func_name:ident, $fn_type:ty) => {
+        // The macro will expand into the contents of this block.
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32) -> $fn_type{
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            unsafe{
+                mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                    (&mut self.get_or_make_page(address).page)[tmp]
+            }
+        }
+    };
+}
+
+macro_rules! set_mem {
+    // Arguments are module name and function name of function to test bench
+    ($func_name:ident, $fn_type:ty) => {
+        // The macro will expand into the contents of this block.
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32, data: $fn_type){
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            unsafe{
+                mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                    (&mut self.get_or_make_page(address).page)[tmp] = data;
+            }
+        }
+    };
+}
+
+fn te(){
+
 }
 
 #[allow(dead_code)]
@@ -18,7 +54,13 @@ impl Memory{
 
 
     #[inline(always)]
-    fn get_page(& mut self, address: u32) -> & mut Page {
+    pub fn get_page(&mut self, address: u32) -> Option<&mut Box<Page>> {
+        let addr = (address >> 16) as usize;
+        self.page_table[addr].as_mut()
+    }
+
+    #[inline(always)]
+    pub  fn get_or_make_page(&mut self, address: u32) -> &mut Page {
         let addr = (address >> 16) as usize;
 
         if let Option::None = &mut self.page_table[addr]{
@@ -32,51 +74,62 @@ impl Memory{
         panic!();
     }
 
-    #[inline(always)]
-    pub fn get_u32(&mut self, address: u32) -> u32{
-        let tmp = (address & 0xFFFF) as usize >> 4;
-        self.get_page(address).page[tmp]
-        //32::from_ne_bytes(tmp.try_into().unwrap())
+    pub fn copy_into_raw<T>(&mut self, address: u32, data: &[T]){
+        let size: usize = data.len() * mem::size_of::<T>();
+        unsafe { self.copy_into_unsafe(address, unsafe{mem::transmute(data)}, 0, size); }
     }
-    pub fn get_i32(&mut self, address: u32) -> i32{
-        let tmp = (address & 0xFFFF) as usize >> 4;
-        self.get_page(address).page[tmp] as i32
-        //32::from_ne_bytes(tmp.try_into().unwrap())
+
+    pub unsafe fn copy_into_unsafe(&mut self, address: u32, data: &[u8], start: usize, end: usize){
+        let mut id = start;
+        let mut page = self.get_or_make_page(address);
+        for im in address..address + (end - start) as u32{
+            if im & 0xFFFF == 0 {
+                page = self.get_or_make_page(im);
+            }
+            page.page[(im & 0xFFFF) as usize] = *data.get_unchecked(id);
+            id += 1;
+        }
     }
-    /*
-    pub fn get_u16(&mut self, address: u32) -> u16{
-        use std::convert::TryInto;
-        let test = &self.get_page(address).page[(address & 0xFFFF) as usize..2usize];
-        u16::from_ne_bytes(test.try_into().unwrap())
+
+    pub fn unload_page_at_address(&mut self, address: u32){
+        self.page_table[(address >> 16) as usize] = Option::None;
     }
-    pub fn get_u8(&mut self, address: u32) -> u8{
-        //self.get_page(address).page[(address & 0xFFFFFFFF) as usize]
+    pub fn unload_all_pages(&mut self) {
+        for i in 0..0xFFFF{
+            self.unload_page_at_address(i << 16);
+        }
     }
-    pub fn get_i32(&mut self, address: u32) -> i32{
-        use std::convert::TryInto;
-        let test = &self.get_page(address).page[(address & 0xFFFFFFFF) as usize..4usize];
-        i32::from_ne_bytes(test.try_into().unwrap())
-    }
-    pub fn get_i16(&mut self, address: u32) -> i16{
-        use std::convert::TryInto;
-        let test = &self.get_page(address).page[(address & 0xFFFFFFFF) as usize..2usize];
-        i16::from_ne_bytes(test.try_into().unwrap())
-    }
-    pub fn get_i8(&mut self, address: u32) -> i8{
-        self.get_page(address).page[(address & 0xFFFFFFFF) as usize] as i8
-    }
-    */
+
+    get_mem!(get_i64_alligned, i64);
+    set_mem!(set_i64_alligned, i64);
+    get_mem!(get_u64_alligned, u64);
+    set_mem!(set_u64_alligned, u64);
+
+    get_mem!(get_i32_alligned, i32);
+    set_mem!(set_i32_alligned, i32);
+    get_mem!(get_u32_alligned, u32);
+    set_mem!(set_u32_alligned, u32);
+
+    get_mem!(get_i16_alligned, i16);
+    set_mem!(set_i16_alligned, i16);
+    get_mem!(get_u16_alligned, u16);
+    set_mem!(set_u16_alligned, u16);
+
+    get_mem!(get_i8, i8);
+    set_mem!(set_i8, i8);
+    get_mem!(get_u8, u8);
+    set_mem!(set_u8, u8);
 }
 
 
-struct Page{
-    page: [u32; SEG_SIZE >> 4],
+pub struct Page{
+    page: [u8; SEG_SIZE],
 }
 
 impl Page{
     fn new() -> Self{
         Page{
-            page: [0xdf; SEG_SIZE >> 4]
+            page: [0xdf; SEG_SIZE]
         }
     }
 }
