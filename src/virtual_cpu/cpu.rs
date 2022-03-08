@@ -99,6 +99,10 @@ impl MipsCpu{
         }
     }
 
+    pub fn is_running(&self) -> bool{
+        self.running | !self.finished
+    }
+
     pub fn stop(&mut self){
         self.running = false;
     }
@@ -108,6 +112,11 @@ impl MipsCpu{
         self.reg = [0;32];
         self.lo = 0;
         self.hi = 0;
+    }
+
+    pub fn clear(&mut self){
+        self.reset();
+        self.mem.unload_all_pages();
     }
 
     fn system_call(&mut self, call_id: u32){
@@ -121,6 +130,10 @@ impl MipsCpu{
         //clike::virtual_cpu::cpu::MipsCpu::start()
     }
 
+    fn invalid_op_code(&mut self){
+
+    }
+
     #[allow(arithmetic_overflow)]
     pub fn start(&mut self){
         if self.running || !self.finished {return;}
@@ -128,13 +141,16 @@ impl MipsCpu{
         //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
         //the version written in c++ seems to be around 17% faster
         //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
-        self.mem.copy_into_raw(0, &[0x64027FFF, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000]);
+
+        let test_prog = [0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000];//
+        self.mem.copy_into_raw(0, &test_prog);
+
 
         self.running = true;
         self.finished = false;
 
         while{
-            let op = self.mem.get_u32_alligned(self.pc);
+            let op = self.mem.get_u32_alligned(self.pc);//test_prog[(self.pc >> 2) as usize];//
 
             //if self.reg[1] & 0xFFFFFF == 0{
             //    println!("{:?}", self.reg[1]);
@@ -282,7 +298,7 @@ impl MipsCpu{
                         0b010011 => { //MTLO
                             self.lo = self.reg[register_s!(op)];
                         }
-                        _ => {}
+                        _ => self.invalid_op_code(),
                     }
                 }
                 //Jump formatted instruction
@@ -406,13 +422,9 @@ impl MipsCpu{
                     self.mem.set_u32_alligned((self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32, (self.reg[immediate_t!(op)]) as u32);
                 }
 
-            _ => {
+            _ => self.invalid_op_code(),
+            }
 
-                }
-            }
-            if self.pc == 0 {
-                self.stop();
-            }
             self.running //do while self.running
         }{}
         self.finished = true;

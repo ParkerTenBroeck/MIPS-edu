@@ -2,6 +2,7 @@
 mod parsing_lexer;
 mod virtual_cpu;
 
+use std::io::Read;
 use std::thread;
 use std::time::SystemTime;
 use parsing_lexer::ast::*;
@@ -16,26 +17,66 @@ static mut CPU_TEST: Option<MipsCpu> = Option::None;
 
 
 fn do_it(){
-    #[allow(unused_must_use)]
-    unsafe {
+    unsafe{
         CPU_TEST = Option::Some(MipsCpu::new());
-        //for i in 0..65536{
-        //    CPU_TEST.as_mut().unwrap().mem.get_u32_alligned(i << 16);
-        //}
+    }
 
-        //let handle = thread::spawn(|| {
-            // some work here
-            println!("start thread");
-            let start = SystemTime::now();
-            CPU_TEST.as_mut().unwrap().start();
-            let since_the_epoch = SystemTime::now()
-                .duration_since(start)
-                .expect("Time went backwards");
-            println!("{:?}", since_the_epoch);
-        //});
+    println!("s to start CPU, r to reset CPU, h to halt CPU and e to exit");
+    'main_loop:
+    loop{
+        let mut b:[u8;1] = [0];
+        std::io::stdin().read( b.as_mut_slice());
+        match b[0]{
+            b's' => {
+                unsafe{
+                    if CPU_TEST.as_mut().unwrap().is_running(){
+                        println!("CPU is already running");
+                    }else{
+                        let _handle = thread::spawn(|| {
+                            // some work here
+                            println!("CPU Started");
+                            let start = SystemTime::now();
+                            CPU_TEST.as_mut().unwrap().start();
+                            let since_the_epoch = SystemTime::now()
+                                .duration_since(start)
+                                .expect("Time went backwards");
+                            println!("{:?}", since_the_epoch);
+                            println!("CPU stopping");
+                        });
+                    }
+                }
+            }
+            b'r' => {
+                unsafe{
+                    if CPU_TEST.as_mut().unwrap().is_running() {
+                        println!("Cannot reset CPU while running");
+                    }else{
+                        println!("Reset CPU");
+                        CPU_TEST.as_mut().unwrap().clear();
+                    }
+                }
+            }
+            b'h' => {
+                unsafe{
+                    if CPU_TEST.as_mut().unwrap().is_running() {
+                        println!("Stopping CPU");
+                        CPU_TEST.as_mut().unwrap().stop();
+                    }else{
+                        println!("CPU is not running");
+                    }
+                }
+            }
+            b'e' => {
+                println!("Exiting");
+                break 'main_loop;
+            }
+            b'\n' | b'\r' => {
 
-        //CPU_TEST.as_mut().unwrap().stop();
-        //handle.join();
+            }
+            _ => {
+                println!("Invalid input");
+            }
+        }
     }
 }
 
