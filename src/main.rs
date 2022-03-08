@@ -5,18 +5,14 @@ mod virtual_cpu;
 use std::io::Read;
 use std::thread;
 use std::time::SystemTime;
-use parsing_lexer::ast::*;
-use parsing_lexer::gen_parser;
-use parsing_lexer::lexer::Lexer;
 use parsing_lexer::tokenizer::Tokenizer;
 use virtual_cpu::cpu::MipsCpu;
 
 
 static mut CPU_TEST: Option<MipsCpu> = Option::None;
 
-
-
 fn do_it(){
+
     unsafe{
         CPU_TEST = Option::Some(MipsCpu::new());
     }
@@ -25,7 +21,7 @@ fn do_it(){
     'main_loop:
     loop{
         let mut b:[u8;1] = [0];
-        std::io::stdin().read( b.as_mut_slice());
+        let _result = std::io::stdin().read( b.as_mut_slice());
         match b[0]{
             b's' => {
                 unsafe{
@@ -41,7 +37,7 @@ fn do_it(){
                                 .duration_since(start)
                                 .expect("Time went backwards");
                             println!("{:?}", since_the_epoch);
-                            println!("CPU stopping");
+                            println!("CPU stopping {:?}", test(1));
                         });
                     }
                 }
@@ -81,6 +77,7 @@ fn do_it(){
 }
 
 #[test]
+#[inline(never)]
 fn calculator4() {
 
     do_it();
@@ -104,11 +101,12 @@ fn calculator4() {
     //assert_eq!(&format!("{:?}", expr), "((22 * 44) + 66)");
 }
 
-
 fn main() {
+
     do_it();
     if true {return;}
 
+    /*
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
     println!("\nPrinting test.cl");
 
@@ -120,7 +118,6 @@ fn main() {
     }
     tokenizer.reset();
 
-    /*
     let mut parser = Parser::new(tokenizer);
 
     let result = parser.parse();

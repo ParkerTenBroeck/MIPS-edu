@@ -1,8 +1,8 @@
 use virtual_cpu::memory::Memory;
 
 pub struct MipsCpu{
-    pc: u32,
-    reg: [u32; 32],
+    pub(crate) pc: u32,
+    pub(crate) reg: [u32; 32],
     lo: u32,
     hi: u32,
     running: bool,
@@ -357,15 +357,15 @@ impl MipsCpu{
                         }
                     }
                 }
-                //0b001001 => {//SLTIU
-                //                    self.reg[immediate_t!(op) as u32] = {
-                //                         if (self.reg[immediate_s!(op) as usize] as u32) < (immedite_immedite_unsigned!(op) as u32){
-                //                            1
-                //                         }else{
-                //                             0
-                //                         }
-                //                     }
-                // }
+                0b001001 => {//SLTIU
+                    self.reg[immediate_t!(op)] = {
+                         if (self.reg[immediate_s!(op) as usize] as u32) < (immediate_immediate_unsigned!(op) as u32){
+                            1
+                         }else{
+                             0
+                         }
+                     }
+                }
 
                 // branch instructions
                 0b000100 => {//BEQ

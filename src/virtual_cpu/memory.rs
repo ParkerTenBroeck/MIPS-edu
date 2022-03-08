@@ -1,4 +1,4 @@
-use std::{mem, ptr};
+use std::{mem};
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
@@ -39,10 +39,6 @@ macro_rules! set_mem {
     };
 }
 
-fn te(){
-
-}
-
 #[allow(dead_code)]
 impl Memory{
 
@@ -76,7 +72,7 @@ impl Memory{
 
     pub fn copy_into_raw<T>(&mut self, address: u32, data: &[T]){
         let size: usize = data.len() * mem::size_of::<T>();
-        unsafe { self.copy_into_unsafe(address, unsafe{mem::transmute(data)}, 0, size); }
+        unsafe { self.copy_into_unsafe(address, mem::transmute(data), 0, size); }
     }
 
     pub unsafe fn copy_into_unsafe(&mut self, address: u32, data: &[u8], start: usize, end: usize){
