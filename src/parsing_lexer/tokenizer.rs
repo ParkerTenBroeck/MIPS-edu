@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::mem;
 use std::str::Chars;
+use parsing_lexer::tokenizer::TokenType::Comment;
 
 
 #[derive(Debug, Clone)]
@@ -115,7 +116,16 @@ pub enum TokenType{
     BoolLiteral(bool),
     Identifier(String),
 
+
+    Comment(String),
+
     ERROR(String)
+}
+
+
+pub enum IdentifierMode {
+    Ascii,
+    Unicode,
 }
 
 #[derive(Debug, Clone)]
@@ -130,28 +140,119 @@ pub struct Token{
 }
 
 impl Token {
-    pub(crate) fn get_real_size(&self) -> usize {
+    pub fn get_token_type(&self) -> &TokenType { &self.t_type }
+    pub fn get_real_size(&self) -> usize {
         self.size_real
     }
-    pub(crate) fn get_real_index(&self) -> usize {
+    pub fn get_real_index(&self) -> usize {
         self.index_real
+    }
+    pub fn get_size(&self) -> usize {
+        self.size
+    }
+    pub fn get_index(&self) -> usize {
+        self.index
+    }
+    pub fn get_line(&self) -> usize {
+        self.line
+    }
+    pub fn get_column(&self) -> usize {
+        self.column
     }
 }
 
-//impl Token{
-//    pub fn get_token_type(&self) -> &TokenType{
-//        &self.t_type
-//    }
-//}
 impl Display for Token{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-
         if self.index < -1isize as usize {
             write!(f, "line:{}, size:{}, column:{} type: {:?}",self.line + 1, self.size,self.column, self.t_type)
         }else{
             write!(f, "1")
         }
     }
+}
+
+#[derive(Copy, Clone)]
+struct BufferIndex {
+    index: usize,
+    index_real: usize,
+    line: usize,
+    column: usize,
+}
+
+impl BufferIndex {
+    pub fn new() -> BufferIndex {
+        BufferIndex {
+            index: 0,
+            index_real: 0,
+            line: 0,
+            column: 0,
+        }
+    }
+}
+
+pub struct Tokenizer<'a> {
+    bytes: &'a [u8],
+    iterator: Chars<'a>,
+    iterations: usize,
+
+    c:char,
+    state: State,
+    matching: bool,
+    stop_reset: bool,
+    new_token: Option<Token>,
+
+    current: BufferIndex,
+    start_curr: BufferIndex,
+    last: BufferIndex,
+    escape_start: BufferIndex,
+
+    escape_error:bool,
+    string:String,
+    char_literal:char,
+
+    ident_mode: IdentifierMode,
+}
+
+#[derive(Debug)]
+enum State{
+    Default,
+    CarriageReturn,
+
+    NumberLiteral(i32),
+
+    Identifier,
+    R,
+    RawIdentStart,
+    RawIdentContinue,
+
+    StringStart,
+    StringNormal,
+    StringEscape,
+    CharLiteralStart,
+    CharLiteralNormal(),
+    CharLiteralEscape(),
+
+    LineComment,
+
+    Colon,
+    Equal,
+    Dot(i32),
+    Minus,
+    Bang,
+    LessThan,
+    GreaterThan,
+    And,
+    Or,
+    Xor,
+    Plus,
+    Star,
+    Div,
+    Mod,
+    ShiftLeft,
+    ShiftRight,
+    EscapeCharacter(Box<State>, i32),
+
+    EOF
 }
 
 impl Iterator for Tokenizer<'_>{
@@ -249,12 +350,59 @@ impl Iterator for Tokenizer<'_>{
                             '~' => self.new_token = self.create_token(TokenType::BitwiseNot),
                             '?' => self.new_token = self.create_token(TokenType::QuestionMark),
 
-                            'A'..='Z'|'a'..='z' => {self.state =State::Identifier ;}
+                            'r' => self.state = State::R,
                             '0'..='9' => {self.state = State::NumberLiteral(0);}
 
                             _ => {
-                                let message = format!("Unexpected Char: {}", self.c);
-                                self.new_token = self.create_token(TokenType::ERROR(message));
+                                if self.is_curr_ident_start(){
+                                    self.state = State::Identifier;
+                                }else{
+                                    let message = format!("Unexpected Char: {}", self.c);
+                                    self.new_token = self.create_token(TokenType::ERROR(message));
+                                }
+                            }
+                        }
+                    }
+                    State::LineComment => {
+                        match self.c{
+                            '\n'|'\r' => {
+                                self.matching = true;
+                                let comment = self.curr_str().replacen("//", "", 1);
+                                self.new_token = self.create_token(TokenType::Comment(comment));
+                                self.state = State::Default;
+                            }
+                            _ => {
+                                self.state = State::LineComment;
+                            }
+                        }
+                    }
+                    State::RawIdentStart => {
+                        if self.is_curr_ident_start() {
+                            self.state = State::RawIdentContinue;
+                        }else{
+                            self.default_reset(true, TokenType::ERROR(format!("Raw identifier must be one or more characters")));
+                        }
+                    }
+                    State::RawIdentContinue => {
+                        if self.is_curr_ident_continue() {
+                            self.state = State::RawIdentContinue;
+                        }else{
+                            self.matching = true;
+                            let ident = self.curr_str().replacen("r#", "", 1);
+                            self.new_token = self.create_token(TokenType::Identifier(ident));
+                            self.state = State::Default;
+                        }
+                    }
+                    State::R => {
+                        match self.c{
+                            '#' => {
+                                self.state = State::RawIdentStart;
+                                self.matching = false;
+                            }
+                            _ => {
+                                //assuming r is a valid ident_start character
+                                self.state = State::Identifier;
+                                self.matching = true;
                             }
                         }
                     }
@@ -319,6 +467,7 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::Div =>{
                         match self.c {
+                            '/' => self.state = State::LineComment,
                             '=' => self.default_reset(false, TokenType::AssignmentDiv),
                             _ => self.default_reset(true, TokenType::Slash),
                         }
@@ -383,10 +532,6 @@ impl Iterator for Tokenizer<'_>{
                             _ => {panic!()}
                         }
                         if val == 0 {
-                            //self.escape_start.index = self.last.index;
-                            //self.escape_start.index_real = self.last.index_real;
-                            //self.escape_start.line = self.last.line;
-                            //self.escape_start.column = self.last.column;
                             self.escape_start = self.last;
                             self.escape_error = false;
                         }
@@ -560,16 +705,13 @@ impl Iterator for Tokenizer<'_>{
                         self.state = State::Default;
                     }
                     State::Identifier =>{
-                        match self.c {
-                            'A'..='Z'|'a'..='z'|'_'|'0'..='9' => {
-                                self.state = State::Identifier;
-                            }
-                            _ =>{
-                                self.matching = true;
-                                let ident = self.curr_str();
-                                self.new_token = self.create_identifier_or_keyword(ident);//self.create_token(TokenType::Identifier(ident.to_string()));
-                                self.state = State::Default;
-                            }
+                        if self.is_curr_ident_continue() {
+                            self.state = State::Identifier;
+                        }else{
+                            self.matching = true;
+                            let ident = self.curr_str();
+                            self.new_token = self.create_identifier_or_keyword(ident);//self.create_token(TokenType::Identifier(ident.to_string()));
+                            self.state = State::Default;
                         }
                     }
                     State::NumberLiteral(val) => {
@@ -635,88 +777,13 @@ impl Iterator for Tokenizer<'_>{
     }
 }
 
-#[derive(Debug)]
-enum State{
-    Default,
-    CarriageReturn,
 
-    NumberLiteral(i32),
 
-    Identifier,
-
-    StringStart,
-    StringNormal,
-    StringEscape,
-    CharLiteralStart,
-    CharLiteralNormal(),
-    CharLiteralEscape(),
-
-    Colon,
-    Equal,
-    Dot(i32),
-    Minus,
-    Bang,
-    LessThan,
-    GreaterThan,
-    And,
-    Or,
-    Xor,
-    Plus,
-    Star,
-    Div,
-    Mod,
-    ShiftLeft,
-    ShiftRight,
-    EscapeCharacter(Box<State>, i32),
-
-    EOF
-}
-
-#[derive(Copy, Clone)]
-struct FileIndex{
-    index: usize,
-    index_real: usize,
-    line: usize,
-    column: usize,
-}
-
-impl FileIndex {
-    pub fn new() -> FileIndex{
-        FileIndex{
-            index: 0,
-            index_real: 0,
-            line: 0,
-            column: 0,
-        }
-    }
-}
-
-pub struct Tokenizer<'a> {
-    bytes: &'a [u8],
-    iterator: Chars<'a>,
-    iterations: usize,
-
-    c:char,
-    state: State,
-    matching: bool,
-    stop_reset: bool,
-    new_token: Option<Token>,
-
-    current: FileIndex,
-    start_curr: FileIndex,
-    last: FileIndex,
-    escape_start: FileIndex,
-
-    escape_error:bool,
-    string:String,
-    char_literal:char,
-}
-
-trait Test {
+trait CharsFromBytes {
     fn from_u8(byte: &[u8]) -> Chars;
 }
 
-impl Test for Chars<'_>{
+impl CharsFromBytes for Chars<'_>{
     fn from_u8(byte: &[u8]) -> Chars {
         std::str::from_utf8(byte).expect("").chars()
     }
@@ -730,10 +797,10 @@ impl<'a> Tokenizer<'a>{
             iterations: 0,
             state: State::Default,
 
-            current: FileIndex::new(),
-            last: FileIndex::new(),
-            start_curr: FileIndex::new(),
-            escape_start: FileIndex::new(),
+            current: BufferIndex::new(),
+            last: BufferIndex::new(),
+            start_curr: BufferIndex::new(),
+            escape_start: BufferIndex::new(),
 
             matching: false,
             stop_reset: false,
@@ -741,7 +808,42 @@ impl<'a> Tokenizer<'a>{
             string: String::new(),
             char_literal: '\0',
             escape_error: false,
-            c: '\0'
+            c: '\0',
+
+            ident_mode: IdentifierMode::Unicode,
+        }
+    }
+
+    fn is_curr_ident_start(&self) -> bool{
+        self.is_ident_start(self.c)
+    }
+    fn is_curr_ident_continue(&self) -> bool{
+        self.is_ident_continue(self.c)
+    }
+    fn is_ident_start(&self, c: char) -> bool {
+        return match self.ident_mode{
+            IdentifierMode::Ascii => {
+                match c{
+                    'A'..='Z'|'a'..='z'|'_' => { true }
+                    _ => { false }
+                }
+            }
+            IdentifierMode::Unicode => {
+                unicode_xid::UnicodeXID::is_xid_start(c)
+            }
+        }
+    }
+    fn is_ident_continue(&self, c:char) -> bool{
+        return match self.ident_mode{
+            IdentifierMode::Ascii => {
+                match c{
+                    '0'..='9'|'A'..='Z'|'a'..='z'|'_' => { true }
+                    _ => { false }
+                }
+            }
+            IdentifierMode::Unicode => {
+                unicode_xid::UnicodeXID::is_xid_continue(c)
+            }
         }
     }
 
@@ -751,10 +853,10 @@ impl<'a> Tokenizer<'a>{
         self.iterator = Chars::from_u8(self.bytes);
 
 
-        self.current = FileIndex::new();
-        self.last = FileIndex::new();
-        self.start_curr = FileIndex::new();
-        self.escape_start = FileIndex::new();
+        self.current = BufferIndex::new();
+        self.last = BufferIndex::new();
+        self.start_curr = BufferIndex::new();
+        self.escape_start = BufferIndex::new();
 
         self.matching = false;
         self.stop_reset = false;
@@ -936,7 +1038,7 @@ impl<'a> Tokenizer<'a>{
         self.state = State::Default;
     }
 
-    pub(crate) fn str_from_token(&self, token: &Token) -> String {
+    pub fn str_from_token(&self, token: &Token) -> String {
         String::from_utf8_lossy(&self.bytes[token.index_real..token.index_real + token.size_real]).to_string()
     }
 
@@ -956,6 +1058,16 @@ impl<'a> Tokenizer<'a>{
         self.stop_reset = false;
     }
 
+    /// asdasd5
+    /// asdasd45:
+    /**
+    1
+    2
+
+    3
+     */
+    ///
+    /// asdasd
     pub fn tokenize(&mut self) -> Vec<Token>{
         let mut tokens = Vec::new();
 

@@ -5,6 +5,9 @@ mod virtual_cpu;
 use std::io::Read;
 use std::thread;
 use std::time::SystemTime;
+use parsing_lexer::ast::PrintVisitor;
+use parsing_lexer::gen_parser;
+use parsing_lexer::lexer::Lexer;
 use parsing_lexer::tokenizer::Tokenizer;
 use virtual_cpu::cpu::MipsCpu;
 
@@ -37,7 +40,7 @@ fn do_it(){
                                 .duration_since(start)
                                 .expect("Time went backwards");
                             println!("{:?}", since_the_epoch);
-                            println!("CPU stopping {:?}", test(1));
+                            println!("CPU stopping");
                         });
                     }
                 }
@@ -80,17 +83,21 @@ fn do_it(){
 #[inline(never)]
 fn calculator4() {
 
-    do_it();
-    if true {return;}
-
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
 
-    let tokenizer = Lexer::new(Tokenizer::new(&file));
+    let mut tokenizer = Tokenizer::new(&file);
+    let t = tokenizer.tokenize();
+    for t in t{
+        println!("token: {} string: '{}'", t, tokenizer.str_from_token(&t));
+    }
+
+    tokenizer.reset();
+    let tokenizer = Lexer::new(tokenizer);
 
     match gen_parser::ProgramParser::new().parse(tokenizer) {
         Ok(val) => {
             let mut test = PrintVisitor::new();
-            val.accept(Box::new(&mut test));
+            //val.accept(Box::new(&mut test));
             println!("{}", val);
         }
         Err(val) => {
@@ -102,7 +109,7 @@ fn calculator4() {
 }
 
 fn main() {
-
+    main();
     do_it();
     if true {return;}
 

@@ -71,6 +71,7 @@ dependencies = [
  "lalrpop",
  "lalrpop-util",
  "regex",
+ "unicode-xid",
 ]
 
 [[package]]
