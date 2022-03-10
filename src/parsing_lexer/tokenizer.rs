@@ -268,8 +268,10 @@ impl Iterator for Tokenizer<'_>{
                 }
                 (State::Default, '\0') =>{}
                 (_, '\0') => {
-                    let tmp = self.create_token(TokenType::ERROR(format!("Invalid State at EOF: {:?}", self.state)));
+                    self.matching = true;
+                    let tmp = self.create_token(TokenType::ERROR(format!("Reached EOF while in state: {:?}", self.state)));
                     self.state = State::Default;
+                    self.matching = false;
                     return tmp;
                 }
                 _ => {}
