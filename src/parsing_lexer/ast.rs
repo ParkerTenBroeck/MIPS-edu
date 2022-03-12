@@ -158,6 +158,7 @@ impl TreeNode for UnaryOperator {
 
 //Function Call
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct FunctionCall{
     ident: Token,
 }

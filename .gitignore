@@ -1,3 +1,7 @@
 /target
 /.idea
 /CLike.iml
+
+/gui/.idea
+/gui/target
+/gui/target

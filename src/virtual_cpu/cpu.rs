@@ -99,6 +99,11 @@ impl MipsCpu{
         }
     }
 
+    pub fn get_general_registers(&self) -> &[u32; 32] { &self.reg }
+    pub fn get_hi_register(&self) -> u32 { self.hi }
+    pub fn get_lo_register(&self) -> u32 { self.lo }
+    pub fn get_pc(&self) -> u32 { self.pc }
+
     pub fn is_running(&self) -> bool{
         self.running | !self.finished
     }
@@ -168,6 +173,7 @@ impl MipsCpu{
                             self.reg[register_d!(op)] =
                                 (self.reg[register_s!(op)] as i32 + self.reg[register_t!((op))] as i32) as u32
                         }
+                        #[allow(unreachable_patterns)]
                         0b100000 => { //ADDU
                             self.reg[register_d!(op)] =
                                 self.reg[register_s!(op)] + self.reg[register_t!((op))]
@@ -357,6 +363,7 @@ impl MipsCpu{
                         }
                     }
                 }
+                #[allow(unreachable_patterns)]
                 0b001001 => {//SLTIU
                     self.reg[immediate_t!(op)] = {
                          if (self.reg[immediate_s!(op) as usize] as u32) < (immediate_immediate_unsigned!(op) as u32){

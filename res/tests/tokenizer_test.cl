@@ -1,5 +1,3 @@
-'Test' '\x2t'
-
 hello = (8+4/2+1) | 12.5 > 12-asd && true
 hello = (8+4/2+1) | 12.5 > 12-asd && true
 
@@ -54,6 +52,7 @@ i32 main2(){
     0xFFu8
 
     .
+    ..
     ...
 
     &
@@ -95,3 +94,14 @@ i32 main2(){
 
     "\u{20}"
 }
+r#fn
+" aSD"
+""
+//Comment
+
+'Test' '\x2t'
+"tesこ\こ"
+こ.こ
+
+''  'aa
+test

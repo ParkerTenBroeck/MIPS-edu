@@ -10,7 +10,7 @@ pub struct Memory{
 
 
 macro_rules! get_mem {
-    // Arguments are module name and function name of function to test bench
+    // Arguments are module name and function name of function to tests bench
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
@@ -25,7 +25,7 @@ macro_rules! get_mem {
 }
 
 macro_rules! set_mem {
-    // Arguments are module name and function name of function to test bench
+    // Arguments are module name and function name of function to tests bench
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]

@@ -1,0 +1,369 @@
+use clike::parsing_lexer::tokenizer::IdentifierMode;
+#[allow(unused_imports)]
+use eframe::{egui, epi};
+use eframe::egui::Color32;
+use eframe::egui::ImageData::Color;
+use eframe::egui::text::LayoutJob;
+use crate::syntax_highlighter;
+
+/// View some code with syntax highlighting and selection.
+pub fn code_view_ui(ui: &mut eframe::egui::Ui, mut code: &str) {
+    let language = "rs";
+    let theme = CodeTheme::from_memory(ui.ctx());
+
+    let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {
+        let layout_job = highlight(ui.ctx(), &theme, string, language);
+        // layout_job.wrap_width = wrap_width; // no wrapping
+        ui.fonts().layout_job(layout_job)
+    };
+
+    ui.add(
+        eframe::egui::TextEdit::multiline(&mut code)
+            .font(egui::TextStyle::Monospace) // for cursor height
+            .code_editor()
+            .desired_rows(1)
+            .lock_focus(true)
+            .layouter(&mut layouter),
+    );
+}
+
+/// Memoized Code highlighting
+pub fn highlight(ctx: &egui::Context, theme: &CodeTheme, code: &str, language: &str) -> LayoutJob {
+    impl egui::util::cache::ComputerMut<(&CodeTheme, &str, &str), LayoutJob> for Highlighter {
+        fn compute(&mut self, (theme, code, lang): (&CodeTheme, &str, &str)) -> LayoutJob {
+            self.highlight(theme, code, lang)
+        }
+    }
+
+    type HighlightCache<'a> = egui::util::cache::FrameCache<LayoutJob, Highlighter>;
+
+    let mut memory = ctx.memory();
+    let highlight_cache = memory.caches.cache::<HighlightCache<'_>>();
+    highlight_cache.get((theme, code, language))
+}
+
+// ----------------------------------------------------------------------------
+
+#[cfg(not(feature = "syntect"))]
+#[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(enum_map::Enum)]
+enum TokenType {
+    Comment,
+    Keyword,
+    Literal,
+    StringLiteral,
+    Punctuation,
+    Whitespace,
+}
+
+#[derive(Clone, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(default))]
+pub struct CodeTheme {
+    dark_mode: bool,
+
+    #[cfg(feature = "syntect")]
+    syntect_theme: SyntectTheme,
+
+    #[cfg(not(feature = "syntect"))]
+    formats: enum_map::EnumMap<TokenType, eframe::egui::TextFormat>,
+}
+
+impl Default for CodeTheme {
+    fn default() -> Self {
+        Self::dark()
+    }
+}
+
+impl CodeTheme {
+    pub fn from_style(style: &eframe::egui::Style) -> Self {
+        if style.visuals.dark_mode {
+            Self::dark()
+        } else {
+            Self::light()
+        }
+    }
+
+    pub fn from_memory(ctx: &egui::Context) -> Self {
+        if ctx.style().visuals.dark_mode {
+            ctx.data()
+                .get_persisted(egui::Id::new("dark"))
+                .unwrap_or_else(CodeTheme::dark)
+        } else {
+            ctx.data()
+                .get_persisted(egui::Id::new("light"))
+                .unwrap_or_else(CodeTheme::light)
+        }
+    }
+
+    pub fn store_in_memory(self, ctx: &egui::Context) {
+        if self.dark_mode {
+            ctx.data().insert_persisted(egui::Id::new("dark"), self);
+        } else {
+            ctx.data().insert_persisted(egui::Id::new("light"), self);
+        }
+    }
+}
+
+#[cfg(not(feature = "syntect"))]
+impl CodeTheme {
+    pub fn dark() -> Self {
+        let font_id =eframe::egui::FontId::monospace(12.0);
+        use eframe::egui::{Color32, TextFormat};
+        Self {
+            dark_mode: true,
+            formats: enum_map::enum_map![
+                TokenType::Comment => TextFormat::simple(font_id.clone(), Color32::from_gray(120)),
+                TokenType::Keyword => TextFormat::simple(font_id.clone(), Color32::from_rgb(255, 100, 100)),
+                TokenType::Literal => TextFormat::simple(font_id.clone(), Color32::from_rgb(87, 165, 171)),
+                TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(109, 147, 226)),
+                TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::LIGHT_GRAY),
+                TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
+            ],
+        }
+    }
+
+    pub fn light() -> Self {
+        let font_id =eframe::egui::FontId::monospace(12.0);
+        use eframe::egui::{Color32, TextFormat};
+        Self {
+            dark_mode: false,
+            #[cfg(not(feature = "syntect"))]
+            formats: enum_map::enum_map![
+                TokenType::Comment => TextFormat::simple(font_id.clone(), Color32::GRAY),
+                TokenType::Keyword => TextFormat::simple(font_id.clone(), Color32::from_rgb(235, 0, 0)),
+                TokenType::Literal => TextFormat::simple(font_id.clone(), Color32::from_rgb(153, 134, 255)),
+                TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(37, 203, 105)),
+                TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::DARK_GRAY),
+                TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
+            ],
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal_top(|ui| {
+            let selected_id =eframe::egui::Id::null();
+            let mut selected_tt: TokenType = *ui
+                .data()
+                .get_persisted_mut_or(selected_id, TokenType::Comment);
+
+            ui.vertical(|ui| {
+                ui.set_width(150.0);
+               eframe::egui::widgets::global_dark_light_mode_buttons(ui);
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                ui.scope(|ui| {
+                    for (tt, tt_name) in [
+                        (TokenType::Comment, "// comment"),
+                        (TokenType::Keyword, "keyword"),
+                        (TokenType::Literal, "literal"),
+                        (TokenType::StringLiteral, "\"string literal\""),
+                        (TokenType::Punctuation, "punctuation ;"),
+                        // (TokenType::Whitespace, "whitespace"),
+                    ] {
+                        let format = &mut self.formats[tt];
+                        ui.style_mut().override_font_id = Some(format.font_id.clone());
+                        ui.visuals_mut().override_text_color = Some(format.color);
+                        ui.radio_value(&mut selected_tt, tt, tt_name);
+                    }
+                });
+
+                let reset_value = if self.dark_mode {
+                    CodeTheme::dark()
+                } else {
+                    CodeTheme::light()
+                };
+
+                if ui
+                    .add_enabled(*self != reset_value,eframe::egui::Button::new("Reset theme"))
+                    .clicked()
+                {
+                    *self = reset_value;
+                }
+            });
+
+            ui.add_space(16.0);
+
+            ui.data().insert_persisted(selected_id, selected_tt);
+
+           eframe::egui::Frame::group(ui.style())
+                .margin(egui::Vec2::splat(2.0))
+                .show(ui, |ui| {
+                    // ui.group(|ui| {
+                    ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
+                    ui.spacing_mut().slider_width = 128.0; // Controls color picker size
+                   eframe::egui::widgets::color_picker::color_picker_color32(
+                        ui,
+                        &mut self.formats[selected_tt].color,
+                       eframe::egui::color_picker::Alpha::Opaque,
+                    );
+                });
+        });
+    }
+}
+
+
+
+#[cfg(not(feature = "syntect"))]
+#[derive(Default)]
+struct Highlighter {}
+
+#[cfg(not(feature = "syntect"))]
+impl Highlighter {
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    fn highlight(&self, theme: &CodeTheme, text: &str, _language: &str) -> LayoutJob {
+        // Extremely simple syntax highlighter for when we compile without syntect
+        use clike::parsing_lexer::highlighter_tokenizer::HighlighterTokenizer;
+
+        let mut job = LayoutJob::default();
+        use clike::parsing_lexer::tokenizer::{Tokenizer, Token, TokenType};
+        let mut tokenizer = HighlighterTokenizer::new(
+            Tokenizer::from_str(text).ident_mode(IdentifierMode::Unicode));
+
+        loop {
+            match tokenizer.next(){
+                Option::None => break,
+                Option::Some(val) => {
+
+                    let (t_type, t_data, under) = match val{
+                        Result::Ok(val) =>{
+                            (val.1.t_type, val.0, false)
+                        }
+                        Result::Err(val) =>{
+                            (val.2, val.0, true)
+                        }
+                    };
+                    println!("{:?}", (&t_type, &t_data, &under));
+                    let mut theme = match t_type{
+                        TokenType::StringLiteral(_) |
+                        TokenType::CharLiteral(_) => {
+                            theme.formats[syntax_highlighter::TokenType::StringLiteral].clone()
+                        }
+                        TokenType::Comment(_) => {
+                            theme.formats[syntax_highlighter::TokenType::Comment].clone()
+                        }
+                        TokenType::Identifier(_) => {
+                            theme.formats[syntax_highlighter::TokenType::Literal].clone()
+                        }
+                        TokenType::Whitespace => {
+                            theme.formats[syntax_highlighter::TokenType::Whitespace].clone()
+                        }
+                        _ => {
+                            theme.formats[syntax_highlighter::TokenType::Punctuation].clone()
+                        }
+                    };
+                    if under{
+                        theme.underline.color = Color32::from_rgb(255,0,0);
+                        theme.underline.width = 1.0;
+                    }
+                    job.append(tokenizer.t().str_from_token_data(&t_data), 0.0, theme)
+                }
+            }
+        }
+
+        /*
+        while false && !text.is_empty() {
+            if text.starts_with("//") {
+                let end = text.find('\n').unwrap_or_else(|| text.len());
+                job.append(&text[..end], 0.0, theme.formats[TokenType::Comment].clone());
+                text = &text[end..];
+            } else if text.starts_with('"') {
+                let end = text[1..]
+                    .find('"')
+                    .map(|i| i + 2)
+                    .or_else(|| text.find('\n'))
+                    .unwrap_or_else(|| text.len());
+                job.append(
+                    &text[..end],
+                    0.0,
+                    theme.formats[TokenType::StringLiteral].clone(),
+                );
+                text = &text[end..];
+            } else if text.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+                let end = text[1..]
+                    .find(|c: char| !c.is_ascii_alphanumeric())
+                    .map_or_else(|| text.len(), |i| i + 1);
+                let word = &text[..end];
+                let tt = if is_keyword(word) {
+                    TokenType::Keyword
+                } else {
+                    TokenType::Literal
+                };
+                job.append(word, 0.0, theme.formats[tt].clone());
+                text = &text[end..];
+            } else if text.starts_with(|c: char| c.is_ascii_whitespace()) {
+                let end = text[1..]
+                    .find(|c: char| !c.is_ascii_whitespace())
+                    .map_or_else(|| text.len(), |i| i + 1);
+                job.append(
+                    &text[..end],
+                    0.0,
+                    theme.formats[TokenType::Whitespace].clone(),
+                );
+                text = &text[end..];
+            } else {
+                let mut it = text.char_indices();
+                it.next();
+                let end = it.next().map_or(text.len(), |(idx, _chr)| idx);
+                job.append(
+                    &text[..end],
+                    0.0,
+                    theme.formats[TokenType::Punctuation].clone(),
+                );
+                text = &text[end..];
+            }
+        }
+         */
+
+        job
+    }
+}
+
+#[cfg(not(feature = "syntect"))]
+#[allow(dead_code)]
+fn is_keyword(word: &str) -> bool {
+    matches!(
+        word,
+        "as" | "async"
+            | "await"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+    )
+}

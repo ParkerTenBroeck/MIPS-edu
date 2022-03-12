@@ -1,6 +1,7 @@
 pub mod tokenizer;
 pub mod ast;
 pub mod lexer;
+pub mod highlighter_tokenizer;
 //pub mod parser;
 
 

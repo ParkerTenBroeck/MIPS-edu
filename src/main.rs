@@ -1,14 +1,14 @@
 #[macro_use] extern crate lalrpop_util;
-mod parsing_lexer;
-mod virtual_cpu;
+pub mod parsing_lexer;
+pub mod virtual_cpu;
 
 use std::io::Read;
 use std::thread;
 use std::time::SystemTime;
-use parsing_lexer::ast::PrintVisitor;
-use parsing_lexer::gen_parser;
-use parsing_lexer::lexer::Lexer;
-use parsing_lexer::tokenizer::Tokenizer;
+//use parsing_lexer::ast::PrintVisitor;
+//use parsing_lexer::gen_parser;
+//use parsing_lexer::lexer::Lexer;
+//use parsing_lexer::tokenizer::Tokenizer;
 use virtual_cpu::cpu::MipsCpu;
 
 
@@ -79,43 +79,25 @@ fn do_it(){
     }
 }
 
-#[test]
-#[inline(never)]
-fn calculator4() {
 
-    let file = std::fs::read_to_string("test2.cl").expect("bruh");
+fn test_tokenizer() {
+    use parsing_lexer::tokenizer::Tokenizer;
+    let file = std::fs::read_to_string("res/tests/tokenizer_test.cl").expect("bruh");
 
-    let mut tokenizer = Tokenizer::new(&file);
+    let mut tokenizer = Tokenizer::from_string(&file).include_whitespace(true);
     let t = tokenizer.tokenize();
     for t in t{
-        println!("token: {} string: '{}'", t, tokenizer.str_from_token(&t));
+        println!("token: {:?} string: {:?}", t, tokenizer.str_from_token(&t));
     }
-
-    tokenizer.reset();
-    let tokenizer = Lexer::new(tokenizer);
-
-    match gen_parser::ProgramParser::new().parse(tokenizer) {
-        Ok(val) => {
-            let mut test = PrintVisitor::new();
-            //val.accept(Box::new(&mut test));
-            println!("{}", val);
-        }
-        Err(val) => {
-            println!("{:?}", val);
-        }
-    }
-
-    //assert_eq!(&format!("{:?}", expr), "((22 * 44) + 66)");
 }
 
 fn main() {
-    main();
-    do_it();
-    if true {return;}
+    test_tokenizer();
 
+    do_it();
     /*
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
-    println!("\nPrinting test.cl");
+    println!("\nPrinting tokenizer_test.cl");
 
     let mut tokenizer = Tokenizer::new(&file);
     let tmp = tokenizer.tokenize();
@@ -131,8 +113,8 @@ fn main() {
 
     match result {
         Ok(ok) => {
-            let mut test = PrintVisitor::new();
-            ok.accept(Box::new(&mut test));
+            let mut tests = PrintVisitor::new();
+            ok.accept(Box::new(&mut tests));
             println!("{}", ok);
         }
         Err(err) => {
@@ -141,3 +123,5 @@ fn main() {
     }
      */
 }
+
+
