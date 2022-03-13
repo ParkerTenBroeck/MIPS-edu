@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ master ]
+    branches: [ release ]
   pull_request:
-    branches: [ master ]
+    branches: [ release ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,9 +32,6 @@ jobs:
         run: |
          sudo apt-get install -y binaryen
          chmod +x build_web.sh
-#      - name: Build/Test Web
-#        working-directory: ./clike_gui
-#        run: ./build_web.sh
       
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v2
@@ -46,7 +43,7 @@ jobs:
     name: Deploy
     needs: build-web
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/release'
     
     steps:
     - name: Download artifact
