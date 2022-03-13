@@ -30,8 +30,8 @@ jobs:
       - name: Build/Test Web
         working-directory: ./clike_gui
         run: |
-         sudo apt-get install -y binaryen
          chmod +x build_web.sh
+         ./build_web.sh
       
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v2
