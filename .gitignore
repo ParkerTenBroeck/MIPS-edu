@@ -2,8 +2,8 @@
 /.idea
 /CLike.iml
 
-/clike-gui/.idea
-/clike-gui/target
-/clike-gui/docs/clike_gui.js
-/clike-gui/docs/clike_gui_bg.wasm
-/clike-gui/web-req
+/clike_gui/.idea
+/clike_gui/target
+/clike_gui/docs/clike_gui.js
+/clike_gui/docs/clike_gui_bg.wasm
+/clike_gui/web-req

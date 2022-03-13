@@ -1,4 +1,4 @@
-var cacheName = 'clike-gui';
+var cacheName = 'clike_gui';
 var filesToCache = [
   './',
   './index.html',

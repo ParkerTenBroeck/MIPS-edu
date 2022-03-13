@@ -1,5 +1,5 @@
 [package]
-name = "clike-gui"
+name = "clike_gui"
 version = "0.1.0"
 authors = ["Parker TenBroeck"]
 edition = "2021"
