@@ -4,4 +4,6 @@
 
 /clike-gui/.idea
 /clike-gui/target
-/clike-gui/target
+/clike-gui/docs/clike_gui.js
+/clike-gui/docs/clike_gui_bg.wasm
+/clike-gui/web-req

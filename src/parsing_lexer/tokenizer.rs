@@ -129,6 +129,7 @@ pub enum TokenType{
 }
 
 
+#[allow(unused)]
 pub enum IdentifierMode {
     Ascii,
     Unicode,
@@ -140,6 +141,7 @@ pub struct Token{
     pub(in parsing_lexer) t_data: TokenData,
 }
 
+#[allow(unused)]
 impl Token {
     pub fn get_token_type(&self) -> &TokenType { &self.t_type }
     pub fn get_token_data(&self) -> &TokenData { &self.t_data }
@@ -179,17 +181,8 @@ pub struct TokenData {
     pub(in parsing_lexer) column: usize
 }
 
+#[allow(unused)]
 impl TokenData {
-    pub fn new() -> Self {
-        TokenData {
-            index: 0,
-            index_real: 0,
-            size: 0,
-            size_real: 0,
-            line: 0,
-            column: 0,
-        }
-    }
     pub fn get_real_size(&self) -> usize {
         self.size_real
     }
@@ -1061,6 +1054,7 @@ impl CharsFromBytes for Chars<'_>{
 
 impl<'a> Tokenizer<'a>{
 
+    #[allow(unused)]
     pub fn from_string(data:&'a String) -> Tokenizer<'a> {
         Tokenizer {
             bytes: data.as_bytes(),
@@ -1088,31 +1082,32 @@ impl<'a> Tokenizer<'a>{
         }
     }
 
-        pub fn from_str(data:&'a str) -> Tokenizer<'a>{
-            Tokenizer{
-                bytes: data.as_bytes(),
-                iterator: data.chars(),
-                iterations: 0,
-                state: State::Default,
+    #[allow(unused)]
+    pub fn from_str(data:&'a str) -> Tokenizer<'a>{
+        Tokenizer{
+            bytes: data.as_bytes(),
+            iterator: data.chars(),
+            iterations: 0,
+            state: State::Default,
 
-                current: BufferIndex::new(),
-                last: BufferIndex::new(),
-                start_curr: BufferIndex::new(),
-                escape_start: BufferIndex::new(),
+            current: BufferIndex::new(),
+            last: BufferIndex::new(),
+            start_curr: BufferIndex::new(),
+            escape_start: BufferIndex::new(),
 
-                matching: false,
-                stop_reset: false,
-                new_token: None,
-                string: String::new(),
-                char_literal: '\0',
-                escape_error: false,
-                c: '\0',
+            matching: false,
+            stop_reset: false,
+            new_token: None,
+            string: String::new(),
+            char_literal: '\0',
+            escape_error: false,
+            c: '\0',
 
-                ident_mode: IdentifierMode::Unicode,
-                include_whitespace: false,
-                include_comments: false,
-                include_documentation: true,
-            }
+            ident_mode: IdentifierMode::Unicode,
+            include_whitespace: false,
+            include_comments: false,
+            include_documentation: true,
+        }
     }
 
     fn is_curr_ident_start(&self) -> bool{
@@ -1148,6 +1143,7 @@ impl<'a> Tokenizer<'a>{
         }
     }
 
+    #[allow(unused)]
     pub fn reset(&mut self){
         self.iterations = 0;
         self.state = State::Default;
@@ -1345,12 +1341,15 @@ impl<'a> Tokenizer<'a>{
         self.state = State::Default;
     }
 
+    #[allow(unused)]
     pub fn string_from_token(&self, token: &Token) -> String {
         String::from_utf8_lossy(&self.bytes[token.get_real_index()..token.get_real_index() + token.get_real_size()]).to_string()
     }
+    #[allow(unused)]
     pub fn str_from_token(&self, token: &Token) -> &str {
         std::str::from_utf8(&self.bytes[token.get_real_index()..token.get_real_index() + token.get_real_size()]).expect("")
     }
+    #[allow(unused)]
     pub fn str_from_token_data(&self, t_data: &TokenData) -> &str {
         std::str::from_utf8(&self.bytes[t_data.get_real_index()..t_data.get_real_index() + t_data.get_real_size()]).expect("")
     }
@@ -1371,18 +1370,22 @@ impl<'a> Tokenizer<'a>{
         self.stop_reset = false;
     }
 
+    #[allow(unused)]
     pub fn ident_mode(mut self, ident_mode: IdentifierMode) -> Self{
         self.ident_mode = ident_mode;
         self
     }
+    #[allow(unused)]
     pub fn include_whitespace(mut self, include_whitespace: bool) -> Self{
         self.include_whitespace = include_whitespace;
         self
     }
+    #[allow(unused)]
     pub fn include_comments(mut self, include_comments: bool) -> Self{
         self.include_comments = include_comments;
         self
     }
+    #[allow(unused)]
     pub fn include_documentation(mut self, include_documentation: bool) -> Self{
         self.include_documentation = include_documentation;
         self

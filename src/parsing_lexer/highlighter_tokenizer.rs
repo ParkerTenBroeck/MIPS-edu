@@ -9,6 +9,7 @@ pub struct HighlighterTokenizer<'input>{
 }
 
 impl<'input> HighlighterTokenizer<'input>{
+    #[allow(unused)]
     pub fn new(tokenizer: Tokenizer<'input>) -> Self{
         HighlighterTokenizer{
             tokenizer: tokenizer

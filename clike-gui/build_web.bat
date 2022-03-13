@@ -1,5 +1,8 @@
 @echo off
 
+SET PATH=%PATH%;./web-req/binaryen/bin
+SET PATH=%PATH%;./web-req/jq
+
 SET script_path=%~dp0
 cd %script_path%
 

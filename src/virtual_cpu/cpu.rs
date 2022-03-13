@@ -99,9 +99,13 @@ impl MipsCpu{
         }
     }
 
+    #[allow(unused)]
     pub fn get_general_registers(&self) -> &[u32; 32] { &self.reg }
+    #[allow(unused)]
     pub fn get_hi_register(&self) -> u32 { self.hi }
+    #[allow(unused)]
     pub fn get_lo_register(&self) -> u32 { self.lo }
+    #[allow(unused)]
     pub fn get_pc(&self) -> u32 { self.pc }
 
     pub fn is_running(&self) -> bool{
