@@ -36,5 +36,3 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
 
-[target.'cfg(target_arch = "wasm32")'.build-dependencies]
-wasm-bindgen-cli = "0.2.21"
