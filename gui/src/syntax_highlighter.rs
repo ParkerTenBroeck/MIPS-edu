@@ -111,7 +111,7 @@ impl CodeTheme {
 #[cfg(not(feature = "syntect"))]
 impl CodeTheme {
     pub fn dark() -> Self {
-        let font_id = eframe::egui::FontId::monospace(13.0);
+        let font_id = eframe::egui::FontId::monospace(14.0);
         use eframe::egui::{TextFormat};
         Self {
             //func  255, 198, 109 #ffc66d
@@ -132,7 +132,7 @@ impl CodeTheme {
     }
 
     pub fn light() -> Self {
-        let font_id =eframe::egui::FontId::monospace(12.0);
+        let font_id =eframe::egui::FontId::monospace(14.0);
         use eframe::egui::{TextFormat};
         Self {
             dark_mode: false,

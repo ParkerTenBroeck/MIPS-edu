@@ -11,7 +11,10 @@ pub struct HighlighterTokenizer<'input>{
 impl<'input> HighlighterTokenizer<'input>{
     pub fn new(tokenizer: Tokenizer<'input>) -> Self{
         HighlighterTokenizer{
-            tokenizer: tokenizer.include_whitespace(true),
+            tokenizer: tokenizer
+                .include_whitespace(true)
+                .include_documentation(true)
+                .include_comments(true),
             err: LinkedList::new(),
             out: LinkedList::new(),
             pos: 0,
@@ -101,7 +104,7 @@ enum Pos {
 
 fn get_pos(t1: &TokenData, t2: &TokenData) -> (Pos, Pos){
     ({
-         if t1.get_index() <= t2.get_index(){
+         if t1.get_index() < t2.get_index(){
              Pos::Behind
          }else if t1.get_index() > t2.get_index() + t2.get_size(){
              Pos::Ahead
@@ -109,9 +112,9 @@ fn get_pos(t1: &TokenData, t2: &TokenData) -> (Pos, Pos){
              Pos::Inside
          }
      },{
-         if t1.get_index() + t1.get_size() <= t2.get_index(){
+         if t1.get_index() + t1.get_size() - 1 < t2.get_index(){
              Pos::Behind
-         }else if t1.get_index() + t2.get_size() > t2.get_index() + t2.get_size(){
+         }else if t1.get_index() + t2.get_size() - 1 > t2.get_index() + t2.get_size(){
              Pos::Ahead
          }else{
              Pos::Inside
@@ -209,10 +212,11 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                                                 front.size = get_data(&middle).get_index() - front.index;
                                                 front.size_real = get_data(&middle).get_real_index() - front.index_real;
 
+
                                                 match &mut middle{
                                                     Ok(_) => {}
-                                                    Err( val) => {
-                                                        val.2 = val.1.t_type.clone();
+                                                    Err( err) => {
+                                                        err.2 = val.1.t_type.clone();
                                                     }
                                                 }
 

@@ -21,6 +21,14 @@ impl Default for ClikeGui {
             label: "Hello World!".to_owned(),
             code:
 r#"
+'\2'
+"\2"
+"#.into(),
+            value: 2.7,
+        }
+    }
+}
+/*
 /// Outer block single line documentation
 /**
 	/*
@@ -49,25 +57,6 @@ fn test(){
 		this one goes on for a while
 	*/
 }
-"#.into(),
-            value: 2.7,
-        }
-    }
-}
-
-/*
-'\24'  '
-test
-r#_21
-_test
-
-"\24"
-"asd\1asd"sdlfk
-"
-asd
-asd"
-asd
-//this is a comment
  */
 
 static mut MIPS_CPU: Option<MipsCpu> = Option::None;

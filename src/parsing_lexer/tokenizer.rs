@@ -251,6 +251,8 @@ pub struct Tokenizer<'a> {
 
     ident_mode: IdentifierMode,
     include_whitespace: bool,
+    include_comments: bool,
+    include_documentation: bool,
 }
 
 #[derive(Debug)]
@@ -867,10 +869,16 @@ impl Iterator for Tokenizer<'_>{
                     State::CharLiteralNormal() =>{
                         match self.c {
                             '\'' =>{
-                                if self.char_literal.len_utf8() == self.string.len() {
+                                if self.char_literal == '\0' {
+                                    self.default_reset(false, TokenType::CharLiteral(self.char_literal))
+                                }else if self.char_literal.len_utf8() == self.string.len() {
                                     self.default_reset(false, TokenType::CharLiteral(self.char_literal))
                                 }else{
-                                    self.default_reset(false, TokenType::ERROR("Char literal cannot contain more than one character".into()));
+                                    self.stop_reset = true;
+                                    self.new_token = self.create_token(TokenType::ERROR("Char literal cannot contain more than one character".into()));
+                                    self.matching = true;
+                                    self.char_literal = '\0';
+                                    //self.default_reset(false, TokenType::ERROR("Char literal cannot contain more than one character".into()));
                                 }
                             }
                             '\\'=>{
@@ -1020,6 +1028,16 @@ impl Iterator for Tokenizer<'_>{
                                     return new;
                                 }
                             }
+                            Option::Some(Token{t_type: TokenType::Comment(_), ..}) => {
+                                if self.include_comments {
+                                    return new;
+                                }
+                            }
+                            Option::Some(Token{t_type: TokenType::OuterDocumentation(_) | TokenType::InnerDocumentation(_), ..}) => {
+                                if self.include_documentation {
+                                    return new;
+                                }
+                            }
                             _ => {return new;}
                         }
                     }
@@ -1065,6 +1083,8 @@ impl<'a> Tokenizer<'a>{
 
             ident_mode: IdentifierMode::Unicode,
             include_whitespace: false,
+            include_comments: false,
+            include_documentation: true,
         }
     }
 
@@ -1090,6 +1110,8 @@ impl<'a> Tokenizer<'a>{
 
                 ident_mode: IdentifierMode::Unicode,
                 include_whitespace: false,
+                include_comments: false,
+                include_documentation: true,
             }
     }
 
@@ -1357,17 +1379,15 @@ impl<'a> Tokenizer<'a>{
         self.include_whitespace = include_whitespace;
         self
     }
+    pub fn include_comments(mut self, include_comments: bool) -> Self{
+        self.include_comments = include_comments;
+        self
+    }
+    pub fn include_documentation(mut self, include_documentation: bool) -> Self{
+        self.include_documentation = include_documentation;
+        self
+    }
 
-    /// asdasd5
-    /// asdasd45:
-    /**
-    1
-    2
-
-    3
-     */
-    ///
-    /// asdasd
     pub fn tokenize(&mut self) -> Vec<Token>{
         let mut tokens = Vec::new();
 
