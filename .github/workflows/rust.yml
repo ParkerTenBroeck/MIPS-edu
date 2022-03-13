@@ -32,7 +32,7 @@ jobs:
 #      - name: Build/Test Web
 #        run: cd clike-gui
       - name: Build/Test Web
-        working-directory: ./clike-gui
+        working-directory: ./clike_gui
         run: ./build_web.sh
 #      - name: Finish
 #        run: ./setup_web.sh
