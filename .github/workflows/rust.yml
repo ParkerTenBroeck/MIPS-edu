@@ -29,12 +29,13 @@ jobs:
         run: sudo apt-get install -y binaryen
       - name: Install
         run: cargo install wasm-bindgen-cli
+#      - name: Build/Test Web
+#        run: cd clike-gui
       - name: Build/Test Web
-        run: cd clike-gui
-      - name: Build/Test Web
+        working-directory: ./clike-gui
         run: ./build_web.sh
-      - name: Finish
-        run: ./setup_web.sh
+#      - name: Finish
+#        run: ./setup_web.sh
       
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v2
