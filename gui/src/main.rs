@@ -9,7 +9,6 @@ pub mod syntax_highlighter;
 fn main() {
     let app = clike_gui::ClikeGui::default();
 
-
     let icon = image::open("docs/icon-256.png").expect("Failed to open icon path").to_rgba8();
     let (icon_width, icon_height) = icon.dimensions();
 

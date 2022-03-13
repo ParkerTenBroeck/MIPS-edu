@@ -19,8 +19,37 @@ impl Default for ClikeGui {
         Self {
             // Example stuff:
             label: "Hello World!".to_owned(),
-            code: r#"'\24'  '
-test"#.into(),
+            code:
+r#"
+/// Outer block single line documentation
+/**
+	/*
+		ps(you can have /*!BLOCKS*/ /**inside*/ blocks)
+	*/
+	Outer block multiline documentation
+*/
+fn test(){
+	println!("dont change a thing! {}", "you are amazing ;)");
+	let r#fn = test;
+	let number = 12 + 2.3e-2;
+
+	//! some inner documentation
+	let boolean = false;
+
+	/*!
+		Outer block multiline documentation
+	*/
+	for(i: i32, i < 50; i += 2){
+		println!("hello for the {} time!", i);
+	}
+
+	//this is a comment(crazy right)
+	/*
+		block comment
+		this one goes on for a while
+	*/
+}
+"#.into(),
             value: 2.7,
         }
     }
@@ -207,9 +236,9 @@ impl epi::App for ClikeGui {
                         .lock_focus(true)
                         .desired_width(f32::INFINITY)
                         .layouter(&mut layouter),
-                ).on_hover_ui_at_pointer(|ui| {
-
-                });
+                )
+                //.on_hover_ui_at_pointer(|ui| {
+                //});
             });
         });
 

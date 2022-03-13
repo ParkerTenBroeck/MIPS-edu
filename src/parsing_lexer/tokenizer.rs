@@ -2,8 +2,9 @@ use std::fmt::{Display, Formatter};
 use std::mem;
 use std::str::Chars;
 
-
+//test
 #[derive(Debug, Clone)]
+
 pub enum TokenType{
     VoidKeyword,
     StructKeyword,
@@ -31,20 +32,20 @@ pub enum TokenType{
     RestrictKeyword,
 
 
-    ISizeKeyword,
-    USizeKeyword,
-    I8Keyword,
-    I16Keyword,
-    I32Keyword,
-    I64Keyword,
-    I128Keyword,
-    U8Keyword,
-    U16Keyword,
-    U32Keyword,
-    U64Keyword,
-    U128Keyword,
-    CharKeyword,
-    BoolKeyword,
+    //ISizeKeyword,
+    //USizeKeyword,
+    //I8Keyword,
+    //I16Keyword,
+    //I32Keyword,
+    //I64Keyword,
+    //I128Keyword,
+    //U8Keyword,
+    //U16Keyword,
+    //U32Keyword,
+    //U64Keyword,
+    //U128Keyword,
+    //CharKeyword,
+    //BoolKeyword,
 
     LPar,
     RPar,
@@ -121,6 +122,8 @@ pub enum TokenType{
     Whitespace,
 
     Comment(String),
+    OuterDocumentation(String),
+    InnerDocumentation(String),
 
     ERROR(String)
 }
@@ -269,7 +272,13 @@ enum State{
     CharLiteralNormal(),
     CharLiteralEscape(),
 
-    LineComment,
+    LineComment(bool),
+    BlockComment(u8, u32),
+
+    OuterDoc(bool),
+    OuterBlockDoc(u8, u32),
+    InnerDoc,
+    InnerBlockDoc(u8, u32),
 
     Colon,
     Equal,
@@ -298,7 +307,6 @@ impl Iterator for Tokenizer<'_>{
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-
         loop{
 
             match (&self.state, self.c){
@@ -418,7 +426,176 @@ impl Iterator for Tokenizer<'_>{
                             }
                         }
                     }
-                    State::LineComment => {
+                    /***
+                     */
+                    State::BlockComment(val, rec) => {
+                        let rec = *rec;
+                        match *val{
+                            0 => match self.c{
+                                '!' => self.state = State::InnerBlockDoc(0,0),
+                                '*' => self.state = State::BlockComment(1,0),
+                                _ => self.state = State::BlockComment(10,rec)
+                            },
+                            1 => match self.c{
+                                '/' => {
+                                    self.new_token = self.create_token(TokenType::Comment("".into()));
+                                    self.state = State::Default;
+                                }
+                                '*' => self.state = State::BlockComment(2,rec),
+                                _ => self.state = State::OuterBlockDoc(0,0),
+                            }
+                            2 => match self.c{
+                                '/' => {
+                                    self.new_token = self.create_token(TokenType::Comment("".into()));
+                                    self.state = State::Default;
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::BlockComment(10,rec)
+                                }
+                            }
+                            10 => match self.c{
+                                '/' => self.state = State::BlockComment(12,rec),
+                                '*' => self.state = State::BlockComment(11,rec),
+                                _ => self.state = State::BlockComment(10,rec),
+                            }
+                            11 => match self.c{
+                                '/' => {
+                                    if rec == 0 {
+                                        let comment = self.curr_str().replacen("/*", "", 1);
+                                        self.new_token = self.create_token(TokenType::Comment(comment));
+                                        self.state = State::Default;
+                                    }else{
+                                        self.state = State::BlockComment(10,rec - 1);
+                                    }
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::BlockComment(10,rec);
+                                }
+                            }
+                            12 => match self.c{
+                                '*' => {
+                                    self.state = State::BlockComment(10,rec + 1);
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::BlockComment(10,rec);
+                                }
+                            }
+                            _ =>{
+
+                            }
+                        }
+                    }
+                    State::OuterBlockDoc(val, rec) => {
+                        let rec = *rec;
+                        match *val {
+                            0 => match self.c{
+                                '/' => self.state = State::OuterBlockDoc(2,rec),
+                                '*' => self.state = State::OuterBlockDoc(1,rec),
+                                _ => self.state = State::OuterBlockDoc(0,rec),
+                            }
+                            1 => match self.c{
+                                '/' => {
+                                    if rec == 0 {
+                                        let comment = self.curr_str().replacen("/**", "", 1);
+                                        self.new_token = self.create_token(TokenType::OuterDocumentation(comment));
+                                        self.state = State::Default;
+                                    }else{
+                                        self.state = State::OuterBlockDoc(0,rec - 1);
+                                    }
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::OuterBlockDoc(0,rec);
+                                }
+                            }
+                            2 => match self.c{
+                                '*' => {
+                                    self.state = State::OuterBlockDoc(0,rec + 1);
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::OuterBlockDoc(0,rec);
+                                }
+                            }
+                            _ =>{
+
+                            }
+                        }
+                    }
+                    State::InnerBlockDoc(val, rec) => {
+                        let rec = *rec;
+                        match *val {
+                            0 => match self.c{
+                                '/' => self.state = State::InnerBlockDoc(2,rec),
+                                '*' => self.state = State::InnerBlockDoc(1,rec),
+                                _ => self.state = State::InnerBlockDoc(0,rec),
+                            }
+                            1 => match self.c{
+                                '/' => {
+                                    if rec == 0 {
+                                        let comment = self.curr_str().replacen("/**", "", 1);
+                                        self.new_token = self.create_token(TokenType::InnerDocumentation(comment));
+                                        self.state = State::Default;
+                                    }else{
+                                        self.state = State::InnerBlockDoc(0,rec - 1);
+                                    }
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::InnerBlockDoc(0,rec);
+                                }
+                            }
+                            2 => match self.c{
+                                '*' => {
+                                    self.state = State::InnerBlockDoc(0,rec + 1);
+                                }
+                                _ => {
+                                    self.matching = true;
+                                    self.state = State::InnerBlockDoc(0,rec);
+                                }
+                            }
+                            _ =>{
+
+                            }
+                        }
+                    }
+                    State::InnerDoc =>{
+                        match self.c {
+                            '\n' | '\r' | '\0' => {
+                                self.matching = true;
+                                let comment = self.curr_str().replacen("//!", "", 1);
+                                self.new_token = self.create_token(TokenType::InnerDocumentation(comment));
+                                self.state = State::Default;
+                            }
+                            _ => {
+                                self.state = State::InnerDoc;
+                            }
+                        }
+                    }
+                    State::OuterDoc(val) =>{
+                        match self.c {
+                            '\n' | '\r' | '\0' => {
+                                self.matching = true;
+                                let comment = self.curr_str().replacen("///", "", 1);
+                                self.new_token = self.create_token(TokenType::OuterDocumentation(comment));
+                                self.state = State::Default;
+                            }
+                            '/' => {
+                                if !val{
+                                    self.state = State::LineComment(true);
+                                }else{
+                                    self.state = State::OuterDoc(true);
+                                }
+                            }
+                            _ => {
+                                self.state = State::OuterDoc(true);
+                            }
+                        }
+                    }
+                    State::LineComment(val) => {
                         match self.c{
                             '\n'|'\r'|'\0' => {
                                 self.matching = true;
@@ -426,8 +603,22 @@ impl Iterator for Tokenizer<'_>{
                                 self.new_token = self.create_token(TokenType::Comment(comment));
                                 self.state = State::Default;
                             }
+                            '/' => {
+                                if !val{
+                                    self.state = State::OuterDoc(false);
+                                }else{
+                                    self.state = State::LineComment(true);
+                                }
+                            }
+                            '!' => {
+                                if !val{
+                                    self.state = State::InnerDoc;
+                                }else{
+                                    self.state = State::LineComment(true);
+                                }
+                            }
                             _ => {
-                                self.state = State::LineComment;
+                                self.state = State::LineComment(true);
                             }
                         }
                     }
@@ -525,7 +716,8 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::Div =>{
                         match self.c {
-                            '/' => self.state = State::LineComment,
+                            '/' => self.state = State::LineComment(false),
+                            '*' => self.state = State::BlockComment(0,0),
                             '=' => self.default_reset(false, TokenType::AssignmentDiv),
                             _ => self.default_reset(true, TokenType::Slash),
                         }
@@ -1103,20 +1295,20 @@ impl<'a> Tokenizer<'a>{
             "case" => t_type = TokenType::CaseKeyword,
             "goto" => t_type = TokenType::GotoKeyword,
             "restrict" => t_type = TokenType::RestrictKeyword,
-            "usize" => t_type = TokenType::USizeKeyword,
-            "isize" => t_type = TokenType::ISizeKeyword,
-            "i8" => t_type = TokenType::I8Keyword,
-            "i16" => t_type = TokenType::I16Keyword,
-            "i32" => t_type = TokenType::I32Keyword,
-            "i64" => t_type = TokenType::I64Keyword,
-            "i128" => t_type = TokenType::I128Keyword,
-            "u8" => t_type = TokenType::U8Keyword,
-            "u16" => t_type = TokenType::U16Keyword,
-            "u32" => t_type = TokenType::U32Keyword,
-            "u64" => t_type = TokenType::U64Keyword,
-            "u128" => t_type = TokenType::U128Keyword,
-            "char" => t_type = TokenType::CharKeyword,
-            "bool" => t_type = TokenType::BoolKeyword,
+            //"usize" => t_type = TokenType::USizeKeyword,
+            //"isize" => t_type = TokenType::ISizeKeyword,
+            //"i8" => t_type = TokenType::I8Keyword,
+            //"i16" => t_type = TokenType::I16Keyword,
+            //"i32" => t_type = TokenType::I32Keyword,
+            //"i64" => t_type = TokenType::I64Keyword,
+            //"i128" => t_type = TokenType::I128Keyword,
+            //"u8" => t_type = TokenType::U8Keyword,
+            //"u16" => t_type = TokenType::U16Keyword,
+            //"u32" => t_type = TokenType::U32Keyword,
+            //"u64" => t_type = TokenType::U64Keyword,
+            //"u128" => t_type = TokenType::U128Keyword,
+            //"char" => t_type = TokenType::CharKeyword,
+            //"bool" => t_type = TokenType::BoolKeyword,
             "true" => t_type = TokenType::BoolLiteral(true),
             "false" => t_type = TokenType::BoolLiteral(false),
             _=> t_type = TokenType::Identifier(ident)

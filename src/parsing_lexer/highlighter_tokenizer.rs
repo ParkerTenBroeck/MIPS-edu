@@ -22,67 +22,46 @@ impl<'input> HighlighterTokenizer<'input>{
     }
 
     fn add_to_out(&mut self,tok: Tok){
-        let mut tmp = LinkedList::new();
+        insert_into_list(&mut self.out, tok);
+    }
 
-        'loo:
-        loop{
-            match self.out.pop_front(){
-                None => {
-                    tmp.push_back(tok);
-                    break 'loo;
-                }
-                Some(val) => {
-                    if get_data(&val).index > get_data(&tok).index{
-                        tmp.push_back(tok);
-                        tmp.push_back(val);
-                        break 'loo;
-                    }else{
-                        tmp.push_back(val);
-                    }
-                }
+    fn add_to_err(&mut self,tok: Tok){
+        insert_into_list(&mut self.err, tok);
+    }
+}
+
+fn insert_into_list(list: &mut LinkedList<Tok>, item: Tok){
+    if get_data(&item).size == 0{
+        return;
+    }
+
+    let mut tmp = LinkedList::new();
+
+    'loo:
+    loop{
+        match list.pop_front(){
+            None => {
+                tmp.push_back(item);
+                break 'loo;
             }
-        }
-        loop{
-            match tmp.pop_back(){
-                None => {
-                    return;
-                }
-                Some(val) => {
-                    self.out.push_front(val);
+            Some(val) => {
+                if get_data(&val).index > get_data(&item).index{
+                    tmp.push_back(item);
+                    tmp.push_back(val);
+                    break 'loo;
+                }else{
+                    tmp.push_back(val);
                 }
             }
         }
     }
-
-    fn add_to_err(&mut self,tok: Tok){
-        let mut tmp = LinkedList::new();
-
-        'loo:
-        loop{
-            match self.err.pop_front(){
-                None => {
-                    tmp.push_back(tok);
-                    break 'loo;
-                }
-                Some(val) => {
-                    if get_data(&val).index > get_data(&tok).index{
-                        tmp.push_back(tok);
-                        tmp.push_back(val);
-                        break 'loo;
-                    }else{
-                        tmp.push_back(val);
-                    }
-                }
+    loop{
+        match tmp.pop_back(){
+            None => {
+                return;
             }
-        }
-        loop{
-            match tmp.pop_back(){
-                None => {
-                    return;
-                }
-                Some(val) => {
-                    self.err.push_front(val);
-                }
+            Some(val) => {
+                list.push_front(val);
             }
         }
     }
@@ -112,15 +91,59 @@ fn err_from_tok(token: Token) -> Tok {
     let tmp = token.get_token_type().clone();
     Result::Err((token.t_data, token, tmp))
 }
-fn err_from_tok_type(t_type: TokenType, token: Token) -> Tok {
-    Result::Err((token.t_data, token, t_type))
+
+#[derive(Debug)]
+enum Pos {
+    Behind,
+    Inside,
+    Ahead,
+}
+
+fn get_pos(t1: &TokenData, t2: &TokenData) -> (Pos, Pos){
+    ({
+         if t1.get_index() <= t2.get_index(){
+             Pos::Behind
+         }else if t1.get_index() > t2.get_index() + t2.get_size(){
+             Pos::Ahead
+         }else{
+             Pos::Inside
+         }
+     },{
+         if t1.get_index() + t1.get_size() <= t2.get_index(){
+             Pos::Behind
+         }else if t1.get_index() + t2.get_size() > t2.get_index() + t2.get_size(){
+             Pos::Ahead
+         }else{
+             Pos::Inside
+         }
+     })
 }
 
 impl<'input> Iterator for HighlighterTokenizer<'input> {
-    type Item = Tok;
+    type Item = Result<Tok, (usize, usize)>;
 
     fn next(&mut self) -> Option<Self::Item> {
 
+        macro_rules! verify_item{
+            ($item: expr) => {
+                {
+                    let tok = $item;
+                    let data = *get_data(&tok);
+                    //println!("{}, {}", self.pos, data.get_real_index());
+                    if self.pos < data.get_real_index(){
+                        self.add_to_out(tok);
+                        let old = self.pos;
+                        self.pos = data.get_real_index();
+                        return Option::Some(Result::Err::<Tok, (usize, usize)>((old, data.get_real_index() - old)));
+                    }else if self.pos > data.get_real_index() {
+
+                    }else{
+                        self.pos = data.get_real_index() + data.get_real_size();
+                        return Option::Some(Result::Ok::<Tok, (usize, usize)>(tok));
+                    }
+                }
+            }
+        }
         loop{
             let tok = match self.out.pop_front() {
                 None => {
@@ -137,7 +160,7 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                 None => {
                     match self.err.pop_front(){
                         None => return Option::None,
-                        Some(val) => return Option::Some(val),
+                        Some(val) => verify_item!(val),
                     }
                     //if self.err.is_empty(){
                     //    return Option::None;
@@ -148,8 +171,10 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                 Some(val) => {
 
                     match val{
-                        Err(val) => return Option::Some(Result::Err(val)),
-
+                        Err(val) => {
+                            let val = Result::Err(val);
+                            verify_item!(val);
+                        }
                         Ok(val) => {
                             match val.1{
                                 val @ Token{t_type: TokenType::ERROR(_), ..} => {
@@ -157,40 +182,18 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                                 }
                                 _ => {
                                     if self.err.is_empty() {
-                                        return Option::Some(Result::Ok(val));
+                                        let val = Result::Ok(val);
+                                        verify_item!(val);
                                     }else{
                                         let peek = self.err.front().unwrap();
-                                        #[derive(Debug)]
-                                        enum Pos {
-                                            Behind,
-                                            Inside,
-                                            Ahead,
-                                        }
-                                        let pos = {
-                                            ({
-                                                if get_data(&peek).get_index() <= val.0.get_index(){
-                                                    Pos::Behind
-                                                }else if get_data(&peek).get_index() > val.0.get_index() + val.0.get_size(){
-                                                    Pos::Ahead
-                                                }else{
-                                                    Pos::Inside
-                                                }
-                                             },{
-                                                if get_data(&peek).get_index() + get_data(&peek).get_size() <= val.0.get_index(){
-                                                    Pos::Behind
-                                                }else if get_data(&peek).get_index() + get_data(&peek).get_size() > val.0.get_index() + val.0.get_size(){
-                                                    Pos::Ahead
-                                                }else{
-                                                    Pos::Inside
-                                                }
-                                            })
-                                        };
 
-                                        println!("{:?}", pos);
+                                        let pos = get_pos( get_data(&peek), &val.0);
+
+                                        //println!("{:?}", pos);
                                         match pos{
                                             (Pos::Behind, Pos::Behind) => {
                                                 self.add_to_out(Result::Ok(val));
-                                                return self.err.pop_front();
+                                               verify_item!(self.err.pop_front().unwrap());
                                             }
                                             //(Pos::Behind, Pos::Inside) => {
                                             //    //println!("Behind Inside");
@@ -213,7 +216,6 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                                                     }
                                                 }
 
-
                                                 back.index = get_data(&middle).get_index() + get_data(&middle).get_size();
                                                 back.index_real = get_data(&middle).get_real_index() + get_data(&middle).get_real_size();
                                                 back.size = (val.0.index + val.0.size) - back.index;
@@ -232,10 +234,11 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                                             //    return err_from_tok(self.err.pop_front().unwrap());
                                             //}
                                             (Pos::Ahead, Pos::Ahead) => {
-                                                return Option::Some(Result::Ok(val));
+                                                let val = Result::Ok(val);
+                                                verify_item!(val);
                                             }
                                             _ => {
-                                                panic!("impossible?? {:?}", pos);
+                                                //panic!("impossible?? {:?}", pos);
                                             }
                                         }
                                     }

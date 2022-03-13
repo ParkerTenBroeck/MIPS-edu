@@ -14,22 +14,6 @@ FunctionDefinition: FunctionDef = {
 
 TypeSpecifier: () = {
     "IDENTIFIER"
-
-    "isize",
-    "i8",
-    "i16",
-    "i32",
-    "i64",
-    "i128",
-
-    "usize",
-    "u8",
-    "u16",
-    "u32",
-    "u64",
-    "u128",
-
-    "char",
 }
 
 StatementList: LinkedList<Box<dyn TreeNode>> = {
@@ -188,7 +172,6 @@ extern {
         "self" => Token { t_type: TokenType::SelfKeyword,..},
         "let" => Token { t_type: TokenType::LetKeyword,..},
 
-
         "if" => Token { t_type: TokenType::IfKeyword,..},
         "else" => Token { t_type: TokenType::ElseKeyword,..},
         "while" => Token { t_type: TokenType::WhileKeyword,..},
@@ -201,21 +184,21 @@ extern {
         "goto" => Token { t_type: TokenType::GotoKeyword,..},
         "restrict" => Token { t_type: TokenType::RestrictKeyword,..},
 
-        "isize" => Token { t_type: TokenType::ISizeKeyword,..},
-        "i8" => Token { t_type: TokenType::I8Keyword,..},
-        "i16" => Token { t_type: TokenType::I16Keyword,..},
-        "i32" => Token { t_type: TokenType::I32Keyword,..},
-        "i64" => Token { t_type: TokenType::I64Keyword,..},
-        "i128" => Token { t_type: TokenType::I128Keyword,..},
+        //"isize" => Token { t_type: TokenType::ISizeKeyword,..},
+        //"i8" => Token { t_type: TokenType::I8Keyword,..},
+        //"i16" => Token { t_type: TokenType::I16Keyword,..},
+        //"i32" => Token { t_type: TokenType::I32Keyword,..},
+        //"i64" => Token { t_type: TokenType::I64Keyword,..},
+        //"i128" => Token { t_type: TokenType::I128Keyword,..},
 
-        "usize" => Token { t_type: TokenType::USizeKeyword,..},
-        "u8" => Token { t_type: TokenType::U8Keyword,..},
-        "u16" => Token { t_type: TokenType::U16Keyword,..},
-        "u32" => Token { t_type: TokenType::U32Keyword,..},
-        "u64" => Token { t_type: TokenType::U64Keyword,..},
-        "u128" => Token { t_type: TokenType::U128Keyword,..},
+        //"usize" => Token { t_type: TokenType::USizeKeyword,..},
+        //"u8" => Token { t_type: TokenType::U8Keyword,..},
+        //"u16" => Token { t_type: TokenType::U16Keyword,..},
+        //"u32" => Token { t_type: TokenType::U32Keyword,..},
+        //"u64" => Token { t_type: TokenType::U64Keyword,..},
+        //"u128" => Token { t_type: TokenType::U128Keyword,..},
 
-        "char" => Token { t_type: TokenType::CharKeyword,..},
+        //"char" => Token { t_type: TokenType::CharKeyword,..},
 
         "{" => Token { t_type: TokenType::LBrace,..},
         "}" => Token { t_type: TokenType::RBrace,..},

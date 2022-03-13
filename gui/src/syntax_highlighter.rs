@@ -1,8 +1,7 @@
 use clike::parsing_lexer::tokenizer::IdentifierMode;
 #[allow(unused_imports)]
 use eframe::{egui, epi};
-use eframe::egui::Color32;
-use eframe::egui::ImageData::Color;
+use eframe::egui::{Color32};
 use eframe::egui::text::LayoutJob;
 use crate::syntax_highlighter;
 
@@ -50,11 +49,14 @@ pub fn highlight(ctx: &egui::Context, theme: &CodeTheme, code: &str, language: &
 #[derive(enum_map::Enum)]
 enum TokenType {
     Comment,
+    Documentation,
     Keyword,
-    Literal,
+    Identifier,
+    NumberLiteral,
     StringLiteral,
     Punctuation,
     Whitespace,
+    ERROR,
 }
 
 #[derive(Clone, Hash, PartialEq)]
@@ -109,34 +111,43 @@ impl CodeTheme {
 #[cfg(not(feature = "syntect"))]
 impl CodeTheme {
     pub fn dark() -> Self {
-        let font_id =eframe::egui::FontId::monospace(12.0);
-        use eframe::egui::{Color32, TextFormat};
+        let font_id = eframe::egui::FontId::monospace(13.0);
+        use eframe::egui::{TextFormat};
         Self {
+            //func  255, 198, 109 #ffc66d
+            //yellow 187, 181, 41 #bbb529
             dark_mode: true,
             formats: enum_map::enum_map![
-                TokenType::Comment => TextFormat::simple(font_id.clone(), Color32::from_gray(120)),
-                TokenType::Keyword => TextFormat::simple(font_id.clone(), Color32::from_rgb(255, 100, 100)),
-                TokenType::Literal => TextFormat::simple(font_id.clone(), Color32::from_rgb(87, 165, 171)),
-                TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(109, 147, 226)),
-                TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::LIGHT_GRAY),
+                TokenType::Comment => TextFormat::simple(font_id.clone(), Color32::from_gray(128)),
+                TokenType::Documentation => TextFormat::simple(font_id.clone(), Color32::from_rgb(98, 151, 85)),
+                TokenType::Keyword => TextFormat::simple(font_id.clone(), Color32::from_rgb(204, 120, 50)),
+                TokenType::Identifier => TextFormat::simple(font_id.clone(), Color32::from_rgb(152, 118, 170)),
+                TokenType::NumberLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(72, 130, 186)),
+                TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(106, 135, 89)),
+                TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
+                TokenType::ERROR => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},
             ],
         }
     }
 
     pub fn light() -> Self {
         let font_id =eframe::egui::FontId::monospace(12.0);
-        use eframe::egui::{Color32, TextFormat};
+        use eframe::egui::{TextFormat};
         Self {
             dark_mode: false,
             #[cfg(not(feature = "syntect"))]
             formats: enum_map::enum_map![
                 TokenType::Comment => TextFormat::simple(font_id.clone(), Color32::GRAY),
                 TokenType::Keyword => TextFormat::simple(font_id.clone(), Color32::from_rgb(235, 0, 0)),
-                TokenType::Literal => TextFormat::simple(font_id.clone(), Color32::from_rgb(153, 134, 255)),
+                TokenType::Identifier => TextFormat::simple(font_id.clone(), Color32::from_rgb(153, 134, 255)),
                 TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(37, 203, 105)),
                 TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::DARK_GRAY),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
+
+                TokenType::NumberLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(72, 130, 186)),
+                TokenType::Documentation => TextFormat::simple(font_id.clone(), Color32::from_rgb(98, 151, 85)),
+                TokenType::ERROR => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},
             ],
         }
     }
@@ -159,10 +170,12 @@ impl CodeTheme {
                 ui.scope(|ui| {
                     for (tt, tt_name) in [
                         (TokenType::Comment, "// comment"),
+                        (TokenType::Documentation, "/// documentation"),
                         (TokenType::Keyword, "keyword"),
-                        (TokenType::Literal, "literal"),
+                        (TokenType::Identifier, "ident"),
                         (TokenType::StringLiteral, "\"string literal\""),
-                        (TokenType::Punctuation, "punctuation ;"),
+                        (TokenType::NumberLiteral, "number 12 + 3.0e+3"),
+                        (TokenType::Punctuation, "punctuation + / -"),
                         // (TokenType::Whitespace, "whitespace"),
                     ] {
                         let format = &mut self.formats[tt];
@@ -220,7 +233,7 @@ impl Highlighter {
         use clike::parsing_lexer::highlighter_tokenizer::HighlighterTokenizer;
 
         let mut job = LayoutJob::default();
-        use clike::parsing_lexer::tokenizer::{Tokenizer, Token, TokenType};
+        use clike::parsing_lexer::tokenizer::{Tokenizer, TokenType};
         let mut tokenizer = HighlighterTokenizer::new(
             Tokenizer::from_str(text).ident_mode(IdentifierMode::Unicode));
 
@@ -228,39 +241,97 @@ impl Highlighter {
             match tokenizer.next(){
                 Option::None => break,
                 Option::Some(val) => {
-
-                    let (t_type, t_data, under) = match val{
-                        Result::Ok(val) =>{
-                            (val.1.t_type, val.0, false)
+                    match val{
+                        Result::Err(val) => {
+                            let mut theme = theme.formats[syntax_highlighter::TokenType::Punctuation].clone();
+                            theme.background = Color32::from_rgb(255,0,0);
+                            //theme.color = theme.background;
+                            job.append(&text[val.0..val.0 + val.1], 0.0, theme)
                         }
-                        Result::Err(val) =>{
-                            (val.2, val.0, true)
+                        Result::Ok(val) => {
+                            let (t_type, t_data, under) = match val{
+                                Result::Ok(val) =>{
+                                    (val.1.t_type, val.0, false)
+                                }
+                                Result::Err(val) =>{
+                                    (val.2, val.0, true)
+                                }
+                            };
+                            //println!("{:?}", (&t_type, &t_data, &under));
+                            let mut theme = match t_type{
+                                TokenType::StringLiteral(_) |
+                                TokenType::CharLiteral(_) => {
+                                    theme.formats[syntax_highlighter::TokenType::StringLiteral].clone()
+                                }
+                                TokenType::Comma | TokenType::Semicolon => {
+                                    theme.formats[syntax_highlighter::TokenType::Keyword].clone()
+                                }
+                                TokenType::VoidKeyword |
+                                TokenType::StructKeyword |
+                                TokenType::AsmKeyword |
+                                TokenType::ConstKeyword |
+                                TokenType::StaticKeyword |
+                                TokenType::SizeofKeyword |
+                                TokenType::EnumKeyword |
+                                TokenType::FnKeyword |
+                                TokenType::PubKeyword |
+                                TokenType::SuperKeyword |
+                                TokenType::SelfKeyword |
+                                TokenType::LetKeyword |
+                                TokenType::IfKeyword |
+                                TokenType::ElseKeyword |
+                                TokenType::WhileKeyword |
+                                TokenType::DoKeyword |
+                                TokenType::ReturnKeyword |
+                                TokenType::ForKeyword |
+                                TokenType::BreakKeyword |
+                                TokenType::SwitchKeyword |
+                                TokenType::CaseKeyword |
+                                TokenType::GotoKeyword |
+                                TokenType::RestrictKeyword => {
+                                    theme.formats[syntax_highlighter::TokenType::Keyword].clone()
+                                }
+                                TokenType::BoolLiteral(_) => {
+                                    theme.formats[syntax_highlighter::TokenType::Keyword].clone()
+                                }
+                                TokenType::I8Literal(_) |
+                                TokenType::I16Literal(_) |
+                                TokenType::I32Literal(_) |
+                                TokenType::I64Literal(_) |
+                                TokenType::I128Literal(_) |
+                                TokenType::U8Literal(_) |
+                                TokenType::U16Literal(_) |
+                                TokenType::U32Literal(_) |
+                                TokenType::U64Literal(_) |
+                                TokenType::U128Literal(_) |
+                                TokenType::F32Literal(_) |
+                                TokenType::F64Literal(_) => {
+                                    theme.formats[syntax_highlighter::TokenType::NumberLiteral].clone()
+                                }
+                                TokenType::Comment(_) => {
+                                    theme.formats[syntax_highlighter::TokenType::Comment].clone()
+                                }
+                                TokenType::OuterDocumentation(_) |
+                                TokenType::InnerDocumentation(_)=> {
+                                    theme.formats[syntax_highlighter::TokenType::Documentation].clone()
+                                }
+                                TokenType::Identifier(_) => {
+                                    theme.formats[syntax_highlighter::TokenType::Identifier].clone()
+                                }
+                                TokenType::Whitespace => {
+                                    theme.formats[syntax_highlighter::TokenType::Whitespace].clone()
+                                }
+                                _ => {
+                                    theme.formats[syntax_highlighter::TokenType::Punctuation].clone()
+                                }
+                            };
+                            if under{
+                                theme.underline.color = Color32::from_rgb(255,0,0);
+                                theme.underline.width = 1.0;
+                            }
+                            job.append(tokenizer.t().str_from_token_data(&t_data), 0.0, theme)
                         }
-                    };
-                    println!("{:?}", (&t_type, &t_data, &under));
-                    let mut theme = match t_type{
-                        TokenType::StringLiteral(_) |
-                        TokenType::CharLiteral(_) => {
-                            theme.formats[syntax_highlighter::TokenType::StringLiteral].clone()
-                        }
-                        TokenType::Comment(_) => {
-                            theme.formats[syntax_highlighter::TokenType::Comment].clone()
-                        }
-                        TokenType::Identifier(_) => {
-                            theme.formats[syntax_highlighter::TokenType::Literal].clone()
-                        }
-                        TokenType::Whitespace => {
-                            theme.formats[syntax_highlighter::TokenType::Whitespace].clone()
-                        }
-                        _ => {
-                            theme.formats[syntax_highlighter::TokenType::Punctuation].clone()
-                        }
-                    };
-                    if under{
-                        theme.underline.color = Color32::from_rgb(255,0,0);
-                        theme.underline.width = 1.0;
                     }
-                    job.append(tokenizer.t().str_from_token_data(&t_data), 0.0, theme)
                 }
             }
         }
