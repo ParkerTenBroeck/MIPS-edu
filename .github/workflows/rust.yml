@@ -24,7 +24,7 @@ jobs:
 #          components: wasm-bindgen-cli
       - uses: jetli/wasm-pack-action@v0.3.0
       
-      - name: Install 
+        name: Install 
         steps:
             run: sudo apt-get install -y binaryen
             run: cargo install wasm-bindgen-cli
