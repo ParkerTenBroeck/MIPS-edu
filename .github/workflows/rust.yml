@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ release ]
+    branches: [ main ]
   pull_request:
-    branches: [ release ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -41,9 +41,9 @@ jobs:
   
   deploy:
     name: Deploy
-    needs: build
+    needs: build-web
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/release'
+    if: github.ref == 'refs/heads/main'
     
     steps:
     - name: Download artifact
