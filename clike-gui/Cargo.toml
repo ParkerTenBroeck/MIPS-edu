@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
 clike = { path = ".." }
-enum-map = "2.0.3"
+enum-map = { version = "2", features = ["serde"] }
 image = "0.24.1"
 
 serde = { version = "1", features = ["derive"], optional = true }
@@ -24,6 +24,9 @@ persistence = ["eframe/persistence", "serde"] # Enable if you want to persist ap
 
 [profile.release]
 opt-level = 2 # fast and small wasm
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-mutable-globals"]
 
 [patch.crates-io]
 

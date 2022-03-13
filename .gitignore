@@ -2,6 +2,6 @@
 /.idea
 /CLike.iml
 
-/gui/.idea
-/gui/target
-/gui/target
+/clike-gui/.idea
+/clike-gui/target
+/clike-gui/target

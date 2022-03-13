@@ -56,7 +56,7 @@ enum TokenType {
     StringLiteral,
     Punctuation,
     Whitespace,
-    ERROR,
+    Error,
 }
 
 #[derive(Clone, Hash, PartialEq)]
@@ -126,7 +126,7 @@ impl CodeTheme {
                 TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(106, 135, 89)),
                 TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
-                TokenType::ERROR => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},
+                TokenType::Error => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},
             ],
         }
     }
@@ -147,7 +147,7 @@ impl CodeTheme {
 
                 TokenType::NumberLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(72, 130, 186)),
                 TokenType::Documentation => TextFormat::simple(font_id.clone(), Color32::from_rgb(98, 151, 85)),
-                TokenType::ERROR => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},
+                TokenType::Error => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},
             ],
         }
     }

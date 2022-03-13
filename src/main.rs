@@ -1,6 +1,7 @@
 #[macro_use] extern crate lalrpop_util;
-pub mod parsing_lexer;
-pub mod virtual_cpu;
+mod parsing_lexer;
+mod virtual_cpu;
+mod assembler;
 
 use std::io::Read;
 use std::thread;
