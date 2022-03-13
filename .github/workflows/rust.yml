@@ -25,6 +25,7 @@ jobs:
       
       - name: Setup
         run: cargo install wasm-bindgen-cli
+      - name: Update
         run: cargo update -p wasm-bindgen
       - name: Build/Test Web
         run: ./clike-gui/build_web.sh
