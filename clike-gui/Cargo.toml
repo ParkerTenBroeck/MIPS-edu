@@ -14,6 +14,8 @@ crate-type = ["cdylib", "rlib"]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
 clike = { path = ".." }
 enum-map = { version = "2", features = ["serde"] }
+
+[target.'cfg(target_arch = "x86")'.dependencies]
 image = "0.24.1"
 
 serde = { version = "1", features = ["derive"], optional = true }
@@ -33,3 +35,6 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.build-dependencies]
+wasm-bindgen-cli = "0.2.21"
