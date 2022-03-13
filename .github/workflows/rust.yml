@@ -11,12 +11,44 @@ env:
 
 jobs:
   build:
-
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --release --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    
+#    - name: Build
+#      run: cargo build --release --verbose
+#    - name: Run tests
+#      run: cargo test --verbose
+    - name: Build Test
+      run: ./clike-gui/build_web.sh
+    - name: Finish
+      run: ./clike-gui/setup_web.sh
+      
+      
+      
+    - name: Upload production-ready build files
+      uses: actions/upload-artifact@v2
+      with:
+        name: production-files
+        path: ./clike-gui/docs
+  
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/release'
+    
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v2
+      with:
+        name: production-files
+        path: ./clike-gui/docs
+    
+    - name: Deploy to gh-pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./clike-gui/docs
