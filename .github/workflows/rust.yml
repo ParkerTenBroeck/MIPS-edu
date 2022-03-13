@@ -30,7 +30,10 @@ jobs:
       - name: Install
         run: cargo install wasm-bindgen-cli
 #      - name: Build/Test Web
-#        run: cd clike-gui
+#        run: cd clike-gui chmod +x filename.sh
+      - name: Build/Test Web
+        working-directory: ./clike_gui
+        run: chmod +x build_web.sh
       - name: Build/Test Web
         working-directory: ./clike_gui
         run: ./build_web.sh
