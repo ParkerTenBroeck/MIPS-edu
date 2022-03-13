@@ -21,25 +21,20 @@ jobs:
           toolchain: stable
           override: true
           target: wasm32-unknown-unknown
-#          components: wasm-bindgen-cli
       - uses: jetli/wasm-pack-action@v0.3.0
       - uses: jetli/wasm-bindgen-action@v0.1.0
       
     
       - name: Install 
         run: sudo apt-get install -y binaryen
-#      - name: Install
-#        run: cargo install wasm-bindgen-cli
+      - name: Build/Test Web
+        working-directory: ./clike_gui
+        run: |
+         sudo apt-get install -y binaryen
+         chmod +x build_web.sh
 #      - name: Build/Test Web
-#        run: cd clike-gui chmod +x filename.sh
-      - name: Build/Test Web
-        working-directory: ./clike_gui
-        run: chmod +x build_web.sh
-      - name: Build/Test Web
-        working-directory: ./clike_gui
-        run: ./build_web.sh
-#      - name: Finish
-#        run: ./setup_web.sh
+#        working-directory: ./clike_gui
+#        run: ./build_web.sh
       
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v2
