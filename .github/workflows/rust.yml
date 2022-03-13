@@ -16,12 +16,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - uses: jetli/wasm-pack-action@v0.3.0
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
           target: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.3.0
 
       - name: Build/Test Web
         run: ./clike-gui/build_web.sh
