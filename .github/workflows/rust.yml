@@ -44,7 +44,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: production-files
-          path: ./clike-gui/docs
+          path: ./clike_gui/docs
   
   deploy:
     name: Deploy
@@ -57,10 +57,10 @@ jobs:
       uses: actions/download-artifact@v2
       with:
         name: production-files
-        path: ./clike-gui/docs
+        path: ./clike_gui/docs
     
     - name: Deploy to gh-pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./clike-gui/docs
+        publish_dir: ./clike_gui/docs
