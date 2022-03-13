@@ -30,9 +30,11 @@ jobs:
       - name: Install
         run: cargo install wasm-bindgen-cli
       - name: Build/Test Web
-        run: ./clike-gui/build_web.sh
+        run: cd clike-gui
+      - name: Build/Test Web
+        run: ./build_web.sh
       - name: Finish
-        run: ./clike-gui/setup_web.sh
+        run: ./setup_web.sh
       
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v2
