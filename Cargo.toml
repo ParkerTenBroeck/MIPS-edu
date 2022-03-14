@@ -13,3 +13,8 @@ lalrpop = "0.19.7"
 lalrpop-util = "0.19.7"
 unicode-xid = "0.2.2"
 regex = "1"
+
+[workspace] 
+members = [
+    "clike_gui",
+]

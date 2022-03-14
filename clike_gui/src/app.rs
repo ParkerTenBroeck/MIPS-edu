@@ -2,23 +2,25 @@ use eframe::{egui, epi};
 use clike::virtual_cpu::cpu::MipsCpu;
 use std::thread;
 use std::time::SystemTime;
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
+#[allow(unused)]
 pub struct ClikeGui {
     // Example stuff:
-    label: String,
     code: String,
     // this how you opt-out of serialization of a member
+    //#[cfg_attr(feature = "persistence", serde(skip))]
+    //value: f32,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    value: f32,
+    cpu: MipsCpu,
 }
 
 impl Default for ClikeGui {
     fn default() -> Self {
         Self {
             // Example stuff:
-            label: "Hello World!".to_owned(),
             code:
 r#"
 /// Outer block single line documentation
@@ -50,7 +52,7 @@ fn test(){
 	*/
 }
 "#.into(),
-            value: 2.7,
+            cpu: MipsCpu::new(),
         }
     }
 }
@@ -122,7 +124,7 @@ impl epi::App for ClikeGui {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self { label,code, value } = self;
+        let Self {code, .. } = self;
         //let mut val6 = 1f32;
 
         // Examples of how to create different panels and windows.
@@ -142,17 +144,49 @@ impl epi::App for ClikeGui {
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Side Panel");
+            ui.heading("CPU control");
+
+            //ui.horizontal(|ui| {
+            //    ui.label("Write something: ");
+            //    ui.text_edit_singleline(label);
+            //});
+            let cpu = unsafe {
+                MIPS_CPU.as_mut().unwrap()
+            };
+
+            let (pc,hi,lo,reg) = {
+                (cpu.get_pc(),cpu.get_hi_register(),cpu.get_lo_register(),cpu.get_general_registers())
+            };
+            if cpu.is_running() {
+                ui.ctx().request_repaint();
+            }
 
             ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(label);
+                ui.label("PC: ");
+                ui.label(pc.to_string());
+
             });
+            ui.horizontal(|ui| {
+                ui.label("Hi: ");
+                ui.label(hi.to_string());
+            });
+            ui.horizontal(|ui| {
+                ui.label("Lo: ");
+                ui.label(lo.to_string());
+            });
+            ui.label("Reg: ");
+            let mut i = 0usize;
+            while i < 32{
+                ui.horizontal(|ui| {
+                    ui.label(format!(" {}: {}",i,reg[i]));
+                    i += 1;
+                    ui.label(format!(" {}: {}",i,reg[i]));
+                    i += 1;
+                });
+            }
 
-            ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-
-                *value += 1.0;
+            //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
+            if ui.button("Start CPU").clicked() {
 
                 unsafe{
                     if MIPS_CPU.as_mut().unwrap().is_running(){
@@ -173,7 +207,7 @@ impl epi::App for ClikeGui {
                     }
                 }
             }
-
+/*
             ui.horizontal(|ui| {
                 ui.text_edit_multiline(code).context_menu(|ui| {
                     ui.menu_button("Plot", |ui| {
@@ -200,17 +234,11 @@ impl epi::App for ClikeGui {
                                 .prefix("Height:"),
                         );
                         ui.end_row();
-                        //ui.checkbox(&mut self.show_axes[0], "x-Axis");
-                        //ui.checkbox(&mut self.show_axes[1], "y-Axis");
-                        //ui.end_row();
-                        //if ui.checkbox(&mut self.allow_drag, "Drag").changed()
-                        //    || ui.checkbox(&mut self.allow_zoom, "Zoom").changed()
-                        //{
-                        //    ui.close_menu();
-                        //}
                     });
                 });
             });
+
+ */
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -243,11 +271,12 @@ impl epi::App for ClikeGui {
             };
 
             egui::ScrollArea::vertical().show(ui, |ui| {
+
                 ui.add(
                     egui::TextEdit::multiline(code)
                         .font(egui::TextStyle::Monospace) // for cursor height
                         .code_editor()
-                        .desired_rows(10)
+                        //.desired_rows(10)
                         .lock_focus(true)
                         .desired_width(f32::INFINITY)
                         .layouter(&mut layouter),

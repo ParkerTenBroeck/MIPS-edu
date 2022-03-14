@@ -1,9 +1,14 @@
-/target
-/.idea
-/CLike.iml
+*
 
-/clike_gui/.idea
-/clike_gui/target
-/clike_gui/docs/clike_gui.js
-/clike_gui/docs/clike_gui_bg.wasm
-/clike_gui/web-req
+!/src/
+!/tests/
+!/res/
+!/.gitignore
+!/build.rs
+!/Cargo.lock
+!/Cargo.toml
+
+!/clike_gui/Cargo.lock
+!/clike_gui/Cargo.toml
+!/clike_gui/src/
+!/clike_gui/docs/
