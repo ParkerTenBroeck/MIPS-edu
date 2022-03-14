@@ -8,6 +8,7 @@ pub mod syntax_highlighter;
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let app = clike_gui::ClikeGui::default();
+    
 
     let icon = match image::open("./docs/icon-256.png"){
         Result::Ok(val) => {
