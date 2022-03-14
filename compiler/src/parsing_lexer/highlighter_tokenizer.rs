@@ -21,6 +21,7 @@ impl<'input> HighlighterTokenizer<'input>{
             pos: 0,
         }
     }
+    
     pub fn t(&mut self) -> &mut Tokenizer<'input>{
         &mut self.tokenizer
     }
