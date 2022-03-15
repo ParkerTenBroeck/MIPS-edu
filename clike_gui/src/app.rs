@@ -1,5 +1,5 @@
 use eframe::{egui, epi};
-use clike::virtual_cpu::cpu::MipsCpu;
+use mips_emulator::cpu::MipsCpu;
 use std::thread;
 use std::time::SystemTime;
 
@@ -7,6 +7,14 @@ use std::time::SystemTime;
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 #[allow(unused)]
+
+#[macro_export]
+#[cfg(target_arch = "wasm32")]
+macro_rules! println {
+    ( $( $t:tt )* ) => {
+        log::info!("{}", ( $( $t )* ));
+    };
+}
 pub struct ClikeGui {
     // Example stuff:
     code: String,
@@ -95,7 +103,6 @@ impl epi::App for ClikeGui {
     }
 
 
-
     /// Called once before the first frame.
     fn setup(
         &mut self,
@@ -106,6 +113,9 @@ impl epi::App for ClikeGui {
         unsafe{
             MIPS_CPU = Option::Some(MipsCpu::new());
         }
+        
+        #[cfg(target_arch = "wasm32")]
+        wasm_logger::init(wasm_logger::Config::default());
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         #[cfg(feature = "persistence")]
@@ -124,7 +134,7 @@ impl epi::App for ClikeGui {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self {code, .. } = self;
+        let Self {code, cpu,.. } = self;
         //let mut val6 = 1f32;
 
         // Examples of how to create different panels and windows.
@@ -150,9 +160,7 @@ impl epi::App for ClikeGui {
             //    ui.label("Write something: ");
             //    ui.text_edit_singleline(label);
             //});
-            let cpu = unsafe {
-                MIPS_CPU.as_mut().unwrap()
-            };
+            let cpu = cpu;//unsafe {MIPS_CPU.as_mut().unwrap()};
 
             let (pc,hi,lo,reg) = {
                 (cpu.get_pc(),cpu.get_hi_register(),cpu.get_lo_register(),cpu.get_general_registers())
@@ -187,6 +195,7 @@ impl epi::App for ClikeGui {
 
             //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
             if ui.button("Start CPU").clicked() {
+                println!("test");
 
                 unsafe{
                     if MIPS_CPU.as_mut().unwrap().is_running(){

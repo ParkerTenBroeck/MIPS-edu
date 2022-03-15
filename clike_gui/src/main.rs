@@ -1,14 +1,18 @@
 //#![forbid(unsafe_code)]
+
+
+
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
 pub mod syntax_highlighter;
 
+
+
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let app = clike_gui::ClikeGui::default();
-    
 
     let icon = match image::open("./docs/icon-256.png"){
         Result::Ok(val) => {

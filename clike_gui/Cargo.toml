@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
+mips_emulator = { path = "../mips_emulator" }
 clike = { path = "../compiler" }
 enum-map = { version = "2", features = ["serde"] }
 
@@ -30,6 +31,8 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 [patch.crates-io]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+log = "0.4.6"
+wasm-logger = "0.2.0"
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
 

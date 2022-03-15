@@ -1,4 +1,4 @@
-use virtual_cpu::memory::Memory;
+use crate::memory::Memory;
 
 pub struct MipsCpu{
     pub(crate) pc: u32,
