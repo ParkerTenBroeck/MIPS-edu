@@ -1,15 +1,6 @@
 use crate::memory::Memory;
 
-pub struct MipsCpu{
-    pub(crate) pc: u32,
-    pub(crate) reg: [u32; 32],
-    lo: u32,
-    hi: u32,
-    running: bool,
-    finished: bool,
-    pub mem: Memory,
-}
-
+//macros
 //jump encoding
 macro_rules! jump_immediate_address{
     ($expr:expr) => {
@@ -82,6 +73,51 @@ macro_rules! register_a{
         (($expr as u32) >> 6) & 0b11111
     }
 }
+//Macros
+
+#[derive(Default)]
+pub struct MipsCpu{
+    pub(crate) pc: u32,
+    pub(crate) reg: [u32; 32],
+    pub(crate) lo: u32,
+    pub(crate) hi: u32,
+    running: bool,
+    finished: bool,
+    pub(crate) mem: Memory,
+    #[cfg(feature = "external_handlers")]
+    external_handler: CpuExternalHandler,
+}
+
+#[cfg(feature = "external_handlers")]
+pub struct CpuExternalHandler{
+    arithmetic_error: fn (&mut MipsCpu, u32),
+    invalid_opcode: fn (&mut MipsCpu),
+    system_call: fn (&mut MipsCpu, u32),
+    system_call_error: fn (&mut MipsCpu, u32, u32, &str),
+}
+
+#[cfg(feature = "external_handlers")]
+impl Default for CpuExternalHandler{
+    fn default() -> Self {
+        fn f1(_a1: &mut MipsCpu, _a2: u32){
+            panic!("Unimplemented External Handler for CPU");
+        }
+        fn f2(_a1: &mut MipsCpu){
+            panic!("Unimplemented External Handler for CPU");
+        }
+        fn f3(_a1: &mut MipsCpu, _a2: u32, _a3: u32, _a4: &str){
+            panic!("Unimplemented External Handler for CPU");
+        }
+
+        Self {
+            arithmetic_error: f1,
+            system_call: f1,
+            invalid_opcode: f2,
+            system_call_error: f3,
+        }
+    }
+}
+
 
 
 
@@ -95,7 +131,7 @@ impl MipsCpu{
             running: false,
             finished: true,
             mem: Memory::new(),
-            
+            ..Default::default()
         }
     }
 
@@ -107,6 +143,19 @@ impl MipsCpu{
     pub fn get_lo_register(&self) -> u32 { self.lo }
     #[allow(unused)]
     pub fn get_pc(&self) -> u32 { self.pc }
+    #[allow(unused)]
+    pub fn get_mem(&self) -> &Memory { &self.mem }
+
+    #[allow(unused)]
+    pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] { &mut self.reg }
+    #[allow(unused)]
+    pub fn get_hi_register_mut(&mut self) -> &mut u32 { &mut self.hi }
+    #[allow(unused)]
+    pub fn get_lo_register_mut(&mut self) -> &mut u32 { &mut self.lo }
+    #[allow(unused)]
+    pub fn get_pc_mut(&mut self) -> &mut u32 { &mut self.pc }
+    #[allow(unused)]
+    pub fn get_mem_mut(&mut self) -> &mut Memory { &mut self.mem }
 
     pub fn is_running(&self) -> bool{
         self.running | !self.finished
@@ -128,19 +177,124 @@ impl MipsCpu{
         self.mem.unload_all_pages();
     }
 
-    fn system_call(&mut self, call_id: u32){
-        match call_id{
-            0 => self.stop(),
-            _ => {}
+    
+    #[inline(always)]
+    #[allow(unused)]
+    fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str){
+        #[cfg(feature = "external_handlers")]
+        {
+            (self.external_handler.system_call_error)(self, call_id, error_id, message);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+            println!("System Call: {} Error: {} Message: {}", call_id, error_id, message);
         }
     }
 
-    fn arithmetic_error(&mut self){
-        //clike::virtual_cpu::cpu::MipsCpu::start()
+    #[inline(always)]
+    fn system_call(&mut self, call_id: u32){
+        #[cfg(feature = "external_handlers")]
+        {
+            (self.external_handler.system_call)(self, call_id);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+            match call_id{
+                0 => self.stop(),
+                1 => println!("{}", self.reg[4] as i32),
+                4 => {
+                    let _address = self.reg[4];
+                },
+                5 => {
+                    let mut string = String::new();
+                    let _ = std::io::stdin().read_line(&mut string);
+                    match string.parse::<i32>() {
+                        Ok(val) => self.reg[2] = val as u32,
+                        Err(_) => {
+                            match string.parse::<u32>() {
+                                Ok(val) => self.reg[2] = val,
+                                Err(_) => {
+                                    self.system_call_error(call_id, 0, "unable to parse integer".into());
+                                },
+                            }
+                        },
+                    }
+                },
+                99 => {
+                    
+                },
+                101 => {
+                    match char::from_u32(self.reg[4]){
+                        Some(val) => println!("{}", val),
+                        None => println!("Invalid char{}", self.reg[4]),
+                    }
+                }
+                102 => {
+                    let mut string = String::new();
+                    let _ = std::io::stdin().read_line(&mut string);
+                    string = string.replace("\n", "");
+                    string = string.replace("\r", "");
+                    if string.len() != 1{
+                        self.reg[2] = string.chars().next().unwrap() as u32;
+                    }else{
+                        self.system_call_error(call_id, 0, "invalid input");
+                    }
+                },
+                105 => {
+                    use std::{thread,time::Duration};
+                    thread::sleep(Duration::from_millis(self.reg[4] as u64));
+                },
+                106 => {
+                    static mut LAST:std::time::SystemTime = std::time::UNIX_EPOCH;
+                    let time = unsafe{
+                        std::time::SystemTime::now()
+                        .duration_since(LAST).unwrap().as_millis()
+                    };
+                    if time < self.reg[4] as u128 {
+                        let time = self.reg[4] as u128 - time;
+                        std::thread::sleep(std::time::Duration::from_millis(time as u64));
+                    }
+                }
+                107 => {
+                    self.reg[2] = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap().as_millis() & 0xFFFFFFFFu128) as u32; 
+                },
+                108 => {
+                    self.reg[2] = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap().as_micros() & 0xFFFFFFFFu128) as u32; 
+                }
+                111 => {
+                    self.stop();
+                }
+                _ => {}
+            }
+        }
     }
 
-    fn invalid_op_code(&mut self){
+    #[inline(always)]
+    fn arithmetic_error(&mut self, id:u32){
+        #[cfg(feature = "external_handlers")]
+        {
+            (self.external_handler.arithmetic_error)(self, id);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+            println!("arithmetic error {}", id);
+        } 
+    }
 
+    #[inline(always)]
+    fn invalid_op_code(&mut self){
+        #[cfg(feature = "external_handlers")]
+        {
+            (self.external_handler.invalid_opcode)(self);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+
+        }
     }
 
     #[allow(arithmetic_overflow)]
@@ -193,7 +347,7 @@ impl MipsCpu{
                                 self.lo = (s / t) as u32;
                                 self.hi = (s % t) as u32;
                             }else{
-                                self.arithmetic_error();
+                                self.arithmetic_error(0);
                             }
                         }
                         0b011011 => { //DIVU
@@ -203,7 +357,7 @@ impl MipsCpu{
                                 self.lo = s / t;
                                 self.hi = s % t;
                             }else{
-                                self.arithmetic_error();
+                                self.arithmetic_error(0);
                             }
 
                         }

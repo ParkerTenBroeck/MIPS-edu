@@ -463,7 +463,6 @@ mod matching_functions {
 
     macro_rules! match_fn {
         ($name:ident, $($rest:pat ),+, $inside:block) => {
-            #[allow(unused_variables)]
             pub(super) fn $name(stack_slice: &mut [NonTerminal]) -> ReducerResponse{
                 generate_match!(stack_slice, $($rest ),+, $inside);
             }

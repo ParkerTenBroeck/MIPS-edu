@@ -5,7 +5,6 @@ pub struct Lexer<'input>{
 }
 
 impl<'input> Lexer<'input>{
-    #[allow(unused)]
     pub fn new(tokenizer: Tokenizer<'input>) -> Self{
         Lexer{
             tokenizer

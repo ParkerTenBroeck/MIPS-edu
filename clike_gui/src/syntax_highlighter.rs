@@ -329,7 +329,7 @@ impl Highlighter {
                                 theme.underline.color = Color32::from_rgb(255,0,0);
                                 theme.underline.width = 1.0;
                             }
-                            job.append(tokenizer.t().str_from_token_data(&t_data), 0.0, theme)
+                            job.append(tokenizer.get_tokenizer_mut().str_from_token_data(&t_data), 0.0, theme)
                         }
                     }
                 }

@@ -129,7 +129,6 @@ pub enum TokenType{
 }
 
 
-#[allow(unused)]
 pub enum IdentifierMode {
     Ascii,
     Unicode,
@@ -141,7 +140,6 @@ pub struct Token{
     pub(in parsing_lexer) t_data: TokenData,
 }
 
-#[allow(unused)]
 impl Token {
     pub fn get_token_type(&self) -> &TokenType { &self.t_type }
     pub fn get_token_data(&self) -> &TokenData { &self.t_data }

@@ -8,6 +8,11 @@ pub struct Memory{
     page_table: Box<[Option<Box<Page>>; SEG_SIZE]>,
 }
 
+impl Default for Memory{
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 macro_rules! get_mem {
     // Arguments are module name and function name of function to tests bench

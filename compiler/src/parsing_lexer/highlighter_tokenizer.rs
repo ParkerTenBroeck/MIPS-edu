@@ -9,7 +9,6 @@ pub struct HighlighterTokenizer<'input>{
 }
 
 impl<'input> HighlighterTokenizer<'input>{
-    #[allow(unused)]
     pub fn new(tokenizer: Tokenizer<'input>) -> Self{
         HighlighterTokenizer{
             tokenizer: tokenizer
@@ -22,7 +21,8 @@ impl<'input> HighlighterTokenizer<'input>{
         }
     }
     
-    pub fn t(&mut self) -> &mut Tokenizer<'input>{
+    #[allow(dead_code)]
+    pub fn get_tokenizer_mut(&mut self) -> &mut Tokenizer<'input>{
         &mut self.tokenizer
     }
 
