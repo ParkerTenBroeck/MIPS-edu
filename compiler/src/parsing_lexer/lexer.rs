@@ -1,4 +1,4 @@
-use parsing_lexer::tokenizer::{Token, Tokenizer, TokenType};
+use crate::parsing_lexer::tokenizer::{Token, Tokenizer, TokenType};
 
 pub struct Lexer<'input>{
     tokenizer: Tokenizer<'input>,

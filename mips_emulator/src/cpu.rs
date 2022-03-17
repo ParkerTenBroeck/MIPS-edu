@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::memory::Memory;
 
 //macros
@@ -83,6 +85,8 @@ pub struct MipsCpu{
     pub(crate) hi: u32,
     running: bool,
     finished: bool,
+    paused: bool,
+    is_paused: bool,
     pub(crate) mem: Memory,
     #[cfg(feature = "external_handlers")]
     external_handler: CpuExternalHandler,
@@ -90,10 +94,11 @@ pub struct MipsCpu{
 
 #[cfg(feature = "external_handlers")]
 pub struct CpuExternalHandler{
-    arithmetic_error: fn (&mut MipsCpu, u32),
-    invalid_opcode: fn (&mut MipsCpu),
-    system_call: fn (&mut MipsCpu, u32),
-    system_call_error: fn (&mut MipsCpu, u32, u32, &str),
+    pub arithmetic_error: fn (&mut MipsCpu, u32),
+    pub memory_error: fn (&mut MipsCpu, u32),
+    pub invalid_opcode: fn (&mut MipsCpu),
+    pub system_call: fn (&mut MipsCpu, u32),
+    pub system_call_error: fn (&mut MipsCpu, u32, u32, &str),
 }
 
 #[cfg(feature = "external_handlers")]
@@ -111,6 +116,7 @@ impl Default for CpuExternalHandler{
 
         Self {
             arithmetic_error: f1,
+            memory_error: f1,
             system_call: f1,
             invalid_opcode: f2,
             system_call_error: f3,
@@ -122,6 +128,7 @@ impl Default for CpuExternalHandler{
 
 
 impl MipsCpu{
+    #[allow(unused)]
     pub fn new() -> Self{
         MipsCpu{
             pc: 0,
@@ -130,6 +137,8 @@ impl MipsCpu{
             hi: 0,
             running: false,
             finished: true,
+            paused: false,
+            is_paused: true,
             mem: Memory::new(),
             ..Default::default()
         }
@@ -144,7 +153,9 @@ impl MipsCpu{
     #[allow(unused)]
     pub fn get_pc(&self) -> u32 { self.pc }
     #[allow(unused)]
-    pub fn get_mem(&self) -> &Memory { &self.mem }
+    pub fn get_mem(&self) -> &Memory { 
+        &self.mem
+     }
 
     #[allow(unused)]
     pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] { &mut self.reg }
@@ -157,14 +168,22 @@ impl MipsCpu{
     #[allow(unused)]
     pub fn get_mem_mut(&mut self) -> &mut Memory { &mut self.mem }
 
+    #[allow(unused)]
     pub fn is_running(&self) -> bool{
         self.running | !self.finished
     }
 
+    #[allow(unused)]
+    pub fn is_paused(&self) -> bool{
+        self.is_paused
+    }
+
+    #[allow(unused)]
     pub fn stop(&mut self){
         self.running = false;
     }
 
+    #[allow(unused)]
     pub fn reset(&mut self){
         self.pc = 0;
         self.reg = [0;32];
@@ -172,9 +191,45 @@ impl MipsCpu{
         self.hi = 0;
     }
 
+    #[allow(unused)]
     pub fn clear(&mut self){
         self.reset();
         self.mem.unload_all_pages();
+    }
+
+    #[allow(unused)]
+    pub fn pause(&mut self){
+        self.paused = true;
+        while !self.is_paused{
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        use std::sync::{Arc, Mutex, Condvar};
+use std::thread;
+
+let pair = Arc::new((Mutex::new(false), Condvar::new()));
+let pair2 = Arc::clone(&pair);
+
+// Inside of our lock, spawn a new thread, and then wait for it to start.
+thread::spawn(move|| {
+    let (lock, cvar) = &*pair2;
+    let mut started = lock.lock().unwrap();
+    *started = true;
+    // We notify the condvar that the value has changed.
+    cvar.notify_one();
+});
+
+// Wait for the thread to start up.
+let (lock, cvar) = &*pair;
+let mut started = lock.lock().unwrap();
+while !*started {
+    started = cvar.wait(started).unwrap();
+}
+    }
+
+    #[allow(unused)]
+    pub fn resume(&mut self){
+        self.paused = false;
     }
 
     
@@ -188,6 +243,18 @@ impl MipsCpu{
         #[cfg(not(feature = "external_handlers"))]
         {
             println!("System Call: {} Error: {} Message: {}", call_id, error_id, message);
+        }
+    }
+
+    #[inline(always)]
+    fn memory_error(&mut self, error_id: u32){
+        #[cfg(feature = "external_handlers")]
+        {
+            (self.external_handler.memory_error)(self, error_id);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+            println!("Memory Error: {}", error_id);
         }
     }
 
@@ -241,7 +308,7 @@ impl MipsCpu{
                     }
                 },
                 105 => {
-                    use std::{thread,time::Duration};
+                    use std::{thread};
                     thread::sleep(Duration::from_millis(self.reg[4] as u64));
                 },
                 106 => {
@@ -297,22 +364,68 @@ impl MipsCpu{
         }
     }
 
-    #[allow(arithmetic_overflow)]
-    pub fn start(&mut self){
+    
+    #[allow(dead_code)]
+    pub fn start_new_thread(&'static mut self){
         if self.running || !self.finished {return;}
-
-        //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
-        //the version written in c++ seems to be around 17% faster
-        //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
-
-        let test_prog = [0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000];//
-        self.mem.copy_into_raw(0, &test_prog);
-
 
         self.running = true;
         self.finished = false;
 
+        let _handle = std::thread::spawn(|| {
+            // some work here
+            println!("CPU Started");
+            let start = std::time::SystemTime::now();
+            self.run();
+            let since_the_epoch = std::time::SystemTime::now()
+                .duration_since(start)
+                .expect("Time went backwards");
+            println!("{:?}", since_the_epoch);
+            println!("CPU stopping");
+        });
+    }
+
+    #[allow(dead_code)]
+    pub fn step_new_thread(&'static mut self){
+        if self.running || !self.finished {return;}
+        self.running = false;
+        self.finished = false;
+
+        let _handle = std::thread::spawn(|| {
+            // some work here
+            println!("CPU Step Started");
+            let start = std::time::SystemTime::now();
+            self.run();
+            let since_the_epoch = std::time::SystemTime::now()
+                .duration_since(start)
+                .expect("Time went backwards");
+            println!("{:?}", since_the_epoch);
+            println!("CPU Step Stopping");
+        });
+    }
+
+    #[allow(dead_code)]
+    pub fn start_local(&mut self){
+        if self.running || !self.finished {return;}
+        
+        self.running = true;
+        self.finished = false;
+
+        self.run();
+    }
+    
+    #[allow(arithmetic_overflow)]
+    fn run(&mut self){
+    
         while{
+
+            while self.paused{
+                self.is_paused = true;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            self.is_paused = false;
+
+
             let op = self.mem.get_u32_alligned(self.pc);//test_prog[(self.pc >> 2) as usize];//
 
             //if self.reg[1] & 0xFFFFFF == 0{
@@ -329,12 +442,12 @@ impl MipsCpu{
                         //arithmatic
                         0b100000 => { //ADD
                             self.reg[register_d!(op)] =
-                                (self.reg[register_s!(op)] as i32 + self.reg[register_t!((op))] as i32) as u32
+                                ((self.reg[register_s!(op)] as i32).wrapping_add(self.reg[register_t!((op))] as i32)) as u32
                         }
                         #[allow(unreachable_patterns)]
                         0b100000 => { //ADDU
                             self.reg[register_d!(op)] =
-                                self.reg[register_s!(op)] + self.reg[register_t!((op))]
+                                self.reg[register_s!(op)].wrapping_add(self.reg[register_t!((op))]) 
                         }
                         0b100100 => { //AND
                             self.reg[register_d!(op)] =
@@ -344,8 +457,8 @@ impl MipsCpu{
                          let t = self.reg[register_d!(op)] as i32;
                             if t == 0{
                                 let s = self.reg[register_s!(op)] as i32;
-                                self.lo = (s / t) as u32;
-                                self.hi = (s % t) as u32;
+                                self.lo = (s.wrapping_div(t)) as u32;
+                                self.hi = (s.wrapping_rem(t)) as u32;
                             }else{
                                 self.arithmetic_error(0);
                             }
@@ -354,8 +467,8 @@ impl MipsCpu{
                             let t = self.reg[register_d!(op)];
                             if t == 0{
                                 let s = self.reg[register_s!(op)];
-                                self.lo = s / t;
-                                self.hi = s % t;
+                                self.lo = s.wrapping_div(t);
+                                self.hi = s.wrapping_rem(t);
                             }else{
                                 self.arithmetic_error(0);
                             }
@@ -364,14 +477,14 @@ impl MipsCpu{
                         0b011000 => { //MULT
                             let t = self.reg[register_t!(op)] as i32 as i64;
                             let s = self.reg[register_s!(op)] as i32 as i64;
-                            let result = t * s;
+                            let result = t.wrapping_mul(s);
                             self.lo = (result & 0xFFFFFFFF) as u32;
                             self.hi = (result >> 32) as u32;
                         }
                         0b011001 => { //MULTU
-                            let t = self.reg[register_t!(op)] as i32 as i64;
-                            let s = self.reg[register_s!(op)] as i32 as i64;
-                            let result = t * s;
+                            let t = self.reg[register_t!(op)] as u64;
+                            let s = self.reg[register_s!(op)] as u64;
+                            let result = t.wrapping_mul(s);
                             self.lo = (result & 0xFFFFFFFF) as u32;
                             self.hi = (result >> 32) as u32;
                         }
@@ -560,20 +673,51 @@ impl MipsCpu{
                         (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32) as u32
                 }
                 0b100100 => {//LBU
+                    
                     self.reg[immediate_t!(op)] = self.mem.get_u8(
                         (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32) as u32
                 }
                 0b100001 => {//LH
-                    self.reg[immediate_t!(op)] = self.mem.get_i16_alligned(
-                        (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32) as u32
+                    let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32;
+                    
+                    #[cfg(feature = "memory_allignment_check")]
+                    if address & 0b1 == 0{
+                        self.reg[immediate_t!(op)] = self.mem.get_i16_alligned(address) as u32
+                    }else{
+                        self.memory_error(0);
+                    }
+                    #[cfg(not(feature = "memory_allignment_check"))]
+                    {
+                        self.reg[immediate_t!(op)] = self.mem.get_i16_alligned(address) as u32
+                    }
                 }
                 0b100101 => {//LHU
-                    self.reg[immediate_t!(op)] = self.mem.get_u16_alligned(
-                        (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32) as u32
+                    let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32;
+
+                    #[cfg(feature = "memory_allignment_check")]
+                    if address & 0b1 == 0{
+                        self.reg[immediate_t!(op)] = self.mem.get_u16_alligned(address) as u32
+                    }else{
+                        self.memory_error(0);
+                    }
+                    #[cfg(not(feature = "memory_allignment_check"))]
+                    {
+                        self.reg[immediate_t!(op)] = self.mem.get_u16_alligned(address) as u32
+                    }
                 }
                 0b100011 => {//LW
-                    self.reg[immediate_t!(op)] = self.mem.get_u32_alligned(
-                        (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32) as u32
+                    let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32;
+
+                    #[cfg(feature = "memory_allignment_check")]
+                    if address & 0b11 == 0{
+                        self.reg[immediate_t!(op)] = self.mem.get_u32_alligned(address) as u32
+                    }else{
+                        self.memory_error(1);
+                    }
+                    #[cfg(not(feature = "memory_allignment_check"))]
+                    {
+                        self.reg[immediate_t!(op)] = self.mem.get_u32_alligned(address) as u32
+                    }
                 }
 
                 // store instructions
@@ -581,10 +725,29 @@ impl MipsCpu{
                     self.mem.set_u8((self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32, (self.reg[immediate_t!(op)] & 0xFF) as u8);
                 }
                 0b101001 => {//SH
-                    self.mem.set_u16_alligned((self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32, (self.reg[immediate_t!(op)] & 0xFFFF) as u16);
+                    let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32;
+                    
+                    if address & 0b11 == 0{
+                        self.mem.set_u16_alligned(address, (self.reg[immediate_t!(op)] & 0xFFFF) as u16);
+                    }else{
+                        self.memory_error(3);
+                    }
+                    #[cfg(not(feature = "memory_allignment_check"))]
+                    {
+                        self.mem.set_u16_alligned(address, (self.reg[immediate_t!(op)] & 0xFFFF) as u16);
+                    }
                 }
                 0b101011 => {//SW
-                    self.mem.set_u32_alligned((self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32, (self.reg[immediate_t!(op)]) as u32);
+                    let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op)) as u32;
+                    if address & 0b11 == 0{
+                        self.mem.set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
+                    }else{
+                        self.memory_error(3);
+                    }
+                    #[cfg(not(feature = "memory_allignment_check"))]
+                    {
+                        self.mem.set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
+                    }
                 }
 
             _ => self.invalid_op_code(),

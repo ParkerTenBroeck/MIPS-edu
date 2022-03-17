@@ -5,6 +5,7 @@ use eframe::egui::{Color32};
 use eframe::egui::text::LayoutJob;
 use crate::syntax_highlighter;
 
+
 /// View some code with syntax highlighting and selection.
 pub fn code_view_ui(ui: &mut eframe::egui::Ui, mut code: &str) {
     let language = "rs";

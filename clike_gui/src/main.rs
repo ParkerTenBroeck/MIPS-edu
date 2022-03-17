@@ -2,6 +2,8 @@
 
 
 
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
@@ -14,7 +16,7 @@ pub mod syntax_highlighter;
 fn main() {
     let app = clike_gui::ClikeGui::default();
 
-    let icon = match image::open("./docs/icon-256.png"){
+    let icon = match image::open("./clike_gui/docs/icon-256.png"){
         Result::Ok(val) => {
             let icon = val.to_rgba8();
             let (icon_width, icon_height) = icon.dimensions();

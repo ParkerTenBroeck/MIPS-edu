@@ -1,5 +1,5 @@
 use std::collections::LinkedList;
-use parsing_lexer::tokenizer::{Token, TokenData, Tokenizer, TokenType};
+use crate::parsing_lexer::tokenizer::{Token, TokenData, Tokenizer, TokenType};
 
 pub struct HighlighterTokenizer<'input>{
     tokenizer: Tokenizer<'input>,

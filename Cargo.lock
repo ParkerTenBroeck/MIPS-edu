@@ -325,6 +325,7 @@ dependencies = [
  "lalrpop-util",
  "regex",
  "unicode-xid",
+ "util",
 ]
 
 [[package]]
@@ -340,7 +341,9 @@ dependencies = [
  "mips_emulator",
  "serde",
  "tracing-wasm",
+ "util",
  "wasm-logger",
+ "winres",
 ]
 
 [[package]]
@@ -2527,6 +2530,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "util"
+version = "0.1.0"
+
+[[package]]
 name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2843,6 +2850,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d107f8c6e916235c4c01cabb3e8acf7bea8ef6a63ca2e7fa0527c049badfc48c"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "winres"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
+dependencies = [
+ "toml",
 ]
 
 [[package]]

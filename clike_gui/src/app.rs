@@ -1,7 +1,5 @@
 use eframe::{egui, epi};
 use mips_emulator::cpu::MipsCpu;
-use std::thread;
-use std::time::SystemTime;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
@@ -15,6 +13,7 @@ macro_rules! println {
         log::info!("{}", ( $( $t )* ));
     };
 }
+#[allow(dead_code)]
 pub struct ClikeGui {
     // Example stuff:
     code: String,
@@ -134,7 +133,7 @@ impl epi::App for ClikeGui {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self {code, cpu,.. } = self;
+        let Self {code,.. } = self;
         //let mut val6 = 1f32;
 
         // Examples of how to create different panels and windows.
@@ -156,16 +155,17 @@ impl epi::App for ClikeGui {
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.heading("CPU control");
 
+
             //ui.horizontal(|ui| {
             //    ui.label("Write something: ");
             //    ui.text_edit_singleline(label);
             //});
-            let cpu = cpu;//unsafe {MIPS_CPU.as_mut().unwrap()};
+            let cpu = unsafe {MIPS_CPU.as_mut().unwrap()};
 
             let (pc,hi,lo,reg) = {
                 (cpu.get_pc(),cpu.get_hi_register(),cpu.get_lo_register(),cpu.get_general_registers())
             };
-            if cpu.is_running() {
+            if cpu.is_running() && !cpu.is_paused() {
                 ui.ctx().request_repaint();
             }
 
@@ -195,24 +195,64 @@ impl epi::App for ClikeGui {
 
             //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
             if ui.button("Start CPU").clicked() {
-                println!("test");
 
                 unsafe{
                     if MIPS_CPU.as_mut().unwrap().is_running(){
                         println!("CPU is already running");
                     }else{
-                        let _handle = thread::spawn(|| {
-                            // some work here
-                            println!("CPU Started");
-                            let start = SystemTime::now();
-                            MIPS_CPU.as_mut().unwrap().start();
-                            let since_the_epoch = SystemTime::now()
-                                .duration_since(start)
-                                .expect("Time went backwards");
-                            println!("{:?}", since_the_epoch);
-                            println!("CPU stopping");
-                            MIPS_CPU.as_mut().unwrap().reset();
-                        });
+                        let cpu: &'static mut MipsCpu = std::mem::transmute(MIPS_CPU.as_mut().unwrap());
+                        cpu.start_new_thread();
+                    }
+                }
+            }
+            if ui.button("Step CPU").clicked() {
+                unsafe{
+                    if MIPS_CPU.as_mut().unwrap().is_running(){
+                        println!("CPU is already running");
+                    }else{
+                        let cpu: &'static mut MipsCpu = std::mem::transmute(MIPS_CPU.as_mut().unwrap());
+                        cpu.step_new_thread();
+                    }
+                }
+            }
+
+            if ui.button("Stop CPU").clicked() {
+                unsafe{
+                    if MIPS_CPU.as_mut().unwrap().is_running(){
+                        MIPS_CPU.as_mut().unwrap().stop();
+                        println!("Stopping CPU");
+                    }else{
+                        println!("CPU is already stopped");
+                    }
+                }
+            }
+            if ui.button("Pause CPU").clicked() {
+                unsafe{
+                    MIPS_CPU.as_mut().unwrap().pause();
+                    println!("CPU is paused");
+                }
+            }
+            if ui.button("Resume CPU").clicked() {
+                unsafe{
+                    MIPS_CPU.as_mut().unwrap().resume();
+                    println!("CPU resumed");
+                }
+            }
+            if ui.button("Reset CPU").clicked() {
+                unsafe{
+                    if !MIPS_CPU.as_mut().unwrap().is_running(){
+                        //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
+                        //the version written in c++ seems to be around 17% faster
+                        //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
+
+                        MIPS_CPU.as_mut().unwrap().clear();
+
+                        let test_prog = [0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000];//
+                        MIPS_CPU.as_mut().unwrap().get_mem_mut().copy_into_raw(0, &test_prog);
+                        
+                        println!("reset CPU");
+                    }else{
+                        println!("Cannot reset CPU while running");
                     }
                 }
             }

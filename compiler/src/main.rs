@@ -1,4 +1,3 @@
-
 #![allow(dead_code)]
 #[macro_use] extern crate lalrpop_util;
 
@@ -7,7 +6,6 @@ mod parsing_lexer;
 //use parsing_lexer::gen_parser;
 //use parsing_lexer::lexer::Lexer;
 //use parsing_lexer::tokenizer::Tokenizer;
-
 
 
 fn test_tokenizer() {

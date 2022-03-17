@@ -1,10 +1,12 @@
-use std::fmt::{Display, Formatter};
 use std::mem;
 use std::str::Chars;
 
+pub type Token = util::token::Token<TokenType>;
+pub type TokenData = util::token::TokenData;
+pub type BufferIndex = util::tokenizer::BufferIndex;
+
 //test
 #[derive(Debug, Clone)]
-
 pub enum TokenType{
     VoidKeyword,
     StructKeyword,
@@ -30,22 +32,6 @@ pub enum TokenType{
     CaseKeyword,
     GotoKeyword,
     RestrictKeyword,
-
-
-    //ISizeKeyword,
-    //USizeKeyword,
-    //I8Keyword,
-    //I16Keyword,
-    //I32Keyword,
-    //I64Keyword,
-    //I128Keyword,
-    //U8Keyword,
-    //U16Keyword,
-    //U32Keyword,
-    //U64Keyword,
-    //U128Keyword,
-    //CharKeyword,
-    //BoolKeyword,
 
     LPar,
     RPar,
@@ -132,92 +118,6 @@ pub enum TokenType{
 pub enum IdentifierMode {
     Ascii,
     Unicode,
-}
-
-#[derive(Debug, Clone)]
-pub struct Token{
-    pub  t_type: TokenType,
-    pub(in parsing_lexer) t_data: TokenData,
-}
-
-impl Token {
-    pub fn get_token_type(&self) -> &TokenType { &self.t_type }
-    pub fn get_token_data(&self) -> &TokenData { &self.t_data }
-    pub fn get_real_size(&self) -> usize {
-        self.t_data.size_real
-    }
-    pub fn get_real_index(&self) -> usize {
-        self.t_data.index_real
-    }
-    pub fn get_size(&self) -> usize {
-        self.t_data.size
-    }
-    pub fn get_index(&self) -> usize {
-        self.t_data.index
-    }
-    pub fn get_line(&self) -> usize {
-        self.t_data.line
-    }
-    pub fn get_column(&self) -> usize {
-        self.t_data.column
-    }
-}
-
-impl Display for Token{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "line:{}, size:{}, column:{} type: {:?}",self.get_line() + 1, self.get_size(),self.get_column(), self.t_type)
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct TokenData {
-    pub(in parsing_lexer) size: usize,
-    pub(in parsing_lexer) index: usize,
-    pub(in parsing_lexer) index_real:usize,
-    pub(in parsing_lexer) size_real:usize,
-    pub(in parsing_lexer) line: usize,
-    pub(in parsing_lexer) column: usize
-}
-
-#[allow(unused)]
-impl TokenData {
-    pub fn get_real_size(&self) -> usize {
-        self.size_real
-    }
-    pub fn get_real_index(&self) -> usize {
-        self.index_real
-    }
-    pub fn get_size(&self) -> usize {
-        self.size
-    }
-    pub fn get_index(&self) -> usize {
-        self.index
-    }
-    pub fn get_line(&self) -> usize {
-        self.line
-    }
-    pub fn get_column(&self) -> usize {
-        self.column
-    }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-struct BufferIndex {
-    index: usize,
-    index_real: usize,
-    line: usize,
-    column: usize,
-}
-
-impl BufferIndex {
-    pub fn new() -> Self {
-        BufferIndex {
-            index: 0,
-            index_real: 0,
-            line: 0,
-            column: 0,
-        }
-    }
 }
 
 pub struct Tokenizer<'a> {
@@ -1046,7 +946,7 @@ trait CharsFromBytes {
 
 impl CharsFromBytes for Chars<'_>{
     fn from_u8(byte: &[u8]) -> Chars {
-        std::str::from_utf8(byte).expect("").chars()
+        std::str::from_utf8(byte).unwrap().chars()
     }
 }
 
@@ -1411,14 +1311,6 @@ mod tests{
 
     #[test]
     fn test_tokenizer() {
-        use parsing_lexer::tokenizer::Tokenizer;
 
-        let file = std::fs::read_to_string("res/tests/tokenizer_test.cl").expect("bruh");
-
-        let mut tokenizer = Tokenizer::from_string(&file);
-        let t = tokenizer.tokenize();
-        for t in t{
-            println!("token: {} string: '{}'", t, tokenizer.str_from_token(&t));
-        }
     }
 }

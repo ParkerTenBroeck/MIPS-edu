@@ -14,10 +14,8 @@ impl Default for Memory{
     }
 }
 
-macro_rules! get_mem {
-    // Arguments are module name and function name of function to tests bench
+macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
-        // The macro will expand into the contents of this block.
         #[inline(always)]
         pub fn $func_name(&mut self, address: u32) -> $fn_type{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
@@ -29,7 +27,7 @@ macro_rules! get_mem {
     };
 }
 
-macro_rules! set_mem {
+macro_rules! set_mem_alligned {
     // Arguments are module name and function name of function to tests bench
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
@@ -101,25 +99,25 @@ impl Memory{
         }
     }
 
-    get_mem!(get_i64_alligned, i64);
-    set_mem!(set_i64_alligned, i64);
-    get_mem!(get_u64_alligned, u64);
-    set_mem!(set_u64_alligned, u64);
+    get_mem_alligned!(get_i64_alligned, i64);
+    set_mem_alligned!(set_i64_alligned, i64);
+    get_mem_alligned!(get_u64_alligned, u64);
+    set_mem_alligned!(set_u64_alligned, u64);
 
-    get_mem!(get_i32_alligned, i32);
-    set_mem!(set_i32_alligned, i32);
-    get_mem!(get_u32_alligned, u32);
-    set_mem!(set_u32_alligned, u32);
+    get_mem_alligned!(get_i32_alligned, i32);
+    set_mem_alligned!(set_i32_alligned, i32);
+    get_mem_alligned!(get_u32_alligned, u32);
+    set_mem_alligned!(set_u32_alligned, u32);
 
-    get_mem!(get_i16_alligned, i16);
-    set_mem!(set_i16_alligned, i16);
-    get_mem!(get_u16_alligned, u16);
-    set_mem!(set_u16_alligned, u16);
+    get_mem_alligned!(get_i16_alligned, i16);
+    set_mem_alligned!(set_i16_alligned, i16);
+    get_mem_alligned!(get_u16_alligned, u16);
+    set_mem_alligned!(set_u16_alligned, u16);
 
-    get_mem!(get_i8, i8);
-    set_mem!(set_i8, i8);
-    get_mem!(get_u8, u8);
-    set_mem!(set_u8, u8);
+    get_mem_alligned!(get_i8, i8);
+    set_mem_alligned!(set_i8, i8);
+    get_mem_alligned!(get_u8, u8);
+    set_mem_alligned!(set_u8, u8);
 }
 
 

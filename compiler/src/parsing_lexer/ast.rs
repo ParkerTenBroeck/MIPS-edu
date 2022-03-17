@@ -1,6 +1,6 @@
 use std::collections::LinkedList;
 use std::fmt::{Debug, Display, Formatter};
-use parsing_lexer::tokenizer::{Token, TokenType};
+use crate::parsing_lexer::tokenizer::{Token, TokenType};
 
 pub trait Visitor {
     fn visit_function_def(&mut self, _node: &FunctionDef) {}
