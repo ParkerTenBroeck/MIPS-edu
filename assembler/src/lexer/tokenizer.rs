@@ -8,31 +8,6 @@ pub type BufferIndex = util::tokenizer::BufferIndex;
 //test
 #[derive(Debug, Clone)]
 pub enum TokenType{
-    VoidKeyword,
-    StructKeyword,
-    AsmKeyword,
-    ConstKeyword,
-    StaticKeyword,
-    SizeofKeyword,
-    EnumKeyword,
-    FnKeyword,
-    PubKeyword,
-    SuperKeyword,
-    SelfKeyword,
-    LetKeyword,
-
-    IfKeyword,
-    ElseKeyword,
-    WhileKeyword,
-    DoKeyword,
-    ReturnKeyword,
-    ForKeyword,
-    BreakKeyword,
-    SwitchKeyword,
-    CaseKeyword,
-    GotoKeyword,
-    RestrictKeyword,
-
     LPar,
     RPar,
     LBrace,
@@ -56,18 +31,13 @@ pub enum TokenType{
     LogicalNot,
 
     Dot,
-    Arrow,
     Comma,
     Colon,
-    ColonColon,
     Semicolon,
     QuestionMark,
     At,
     Octothorp,
     Dollar,
-    DotDotDot,
-    Increment,
-    Decrement,
 
     LessThan,
     LessThanEq,
@@ -76,16 +46,6 @@ pub enum TokenType{
     Equals,
     NotEquals,
 
-    AssignmentAdd,
-    AssignmentSub,
-    AssignmentMul,
-    AssignmentDiv,
-    AssignmentMod,
-    AssignmentAnd,
-    AssignmentOr,
-    AssignmentXor,
-    AssignmentShiftLeft,
-    AssignmentShiftRight,
     Assignment,
 
     StringLiteral(String),
@@ -106,6 +66,7 @@ pub enum TokenType{
     Identifier(String),
 
     Whitespace,
+    NewLine,
 
     Comment(String),
     OuterDocumentation(String),
@@ -149,7 +110,6 @@ pub struct Tokenizer<'a> {
 #[derive(Debug)]
 enum State{
     Default,
-    //CarriageReturn,
 
     NumberLiteral(i32),
 
@@ -175,7 +135,6 @@ enum State{
 
     Colon,
     Equal,
-    Dot(i32),
     Minus,
     Bang,
     LessThan,
@@ -256,17 +215,13 @@ impl Iterator for Tokenizer<'_>{
                                 self.state = State::EOF;
                             }
 
-                            ' '|'\t'|'\r'|'\n' =>{
+                            ' '|'\t'|'\r' =>{
                                 self.state = State::Whitespace;
                             }
+                            '\n' => {
+                                self.new_token = self.create_token(TokenType::NewLine);
+                            }
 
-                            '"' => self.state = State::StringStart,
-                            '\'' => self.state = State::CharLiteralStart,
-                            '.' => self.state = State::Dot(0),
-                            '<' => self.state = State::LessThan,
-                            '>' => self.state = State::GreaterThan,
-                            '!' => self.state = State::Bang,
-                            '&' => self.state = State::And,
                             '|' => self.state = State::Or,
                             '^' => self.state = State::Xor,
                             '/' => self.state = State::Div,
@@ -275,6 +230,16 @@ impl Iterator for Tokenizer<'_>{
                             '+' => self.state = State::Plus,
                             '*' => self.state = State::Star,
                             '=' => self.state = State::Equal,
+
+                            '"' => self.state = State::StringStart,
+                            '\'' => self.state = State::CharLiteralStart,
+                            //'.' => self.state = State::Dot(0),
+                            '<' => self.state = State::LessThan,
+                            '>' => self.state = State::GreaterThan,
+                            '!' => self.state = State::Bang,
+                            '~' => self.new_token = self.create_token(TokenType::BitwiseNot),
+                            '&' => self.state = State::And,
+
                             ':' => self.state = State::Colon,
 
                             '(' => self.new_token = self.create_token(TokenType::LPar),
@@ -285,14 +250,15 @@ impl Iterator for Tokenizer<'_>{
                             ']' => self.new_token = self.create_token(TokenType::RBracket),
                             ';' => self.new_token = self.create_token(TokenType::Semicolon),
                             ',' => self.new_token = self.create_token(TokenType::Comma),
-                            '~' => self.new_token = self.create_token(TokenType::BitwiseNot),
+                            //'~' => self.new_token = self.create_token(TokenType::BitwiseNot),
                             '?' => self.new_token = self.create_token(TokenType::QuestionMark),
                             '@' => self.new_token = self.create_token(TokenType::At),
                             '#' => self.new_token = self.create_token(TokenType::Octothorp),
-                            '$' => self.new_token = self.create_token(TokenType::Dollar),
+                            '$' => self.state = State::RawIdentContinue,
 
-                            'r' => self.state = State::R,
+
                             '0'..='9' => self.state = State::NumberLiteral(0),
+                        
 
                             _ => {
                                 if self.is_curr_ident_start(){
@@ -308,7 +274,7 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::Whitespace => {
                         match self.c{
-                            ' '|'\t'|'\r'|'\n' => {
+                            ' '|'\t'|'\r' => {
                                 self.state = State::Whitespace;
                             }
                             _ => {
@@ -320,8 +286,7 @@ impl Iterator for Tokenizer<'_>{
                             }
                         }
                     }
-                    /***
-                     */
+
                     State::BlockComment(val, rec) => {
                         let rec = *rec;
                         match *val{
@@ -528,7 +493,7 @@ impl Iterator for Tokenizer<'_>{
                             self.state = State::RawIdentContinue;
                         }else{
                             self.matching = true;
-                            let ident = self.curr_str().replacen("r#", "", 1);
+                            let ident = self.curr_str().replacen("$", "", 1);
                             self.new_token = self.create_token(TokenType::Identifier(ident));
                             self.state = State::Default;
                         }
@@ -551,19 +516,16 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::Colon => {
                         match self.c{
-                            ':' => self.default_reset(false, TokenType::ColonColon),
                             _ => self.default_reset(true, TokenType::Colon),
                         }
                     }
                     State::ShiftLeft => {
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentShiftLeft),
                             _ => self.default_reset(true, TokenType::ShiftLeft),
                         }
                     }
                     State::ShiftRight => {
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentShiftRight),
                             _ => self.default_reset(true, TokenType::ShiftRight),
                         }
                     }
@@ -589,22 +551,16 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::Plus =>{
                         match self.c {
-                            '+' => self.default_reset(false, TokenType::Increment),
-                            '=' => self.default_reset(false, TokenType::AssignmentAdd),
                             _ => self.default_reset(true, TokenType::Plus),
                         }
                     }
                     State::Minus =>{
                         match self.c {
-                            '-' => self.default_reset(false, TokenType::Decrement),
-                            '=' => self.default_reset(false, TokenType::AssignmentSub),
-                            '>' => self.default_reset(false, TokenType::Arrow),
                             _ => self.default_reset(true, TokenType::Minus),
                         }
                     }
                     State::Star =>{
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentMul),
                             _ => self.default_reset(true, TokenType::Star),
                         }
                     }
@@ -612,55 +568,29 @@ impl Iterator for Tokenizer<'_>{
                         match self.c {
                             '/' => self.state = State::LineComment(false),
                             '*' => self.state = State::BlockComment(0,0),
-                            '=' => self.default_reset(false, TokenType::AssignmentDiv),
                             _ => self.default_reset(true, TokenType::Slash),
                         }
                     }
                     State::Mod =>{
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentMod),
                             _ => self.default_reset(true, TokenType::Percent),
                         }
                     }
                     State::Xor =>{
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentXor),
                             _ => self.default_reset(true, TokenType::BitwiseXor),
                         }
                     }
                     State::Or =>{
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentOr),
                             '|' => self.default_reset(false, TokenType::LogicalOr),
                             _ => self.default_reset(true, TokenType::BitwiseOr),
                         }
                     }
                     State::And => {
                         match self.c {
-                            '=' => self.default_reset(false, TokenType::AssignmentAnd),
                             '&' => self.default_reset(false, TokenType::LogicalAnd),
                             _ => self.default_reset(true, TokenType::Ampersand),
-                        }
-                    }
-                    State::Dot(val) =>{
-                        match (self.c, val){
-                            ('.',0) =>{
-                                self.state = State::Dot(val + 1);
-                            }
-                            ('.', 1) =>{
-                                self.new_token = self.create_token(TokenType::DotDotDot);
-                                self.state = State::Default;
-                            }
-                            (_,0) => {
-                                self.matching = true;
-                                self.new_token = self.create_token(TokenType::Dot);
-                                self.state = State::Default;
-                            }
-                            _ =>{
-                                self.matching = true;
-                                self.new_token = self.create_token(TokenType::ERROR(format!("Incorrect number of dots: {}", val + 1).into()));
-                                self.state = State::Default;
-                            }
                         }
                     }
                     State::EscapeCharacter(_,_) =>{
@@ -1007,12 +937,12 @@ impl<'a> Tokenizer<'a>{
         return match self.ident_mode{
             IdentifierMode::Ascii => {
                 match c{
-                    'A'..='Z'|'a'..='z'|'_' => { true }
+                    'A'..='Z'|'a'..='z'|'_'|'.'|'?' => { true }
                     _ => { false }
                 }
             }
             IdentifierMode::Unicode => {
-                unicode_xid::UnicodeXID::is_xid_start(c) || c =='_'
+                unicode_xid::UnicodeXID::is_xid_start(c) || c =='_' || c == '.' || c == '?'
             }
         }
     }
@@ -1020,12 +950,15 @@ impl<'a> Tokenizer<'a>{
         return match self.ident_mode{
             IdentifierMode::Ascii => {
                 match c{
-                    '0'..='9'|'A'..='Z'|'a'..='z'|'_' => { true }
+                    '0'..='9'|'A'..='Z'|'a'..='z'|'_'|'$'|'#'|'@'|'~'|'.'|'?' => { true }
                     _ => { false }
                 }
             }
             IdentifierMode::Unicode => {
-                unicode_xid::UnicodeXID::is_xid_continue(c)
+                unicode_xid::UnicodeXID::is_xid_continue(c) || match c{
+                    '_'|'$'|'#'|'@'|'~'|'.'|'?' => true,
+                    _ => false,
+                }
             }
         }
     }
@@ -1176,45 +1109,9 @@ impl<'a> Tokenizer<'a>{
 
         let t_type: TokenType;
         match ident.as_str(){
-            "void" => t_type = TokenType::VoidKeyword,
-            "struct" => t_type = TokenType::StructKeyword,
-            "asm" => t_type = TokenType::AsmKeyword,
-            "const" => t_type = TokenType::ConstKeyword,
-            "static" => t_type = TokenType::StaticKeyword,
-            "sizeof" => t_type = TokenType::SizeofKeyword,
-            "enum" => t_type = TokenType::EnumKeyword,
-            "fn" => t_type = TokenType::FnKeyword,
-            "pub" => t_type = TokenType::PubKeyword,
-            "self" => t_type = TokenType::SelfKeyword,
-            "super" => t_type = TokenType::SuperKeyword,
-            "let" => t_type = TokenType::LetKeyword,
-            "if" => t_type = TokenType::IfKeyword,
-            "else" => t_type = TokenType::ElseKeyword,
-            "while" => t_type = TokenType::WhileKeyword,
-            "do" => t_type = TokenType::DoKeyword,
-            "for" => t_type = TokenType::ForKeyword,
-            "return" => t_type = TokenType::ReturnKeyword,
-            "break" => t_type = TokenType::BreakKeyword,
-            "switch" => t_type = TokenType::SwitchKeyword,
-            "case" => t_type = TokenType::CaseKeyword,
-            "goto" => t_type = TokenType::GotoKeyword,
-            "restrict" => t_type = TokenType::RestrictKeyword,
-            //"usize" => t_type = TokenType::USizeKeyword,
-            //"isize" => t_type = TokenType::ISizeKeyword,
-            //"i8" => t_type = TokenType::I8Keyword,
-            //"i16" => t_type = TokenType::I16Keyword,
-            //"i32" => t_type = TokenType::I32Keyword,
-            //"i64" => t_type = TokenType::I64Keyword,
-            //"i128" => t_type = TokenType::I128Keyword,
-            //"u8" => t_type = TokenType::U8Keyword,
-            //"u16" => t_type = TokenType::U16Keyword,
-            //"u32" => t_type = TokenType::U32Keyword,
-            //"u64" => t_type = TokenType::U64Keyword,
-            //"u128" => t_type = TokenType::U128Keyword,
-            //"char" => t_type = TokenType::CharKeyword,
-            //"bool" => t_type = TokenType::BoolKeyword,
             "true" => t_type = TokenType::BoolLiteral(true),
             "false" => t_type = TokenType::BoolLiteral(false),
+            
             _=> t_type = TokenType::Identifier(ident)
         }
 
@@ -1279,7 +1176,7 @@ impl<'a> Tokenizer<'a>{
 
     pub fn tokenize(&mut self) -> Vec<Token>{
         let mut tokens = Vec::new();
-        
+
 
         loop{
             match self.next(){

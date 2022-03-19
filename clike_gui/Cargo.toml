@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
 mips_emulator = { path = "../mips_emulator" }
 clike = { path = "../compiler" }
+assembler = { path = "../assembler" }
 util = { path = "../util" }
 enum-map = { version = "2", features = ["serde"] }
 

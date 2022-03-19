@@ -1,4 +1,4 @@
-use std::{mem};
+use std::{mem, ops::DerefMut};
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
@@ -59,18 +59,36 @@ impl Memory{
     }
 
     #[inline(always)]
-    pub  fn get_or_make_page(&mut self, address: u32) -> &mut Page {
+    pub fn get_or_make_page<'a>(&'a mut self, address: u32) -> &'a mut Page {
         let addr = (address >> 16) as usize;
 
-        if let Option::None = &mut self.page_table[addr]{
+        //we dont need to check if the addr is in bounds since it is always below 2^16
+        if let Option::None = unsafe{self.page_table.get_unchecked_mut(addr)}{
             let page = Box::new(Page::new());
             self.page_table[addr] = Option::Some(page);
         }
-
-        if let Option::Some(page) = & mut self.page_table[addr]{
-            return page
+    
+        #[allow(unused_unsafe)]
+        unsafe{
+            let page =  self.page_table.get_unchecked_mut(addr);
+            match page {
+                Some(val) => return val,
+                None => unsafe { std::hint::unreachable_unchecked() },
+            }
         }
-        panic!();
+        //unsafe{
+        //    let test = &mut self.page_table;
+        //    let test = test.get_unchecked_mut(addr);
+        //    let test = test.as_deref_mut().unwrap_unchecked();
+        //    let test:&'a mut Box<Page> = mem::transmute(test);
+        //    return test;
+            //return test;
+            //return (&mut self.page_table).get_unchecked_mut(addr).unwrap_unchecked().as_mut();
+        //}
+        //if let Option::Some(page) = & mut self.page_table[addr]{
+        //    return page
+        //}
+        //panic!();
     }
 
     pub fn copy_into_raw<T>(&mut self, address: u32, data: &[T]){

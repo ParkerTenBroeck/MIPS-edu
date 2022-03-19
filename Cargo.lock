@@ -75,6 +75,10 @@ dependencies = [
 [[package]]
 name = "assembler"
 version = "0.1.0"
+dependencies = [
+ "unicode-xid",
+ "util",
+]
 
 [[package]]
 name = "async-broadcast"
@@ -332,6 +336,7 @@ dependencies = [
 name = "clike_gui"
 version = "0.1.0"
 dependencies = [
+ "assembler",
  "clike",
  "console_error_panic_hook",
  "eframe",

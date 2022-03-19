@@ -6,13 +6,13 @@ use mips_emulator::cpu::MipsCpu;
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 #[allow(unused)]
 
-#[macro_export]
-#[cfg(target_arch = "wasm32")]
-macro_rules! println {
-    ( $( $t:tt )* ) => {
-        log::info!("{}", ( $( $t )* ));
-    };
-}
+//#[macro_export]
+//#[cfg(target_arch = "wasm32")]
+//macro_rules! println {
+//    ( $( $t:tt )* ) => {
+//        log::info!("{}", ( $( $t )* ));
+//    };
+//}
 #[allow(dead_code)]
 pub struct ClikeGui {
     // Example stuff:
@@ -200,6 +200,7 @@ impl epi::App for ClikeGui {
                     if MIPS_CPU.as_mut().unwrap().is_running(){
                         println!("CPU is already running");
                     }else{
+                        println!("CPU Starting");
                         let cpu: &'static mut MipsCpu = std::mem::transmute(MIPS_CPU.as_mut().unwrap());
                         cpu.start_new_thread();
                     }
