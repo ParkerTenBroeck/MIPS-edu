@@ -416,6 +416,21 @@ while !*started {
     
     #[allow(arithmetic_overflow)]
     fn run(&mut self){
+
+        macro_rules! set_reg{
+            ($reg:expr, $val:expr) => {
+                unsafe{
+                    *self.reg.get_unchecked_mut($reg) = $val;
+                }
+            }
+        }
+        macro_rules! get_reg{
+            ($reg:expr) => {
+                unsafe{
+                    *self.reg.get_unchecked($reg)
+                }
+            }
+        }
     
         while{
 
@@ -441,8 +456,10 @@ while !*started {
 
                         //arithmatic
                         0b100000 => { //ADD
-                            self.reg[register_d!(op)] =
-                                ((self.reg[register_s!(op)] as i32).wrapping_add(self.reg[register_t!((op))] as i32)) as u32
+                            set_reg!(register_d!(op), 
+                                ((self.reg[register_s!(op)] as i32).wrapping_add(self.reg[register_t!((op))] as i32)) as u32);
+                            //self.reg[register_d!(op)] =
+                            //    ((self.reg[register_s!(op)] as i32).wrapping_add(self.reg[register_t!((op))] as i32)) as u32
                         }
                         #[allow(unreachable_patterns)]
                         0b100000 => { //ADDU
@@ -647,7 +664,8 @@ while !*started {
 
                 // branch instructions
                 0b000100 => {//BEQ
-                    if self.reg[immediate_s!(op)] == self.reg[immediate_t!(op)] {
+                    
+                    if get_reg!(immediate_s!(op)) == get_reg!(immediate_t!(op)) {
                         self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                     }
                 }

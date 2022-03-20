@@ -1,4 +1,4 @@
-use std::{mem, ops::DerefMut};
+use std::mem;
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
@@ -20,8 +20,8 @@ macro_rules! get_mem_alligned {
         pub fn $func_name(&mut self, address: u32) -> $fn_type{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
-                mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
-                    (&mut self.get_or_make_page(address).page)[tmp]
+                *mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                    (&mut self.get_or_make_page(address).page).get_unchecked(tmp)
             }
         }
     };
@@ -35,8 +35,53 @@ macro_rules! set_mem_alligned {
         pub fn $func_name(&mut self, address: u32, data: $fn_type){
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
-                mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
-                    (&mut self.get_or_make_page(address).page)[tmp] = data;
+                *mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                    (&mut self.get_or_make_page(address).page).get_unchecked_mut(tmp) = data;
+            }
+        }
+    };
+}
+
+macro_rules! get_mem_alligned_o {
+    ($func_name:ident, $fn_type:ty) => {
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32) -> Option<$fn_type>{
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            unsafe{
+                match &mut self.get_page(address){
+                    Option::Some(val) => {
+                        return Option::Some(
+                            mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                            (&mut val.page)[tmp]);
+                    }
+                    Option::None => {
+                        return Option::None;
+                    }
+                } 
+                
+            }
+        }
+    };
+}
+
+macro_rules! set_mem_alligned_o {
+    // Arguments are module name and function name of function to tests bench
+    ($func_name:ident, $fn_type:ty) => {
+        // The macro will expand into the contents of this block.
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32, data: $fn_type) -> Result<(), ()>{
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            match self.get_page(address){
+                Option::Some(val) => {
+                    unsafe{
+                        mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                            (&mut val.page)[tmp] = data;
+                    }
+                    return Result::Ok(());
+                }
+                Option::None => {
+                    return Result::Err(());
+                }
             }
         }
     };
@@ -61,34 +106,20 @@ impl Memory{
     #[inline(always)]
     pub fn get_or_make_page<'a>(&'a mut self, address: u32) -> &'a mut Page {
         let addr = (address >> 16) as usize;
-
         //we dont need to check if the addr is in bounds since it is always below 2^16
-        if let Option::None = unsafe{self.page_table.get_unchecked_mut(addr)}{
-            let page = Box::new(Page::new());
-            self.page_table[addr] = Option::Some(page);
+        let p =unsafe{self.page_table.get_unchecked_mut(addr)};
+
+        match p{
+            Some(val) => return val,
+            None => {
+                let page = Box::new(Page::new());
+                *p = Option::Some(page);  
+                match p {
+                    Some(val) => return val,
+                    None => unsafe { std::hint::unreachable_unchecked() },
+                }
+            },
         }
-    
-        #[allow(unused_unsafe)]
-        unsafe{
-            let page =  self.page_table.get_unchecked_mut(addr);
-            match page {
-                Some(val) => return val,
-                None => unsafe { std::hint::unreachable_unchecked() },
-            }
-        }
-        //unsafe{
-        //    let test = &mut self.page_table;
-        //    let test = test.get_unchecked_mut(addr);
-        //    let test = test.as_deref_mut().unwrap_unchecked();
-        //    let test:&'a mut Box<Page> = mem::transmute(test);
-        //    return test;
-            //return test;
-            //return (&mut self.page_table).get_unchecked_mut(addr).unwrap_unchecked().as_mut();
-        //}
-        //if let Option::Some(page) = & mut self.page_table[addr]{
-        //    return page
-        //}
-        //panic!();
     }
 
     pub fn copy_into_raw<T>(&mut self, address: u32, data: &[T]){
@@ -136,6 +167,26 @@ impl Memory{
     set_mem_alligned!(set_i8, i8);
     get_mem_alligned!(get_u8, u8);
     set_mem_alligned!(set_u8, u8);
+
+    get_mem_alligned_o!(get_i64_alligned_o, i64);
+    set_mem_alligned_o!(set_i64_alligned_o, i64);
+    get_mem_alligned_o!(get_u64_alligned_o, u64);
+    set_mem_alligned_o!(set_u64_alligned_o, u64);
+
+    get_mem_alligned_o!(get_i32_alligned_o, i32);
+    set_mem_alligned_o!(set_i32_alligned_o, i32);
+    get_mem_alligned_o!(get_u32_alligned_o, u32);
+    set_mem_alligned_o!(set_u32_alligned_o, u32);
+
+    get_mem_alligned_o!(get_i16_alligned_o, i16);
+    set_mem_alligned_o!(set_i16_alligned_o, i16);
+    get_mem_alligned_o!(get_u16_alligned_o, u16);
+    set_mem_alligned_o!(set_u16_alligned_o, u16);
+
+    get_mem_alligned_o!(get_i8_o, i8);
+    set_mem_alligned_o!(set_i8_o, i8);
+    get_mem_alligned_o!(get_u8_o, u8);
+    set_mem_alligned_o!(set_u8_o, u8);
 }
 
 

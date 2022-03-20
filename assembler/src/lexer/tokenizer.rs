@@ -64,6 +64,9 @@ pub enum TokenType{
     CharLiteral(char),
     BoolLiteral(bool),
     Identifier(String),
+    Directive(String),
+    PreProcessorStatement(String),
+    Label(String),
 
     Whitespace,
     NewLine,
@@ -113,10 +116,9 @@ enum State{
 
     NumberLiteral(i32),
 
-    Identifier,
-    R,
-    RawIdentStart,
-    RawIdentContinue,
+    RawIdentifierStart,
+    IdentifierStart,
+    IdentifierContinue,
 
     StringStart,
     StringNormal,
@@ -125,6 +127,7 @@ enum State{
     CharLiteralNormal(),
     CharLiteralEscape(),
 
+    AssemblyComment,
     LineComment(bool),
     BlockComment(u8, u32),
 
@@ -237,7 +240,6 @@ impl Iterator for Tokenizer<'_>{
                             '<' => self.state = State::LessThan,
                             '>' => self.state = State::GreaterThan,
                             '!' => self.state = State::Bang,
-                            '~' => self.new_token = self.create_token(TokenType::BitwiseNot),
                             '&' => self.state = State::And,
 
                             ':' => self.state = State::Colon,
@@ -248,28 +250,101 @@ impl Iterator for Tokenizer<'_>{
                             '}' => self.new_token = self.create_token(TokenType::RBrace),
                             '[' => self.new_token = self.create_token(TokenType::LBracket),
                             ']' => self.new_token = self.create_token(TokenType::RBracket),
-                            ';' => self.new_token = self.create_token(TokenType::Semicolon),
+                            ';' => self.state = State::AssemblyComment,
+                            '~' => self.new_token = self.create_token(TokenType::BitwiseNot),
                             ',' => self.new_token = self.create_token(TokenType::Comma),
-                            //'~' => self.new_token = self.create_token(TokenType::BitwiseNot),
                             '?' => self.new_token = self.create_token(TokenType::QuestionMark),
                             '@' => self.new_token = self.create_token(TokenType::At),
-                            '#' => self.new_token = self.create_token(TokenType::Octothorp),
-                            '$' => self.state = State::RawIdentContinue,
 
+                            '#' => self.state = State::RawIdentifierStart,
+                            '$' => self.state = State::RawIdentifierStart,
 
                             '0'..='9' => self.state = State::NumberLiteral(0),
                         
-
                             _ => {
                                 if self.is_curr_ident_start(){
-                                    self.state = State::Identifier;
+                                    self.state = State::IdentifierContinue;
                                 }else if self.c.is_whitespace() {
                                     self.state = State::Whitespace;
                                 }else{
-                                    let message = format!("Unexpected Char: {}", self.c);
+                                    let message = format!("Unexpected Char: {:?}", self.c);
                                     self.new_token = self.create_token(TokenType::ERROR(message));
                                 }
                             }
+                        }
+                    }
+                    State::AssemblyComment => {
+                        match self.c {
+                            '\n' => {
+                                self.matching = true;
+                                self.create_token(TokenType::Comment(self.curr_str().replacen(";", "", 1)));
+                                self.state = State::Default;
+                            }
+                            _ =>{
+                                self.state = State::AssemblyComment;
+                            }
+                        }
+                    }
+                    State::IdentifierContinue =>{
+                        if self.is_curr_ident_continue() {
+                            self.state = State::IdentifierContinue;
+                        }else{
+                            self.matching = true;  
+                            let ident = self.curr_str();
+                            let start = ident.chars().next().unwrap();
+                            match self.c{
+                                ':' => {
+                                    if self.is_ident_start(start) || start == '.'{
+                                        let ident = self.curr_str();
+                                        self.matching = false;
+                                        self.new_token = self.create_token(TokenType::Label(ident));//self.create_token(TokenType::Identifier(ident.to_string()));
+                                        self.state = State::Default;
+                                    }else{
+                                        self.matching = true;
+                                        self.new_token = self.create_token(TokenType::ERROR(format!("Invalid starting character for lable: {:?}", start)));
+                                        self.state = State::Default;
+                                    }
+                                }
+                                _ => {
+                                    match start{
+                                        '.' => {
+                                            let ident = ident.replacen(".", "", 1);
+                                            self.new_token = self.create_token(TokenType::Directive(ident));
+                                            self.state = State::Default;     
+                                        }
+                                        '#' => {
+                                            let ident = ident.replacen("#", "", 1);
+                                            self.new_token = self.create_token(TokenType::PreProcessorStatement(ident));
+                                            self.state = State::Default; 
+                                        }
+                                        '$' => {
+                                            let ident = ident.replacen("$", "", 1);
+                                            self.new_token = self.create_token(TokenType::Identifier(ident));
+                                            self.state = State::Default;
+                                        }
+                                        _ => {
+                                            self.new_token = self.create_identifier_or_keyword(ident);//self.create_token(TokenType::Identifier(ident.to_string()));
+                                            self.state = State::Default;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    State::RawIdentifierStart => {
+                        if self.is_curr_ident_continue(){
+                            self.state = State::IdentifierContinue;
+                        }else{
+                            let message = format!("Unexpected Char: {:?} ident must be one or more characters", self.c);
+                            self.new_token = self.create_token(TokenType::ERROR(message));
+                        }
+                    }
+                    State::IdentifierStart => {
+                        if self.is_curr_ident_start(){
+                            self.state = State::IdentifierContinue;
+                        }else{
+                            let message = format!("Unexpected Char: {:?} ident must be one or more characters", self.c);
+                            self.new_token = self.create_token(TokenType::ERROR(message));
                         }
                     }
                     State::Whitespace => {
@@ -278,7 +353,7 @@ impl Iterator for Tokenizer<'_>{
                                 self.state = State::Whitespace;
                             }
                             _ => {
-                                if self.c.is_whitespace(){
+                                if self.c.is_whitespace() && self.c != '\n'{
                                     self.state = State::Whitespace;
                                 }else{
                                     self.default_reset(true, TokenType::Whitespace);
@@ -478,39 +553,6 @@ impl Iterator for Tokenizer<'_>{
                             }
                             _ => {
                                 self.state = State::LineComment(true);
-                            }
-                        }
-                    }
-                    State::RawIdentStart => {
-                        if self.is_curr_ident_start() {
-                            self.state = State::RawIdentContinue;
-                        }else{
-                            self.default_reset(true, TokenType::ERROR(format!("Raw identifier must be one or more characters")));
-                        }
-                    }
-                    State::RawIdentContinue => {
-                        if self.is_curr_ident_continue() {
-                            self.state = State::RawIdentContinue;
-                        }else{
-                            self.matching = true;
-                            let ident = self.curr_str().replacen("$", "", 1);
-                            self.new_token = self.create_token(TokenType::Identifier(ident));
-                            self.state = State::Default;
-                        }
-                    }
-                    State::R => {
-                        match self.c{
-                            '#' => {
-                                self.state = State::RawIdentStart;
-                                self.matching = false;
-                            }
-                            _ => {
-                                if self.is_ident_start('r'){
-                                    self.state = State::Identifier;
-                                }else{
-                                    self.default_reset(true, TokenType::ERROR("unknown character r".into()));
-                                }
-                                self.matching = true;
                             }
                         }
                     }
@@ -783,16 +825,6 @@ impl Iterator for Tokenizer<'_>{
                             }
                         }
                         self.state = State::Default;
-                    }
-                    State::Identifier =>{
-                        if self.is_curr_ident_continue() {
-                            self.state = State::Identifier;
-                        }else{
-                            self.matching = true;
-                            let ident = self.curr_str();
-                            self.new_token = self.create_identifier_or_keyword(ident);//self.create_token(TokenType::Identifier(ident.to_string()));
-                            self.state = State::Default;
-                        }
                     }
                     State::NumberLiteral(val) => {
                         match (self.c, val){
@@ -1176,8 +1208,6 @@ impl<'a> Tokenizer<'a>{
 
     pub fn tokenize(&mut self) -> Vec<Token>{
         let mut tokens = Vec::new();
-
-
         loop{
             match self.next(){
                 None => {

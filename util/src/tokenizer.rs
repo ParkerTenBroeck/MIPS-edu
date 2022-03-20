@@ -1,9 +1,3 @@
-use std::str::Chars;
-
-use crate::token::Token;
-
-
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct BufferIndex {
     pub index: usize,
