@@ -15,6 +15,7 @@
 !/clike_gui/
 !/clike_gui/Cargo.lock
 !/clike_gui/Cargo.toml
+!/clike_gui/build.rs
 !/clike_gui/src**
 !/clike_gui/docs**
 !/clike_gui/build_web.bat

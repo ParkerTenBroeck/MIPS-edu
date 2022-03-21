@@ -411,7 +411,14 @@ while !*started {
         self.running = true;
         self.finished = false;
 
+        println!("CPU Step Started");
+        let start = std::time::SystemTime::now();
         self.run();
+        let since_the_epoch = std::time::SystemTime::now()
+            .duration_since(start)
+            .expect("Time went backwards");
+        println!("{:?}", since_the_epoch);
+        println!("CPU Step Stopping");
     }
     
     #[allow(arithmetic_overflow)]
