@@ -117,7 +117,6 @@ enum State{
     NumberLiteral(i32),
 
     RawIdentifierStart,
-    IdentifierStart,
     IdentifierContinue,
 
     StringStart,
@@ -154,6 +153,7 @@ enum State{
     EscapeCharacter(Box<State>, i32),
 
     Whitespace,
+    Backslash,
 
     EOF
 }
@@ -224,6 +224,9 @@ impl Iterator for Tokenizer<'_>{
                             '\n' => {
                                 self.new_token = self.create_token(TokenType::NewLine);
                             }
+                            '\\' => {
+                                self.state = State::Backslash;
+                            }
 
                             '|' => self.state = State::Or,
                             '^' => self.state = State::Xor,
@@ -273,6 +276,20 @@ impl Iterator for Tokenizer<'_>{
                             }
                         }
                     }
+                    State::Backslash => {
+                        match self.c{
+                            '\r' => {
+                                self.state = State::Backslash;
+                            }
+                            '\n' => {
+                                self.state = State::Default;
+                            }
+                            _ => {
+                                self.new_token = self.create_token(TokenType::ERROR(format!("illegal character after \\ {:?} can only have \\n or \\r", self.c)));
+                                self.state = State::Default;
+                            } 
+                        }
+                    }
                     State::AssemblyComment => {
                         match self.c {
                             '\n' => {
@@ -307,11 +324,11 @@ impl Iterator for Tokenizer<'_>{
                                 }
                                 _ => {
                                     match start{
-                                        '.' => {
-                                            let ident = ident.replacen(".", "", 1);
-                                            self.new_token = self.create_token(TokenType::Directive(ident));
-                                            self.state = State::Default;     
-                                        }
+                                        //'.' => {
+                                        //    let ident = ident.replacen(".", "", 1);
+                                        //    self.new_token = self.create_token(TokenType::Identifier(ident));
+                                        //    self.state = State::Default;     
+                                        //}
                                         '#' => {
                                             let ident = ident.replacen("#", "", 1);
                                             self.new_token = self.create_token(TokenType::PreProcessorStatement(ident));
@@ -333,14 +350,6 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::RawIdentifierStart => {
                         if self.is_curr_ident_continue(){
-                            self.state = State::IdentifierContinue;
-                        }else{
-                            let message = format!("Unexpected Char: {:?} ident must be one or more characters", self.c);
-                            self.new_token = self.create_token(TokenType::ERROR(message));
-                        }
-                    }
-                    State::IdentifierStart => {
-                        if self.is_curr_ident_start(){
                             self.state = State::IdentifierContinue;
                         }else{
                             let message = format!("Unexpected Char: {:?} ident must be one or more characters", self.c);

@@ -8,6 +8,8 @@ pub struct Token<T>{
 #[allow(unused)]
 impl<T> Token<T> {
     pub fn get_token_type(&self) -> &T { &self.t_type }
+    pub fn get_token_type_mut(&mut self) -> &mut T { &mut self.t_type }
+    
     pub fn get_token_data(&self) -> &TokenData { &self.t_data }
     pub fn get_real_size(&self) -> usize {
         self.t_data.size_real

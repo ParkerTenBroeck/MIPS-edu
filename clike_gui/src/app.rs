@@ -13,9 +13,17 @@ use mips_emulator::cpu::MipsCpu;
 //        log::info!("{}", ( $( $t )* ));
 //    };
 //}
+
+pub struct ApplicationSettings{
+
+}
+
 #[allow(dead_code)]
+#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct ClikeGui {
     // Example stuff:
+    settings: ApplicationSettings,
     code: String,
     // this how you opt-out of serialization of a member
     //#[cfg_attr(feature = "persistence", serde(skip))]
@@ -26,7 +34,11 @@ pub struct ClikeGui {
 
 impl Default for ClikeGui {
     fn default() -> Self {
+
+        let settings = ApplicationSettings{};
+
         Self {
+            settings,
             // Example stuff:
             code:
 r#"
