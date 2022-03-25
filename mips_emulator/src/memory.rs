@@ -4,6 +4,7 @@ const SEG_SIZE:usize = 0x10000;
 //stupid workaround
 const INIT: Option<Box<Page>> = None;
 
+//maybe use a pool?
 pub struct Memory{
     page_table: Box<[Option<Box<Page>>; SEG_SIZE]>,
 }

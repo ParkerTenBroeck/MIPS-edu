@@ -164,8 +164,26 @@ impl Assembler{
         Ok(())
     }
 
-    fn actually_assemble(&mut self){
-        
+    fn actually_assemble(&mut self, data: Vec<Vec<PPToken>>){
+        let mut map: HashMap<String, u128> = HashMap::new();
+        let mut bit = 0u128;
+
+
+        for line in data{
+            for tok in line{
+                match tok.tok.get_token_type(){
+                    TokenType::Identifier(_) => {
+                        bit += 32;
+                    }
+                    TokenType::Label(val) => {
+                        map.insert(val.clone(), bit);
+                    }
+                    _ => {
+
+                    }
+                }
+            }
+        }
     }
 
     fn linafy(tokenizer: &mut Tokenizer) -> Vec<Vec<Token>>{
