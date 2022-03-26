@@ -116,7 +116,7 @@ fn test(){
 }
  */
 
-static mut MIPS_CPU: Option<MipsCpu> = Option::None;
+pub static mut MIPS_CPU: Option<MipsCpu> = Option::None;
 
 impl epi::App for ClikeGui {
     fn name(&self) -> &str {
@@ -299,9 +299,9 @@ impl epi::App for ClikeGui {
                                 if ui.button("Start CPU").clicked() {
                                     unsafe {
                                         if MIPS_CPU.as_mut().unwrap().is_running() {
-                                            println!("CPU is already running");
+                                            log::warn!("CPU is already running");
                                         } else {
-                                            println!("CPU Starting");
+                                            log::info!("CPU Starting");
                                             let cpu: &'static mut MipsCpu =
                                                 std::mem::transmute(MIPS_CPU.as_mut().unwrap());
                                             cpu.start_new_thread();
@@ -311,7 +311,7 @@ impl epi::App for ClikeGui {
                                 if ui.button("Step CPU").clicked() {
                                     unsafe {
                                         if MIPS_CPU.as_mut().unwrap().is_running() {
-                                            println!("CPU is already running");
+                                            log::warn!("CPU is already running");
                                         } else {
                                             let cpu: &'static mut MipsCpu =
                                                 std::mem::transmute(MIPS_CPU.as_mut().unwrap());
@@ -324,22 +324,30 @@ impl epi::App for ClikeGui {
                                     unsafe {
                                         if MIPS_CPU.as_mut().unwrap().is_running() {
                                             MIPS_CPU.as_mut().unwrap().stop();
-                                            println!("Stopping CPU");
+                                            log::info!("Stopping CPU");
                                         } else {
-                                            println!("CPU is already stopped");
+                                            log::warn!("CPU is already stopped");
                                         }
                                     }
                                 }
                                 if ui.button("Pause CPU").clicked() {
                                     unsafe {
-                                        MIPS_CPU.as_mut().unwrap().pause();
-                                        println!("CPU is paused");
+                                        if MIPS_CPU.as_mut().unwrap().is_paused(){
+                                            log::warn!("CPU is already paused");
+                                        }else{
+                                            MIPS_CPU.as_mut().unwrap().pause();
+                                            log::info!("CPU is paused");
+                                        }
                                     }
                                 }
                                 if ui.button("Resume CPU").clicked() {
                                     unsafe {
-                                        MIPS_CPU.as_mut().unwrap().resume();
-                                        println!("CPU resumed");
+                                        if MIPS_CPU.as_mut().unwrap().is_paused(){
+                                            MIPS_CPU.as_mut().unwrap().resume();
+                                            log::info!("CPU resumed");
+                                        }else{
+                                            log::warn!("CPU is already resumed");
+                                        }
                                     }
                                 }
                                 if ui.button("Reset CPU").clicked() {
@@ -365,15 +373,78 @@ impl epi::App for ClikeGui {
                                                 .get_mem_mut()
                                                 .copy_into_raw(0, &test_prog);
     
-                                            println!("reset CPU");
+                                            log::info!("reset CPU");
                                         } else {
-                                            println!("Cannot reset CPU while running");
+                                            log::warn!("Cannot reset CPU while running");
                                         }
                                     }
                                 }
                             } else if *select == 2{
-                                ui.heading("Code");
-                                ui.label("current workspace files ext");
+                                ui.add(
+                                    egui::Label::new(egui::RichText::new("Workspace").heading()).wrap(false)
+                                );
+                                ui.collapsing("info", |ui|{
+                                    ui.label("current workspace files ext(just the current directory of the exe for now)");
+                                    ui.label("note opening files will only read them and never save to them currently");    
+                                });
+                                ui.separator();
+                                
+                                //let dir = std::fs::read_dir(".");
+
+                                generate_tree(".".into(),code,  ui);
+
+                                fn generate_tree(path: std::path::PathBuf,t: &mut String,  ui: &mut egui::Ui){
+                                    match std::fs::read_dir(path) {
+                                        Ok(val) => {
+                                            
+                                            let mut test: Vec<Result<std::fs::DirEntry, std::io::Error>> = val.collect();
+                                            test.sort_by(|t1, t2| {
+                                                if let Result::Ok(t1) = t1{
+                                                    if let Result::Ok(t2) = t2{
+                                                        //let t1 = t1.unwrap();
+                                                        //let t2 = t2.unwrap();
+                                                        let t1d = t1.metadata().unwrap().is_dir();
+                                                        let t2d = t2.metadata().unwrap().is_dir();
+                                                        if t1d && t2d {
+                                                            return t1.file_name().to_ascii_lowercase().to_str().unwrap()
+                                                            .cmp(t2.file_name().to_ascii_lowercase().to_str().unwrap())
+                                                        }else if t1d{
+                                                            return std::cmp::Ordering::Less
+                                                        }else if t2d{
+                                                            return std::cmp::Ordering::Greater
+                                                        }else{
+                                                            return t1.file_name().to_ascii_lowercase().to_str().unwrap()
+                                                            .cmp(t2.file_name().to_ascii_lowercase().to_str().unwrap())
+                                                        }
+                                                    }  
+                                                }
+                                                std::cmp::Ordering::Equal
+                                            });
+                                            for d in test{
+                                                if let Result::Ok(val) = d{
+                                                    
+                                                    if val.metadata().unwrap().is_dir(){
+                                                        ui.collapsing(val.file_name().into_string().unwrap(), |ui|{
+                                                            generate_tree(val.path(),t, ui);
+                                                        });
+                                                    }else{
+                                                        if ui.selectable_label(false, val.file_name().into_string().unwrap()).clicked(){
+                                                            
+                                                            if let Result::Ok(str) = std::fs::read_to_string(val.path()){
+                                                                *t = str;
+                                                            }
+                                                            log::info!("loaded file: {}", val.path().display());
+                                                        }
+                                                       
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        Err(_) => {
+    
+                                        },
+                                    }
+                                }
                             }
                         });
                         ui.allocate_space(ui.available_size());
@@ -418,27 +489,36 @@ impl epi::App for ClikeGui {
         egui::TopBottomPanel::bottom("bottom_panel").resizable(true).show(ctx, |ui| {
             
             
-            egui::ScrollArea::both().show(ui, |ui| {
+            egui::ScrollArea::both().stick_to_bottom().show(ui, |ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                    let test:String = "this will be the lo
-                    asd
-                    asd
-                    as
-                    da
-                    sda
-                    sda
-                    sdas
-                    das
-                    da
-                    sd
-                    asd
-                    as
-                    da
-                    sd
-                    g".into();
-                    ui.add(
-                        egui::Label::new(test.as_str())
-                    )
+                    for record in crate::loggers::get_last_record(log::Level::Trace, 30).iter().rev(){
+
+                        match record.0{
+                            log::Level::Error => {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(record.1.as_str())
+                                        .color(eframe::epaint::Color32::from_rgb(237, 67, 55)))
+                                        .wrap(false)
+                                );
+                            }
+                            log::Level::Warn => {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(record.1.as_str())
+                                        .color(eframe::epaint::Color32::from_rgb(238, 210, 2)))
+                                        .wrap(false)
+                                );
+                            }
+
+                            log::Level::Info | log::Level::Debug | log::Level::Trace
+                             => {
+                                ui.add(
+                                    egui::Label::new(record.1.as_str()).wrap(false)
+                                );
+                             },
+                        }
+                    }
                     //ui.painter().rect_filled(ui.min_rect(), rounding, ui.ctx().visuals);
                 });
                 

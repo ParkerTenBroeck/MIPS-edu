@@ -242,7 +242,7 @@ while !*started {
         }
         #[cfg(not(feature = "external_handlers"))]
         {
-            println!("System Call: {} Error: {} Message: {}", call_id, error_id, message);
+            log::warn!("System Call: {} Error: {} Message: {}", call_id, error_id, message);
         }
     }
 
@@ -254,7 +254,7 @@ while !*started {
         }
         #[cfg(not(feature = "external_handlers"))]
         {
-            println!("Memory Error: {}", error_id);
+            log::warn!("Memory Error: {}", error_id);
         }
     }
 
@@ -268,7 +268,7 @@ while !*started {
         {
             match call_id{
                 0 => self.stop(),
-                1 => println!("{}", self.reg[4] as i32),
+                1 => log::info!("{}", self.reg[4] as i32),
                 4 => {
                     let _address = self.reg[4];
                 },
@@ -292,8 +292,8 @@ while !*started {
                 },
                 101 => {
                     match char::from_u32(self.reg[4]){
-                        Some(val) => println!("{}", val),
-                        None => println!("Invalid char{}", self.reg[4]),
+                        Some(val) => log::info!("{}", val),
+                        None => log::warn!("Invalid char{}", self.reg[4]),
                     }
                 }
                 102 => {
@@ -348,7 +348,7 @@ while !*started {
         }
         #[cfg(not(feature = "external_handlers"))]
         {
-            println!("arithmetic error {}", id);
+            log::warn!("arithmetic error {}", id);
         } 
     }
 
@@ -374,14 +374,14 @@ while !*started {
 
         let _handle = std::thread::spawn(|| {
             // some work here
-            println!("CPU Started");
+            log::info!("CPU Started");
             let start = std::time::SystemTime::now();
             self.run();
             let since_the_epoch = std::time::SystemTime::now()
                 .duration_since(start)
                 .expect("Time went backwards");
-            println!("{:?}", since_the_epoch);
-            println!("CPU stopping");
+            log::info!("{:?}", since_the_epoch);
+            log::info!("CPU stopping");
         });
     }
 
@@ -392,15 +392,15 @@ while !*started {
         self.finished = false;
 
         let _handle = std::thread::spawn(|| {
-            // some work here
-            println!("CPU Step Started");
+            
+            log::info!("CPU Step Started");
             let start = std::time::SystemTime::now();
             self.run();
             let since_the_epoch = std::time::SystemTime::now()
                 .duration_since(start)
                 .expect("Time went backwards");
-            println!("{:?}", since_the_epoch);
-            println!("CPU Step Stopping");
+            log::info!("{:?}", since_the_epoch);
+            log::info!("CPU Step Stopping");
         });
     }
 
@@ -411,14 +411,14 @@ while !*started {
         self.running = true;
         self.finished = false;
 
-        println!("CPU Step Started");
+        log::info!("CPU Step Started");
         let start = std::time::SystemTime::now();
         self.run();
         let since_the_epoch = std::time::SystemTime::now()
             .duration_since(start)
             .expect("Time went backwards");
-        println!("{:?}", since_the_epoch);
-        println!("CPU Step Stopping");
+        log::info!("{:?}", since_the_epoch);
+        log::info!("CPU Step Stopping");
     }
     
     #[allow(arithmetic_overflow)]

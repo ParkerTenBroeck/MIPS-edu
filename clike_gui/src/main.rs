@@ -7,13 +7,12 @@
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
-pub mod syntax_highlighter;
-
-
-
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    clike_gui::loggers::init();
+    log::info!("test: {}", 12);
+
     let app = clike_gui::ClikeGui::default();
 
     let icon = match image::open("./clike_gui/docs/icon-256.png"){
@@ -40,7 +39,7 @@ fn main() {
     match create_linux_app(){
         Ok(_) => {},
         Err(err) => {
-            println!("Failed to create .desktop file: {}", err)
+            log::info!("Failed to create .desktop file: {}", err)
         },
     }
 
