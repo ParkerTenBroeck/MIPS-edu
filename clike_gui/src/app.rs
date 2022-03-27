@@ -171,6 +171,17 @@ impl epi::App for ClikeGui {
                         frame.quit();
                     }
                 });
+                
+                ui.with_layout(egui::Layout::right_to_left(), |ui|{
+                    ui.add(
+                        egui::Hyperlink::from_label_and_url("HomePage", "https://github.com/ParkerTenBroeck/CLike")
+                    );
+                    ui.separator();
+                    ui.add(
+                        egui::Hyperlink::from_label_and_url("Website", "https://parkertenbroeck.com")
+                    );
+                    ui.separator();
+                });
             });
         });
 
