@@ -1,4 +1,4 @@
-use eframe::{egui::{self, Widget}, epi};
+use eframe::{egui::{self}, epi};
 use mips_emulator::cpu::MipsCpu;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -53,6 +53,25 @@ impl Default for ClikeGui {
             cpu: MipsCpu::new(),
             tabbed_area: TabbedArea::default(),
         };
+        ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
+r#"//runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
+//0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000
+//to run this you must reset processor then start it or program will not be loaded
+//NOTE this assembly is not actually being compiled it is just to show what is being run in the demo :)
+//also node that the highlighting is FAR from being done(using the highlighting from a clike language for now)
+//this version usally takes around ~16.9 seconds while the java version takes ~228.7 seconds (on my machine)
+//thats a cool 1250% speed increase
+
+lhi $2, 32767
+add $1, $0, $0
+loop:
+addi $1, $1, 1
+beq $2, $1, end
+j loop
+end:
+trap 0
+"#.into()
+     )));
         ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
 
         ret

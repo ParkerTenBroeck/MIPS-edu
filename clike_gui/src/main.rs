@@ -24,7 +24,8 @@ fn main() {
                 height: icon_height,
             })
         }
-        Result::Err(_) => {
+        Result::Err(err) => {
+            log::error!("failed to load app icon: {}", err);
             Option::None
         }
     };
