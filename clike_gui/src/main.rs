@@ -11,7 +11,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     clike_gui::loggers::init();
-    log::info!("test: {}", 12);
 
     let app = clike_gui::ClikeGui::default();
 
@@ -49,7 +48,8 @@ fn main() {
 #[cfg(target_os= "linux")]    
 fn create_linux_app() -> Result<(), Box<dyn std::error::Error>>{
     let home = std::env::var("HOME")?;
-    let app = std::fs::File::create(format!("{}/.local/share/applications/clike_gui.desktop", home));
+    let path = format!("{}/.local/share/applications/clike_gui.desktop", home);
+    let app = std::fs::File::create(path.clone());
     match app {
         Ok(mut val) => {
 
@@ -65,24 +65,39 @@ fn create_linux_app() -> Result<(), Box<dyn std::error::Error>>{
                                 format!("Failed to get path {:?}", err))))
                 },
             };
-
-            let full = std::fs::canonicalize(std::path::Path::new("./../clike_gui/docs/icon-256.png"))?;
-            let ic:String = match full.as_os_str().to_str(){
+            let mut tmp = std::env::current_exe()?;
+            if !tmp.pop() || !tmp.pop() || !tmp.pop(){
+                log::error!("failed to get icon path: {:?}", tmp);
+                return Result::Err(
+                    Box::new(
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("Failed to get path {:?}", tmp))))
+            } 
+            tmp.push("clike_gui/docs/icon-256.png");
+            
+            //log::info!("{}", std::fs::canonicalize(std::path::Path::new(".")).unwrap().as_os_str().to_str().unwrap());
+            let ic:String = match tmp.as_os_str().to_str(){
                 Some(val) => val,
                 None => {
+                    log::error!("failed to get icon path: {:?}", tmp);
                     return Result::Err(
                         Box::new(
                             std::io::Error::new(
                                 std::io::ErrorKind::InvalidInput,
-                                format!("Failed to get path {:?}", full))))
+                                format!("Failed to get path {:?}", tmp))))
                 },
             }.into();
+
             let data = format!("[Desktop Entry]\nName=CLike\nExec={}\nIcon={}\nTerminal=false\nType=Application",ec, ic);
              
             use std::io::Write;
             let _ = val.write(data.as_bytes())?;
             return Result::Ok(())
         },
-        Err(val) => Result::Err(Box::new(val)),
+        Err(val) => {
+            log::error!("failed to create application entry {}: {}",path, val);
+            Result::Err(Box::new(val))
+        },
     }
 }

@@ -1,4 +1,4 @@
-use eframe::{egui, epi};
+use eframe::{egui::{self, Widget}, epi};
 use mips_emulator::cpu::MipsCpu;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -36,53 +36,26 @@ impl Default for ApplicationSettings {
 pub struct ClikeGui {
     // Example stuff:
     settings: ApplicationSettings,
-    code: String,
 
     // this how you opt-out of serialization of a member
     //#[cfg_attr(feature = "persistence", serde(skip))]
     //value: f32,
     #[cfg_attr(feature = "persistence", serde(skip))]
     cpu: MipsCpu,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    tabbed_area: TabbedArea,
 }
 
 impl Default for ClikeGui {
     fn default() -> Self {
-        Self {
+        let mut ret = Self {
             settings: ApplicationSettings::default(),
-            // Example stuff:
-            code: r#"
-/// Outer block single line documentation
-/**
-	/*
-		ps(you can have /*!BLOCKS*/ /**inside*/ blocks)
-	*/
-	Outer block multiline documentation
-*/
-fn test(){
-	println!("dont change a thing! {}", "you are amazing ;)");
-	let r#fn = test;
-	let number = 12 + 2.3e-2;
-
-	//! some inner documentation
-	let boolean = false;
-
-	/*!
-		Outer block multiline documentation
-	*/
-	for(i: i32, i < 50; i += 2){
-		println!("hello for the {} time!", i);
-	}
-
-	//this is a comment(crazy right)
-	/*
-		block comment
-		this one goes on for a while
-	*/
-}
-"#
-            .into(),
             cpu: MipsCpu::new(),
-        }
+            tabbed_area: TabbedArea::default(),
+        };
+        ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
+
+        ret
     }
 }
 /*
@@ -163,7 +136,7 @@ impl epi::App for ClikeGui {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self { code, .. } = self;
+        let Self { .. } = self;
         //let mut val6 = 1f32;
 
         // Examples of how to create different panels and windows.
@@ -190,8 +163,16 @@ impl epi::App for ClikeGui {
         let vis = unsafe { &mut VIS };
         //TEMP
 
+        let frame = egui::Frame {
+            margin: egui::style::Margin::symmetric(2.0, 2.0),
+            rounding: eframe::epaint::Rounding::none(),
+            fill: ctx.style().visuals.window_fill(),
+            stroke: ctx.style().visuals.window_stroke(),
+            ..Default::default()
+        };
         egui::SidePanel::left("side_panel")
             .min_width(0.0)
+            .frame(frame)
             .resizable(*select != 0)
             .show(ctx, |ui| {
             //let min_height = ui.min_rect().top();
@@ -201,8 +182,9 @@ impl epi::App for ClikeGui {
             //println!("{}", ui.max_rect().right());
             //ui.spacing_mut().item_spacing.x = 0.0;
             ui.horizontal(|ui| {
-                //ui.spacing_mut().item_spacing.x = 0.0;
+                ui.spacing_mut().item_spacing.x = 0.0;
                 //egui::SidePanel::left("left_icon_panel").show(ui.ctx(), |ui|{
+                    
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     if ui.selectable_label(*vis && *select == 1, "💻").clicked() {
@@ -247,6 +229,8 @@ impl epi::App for ClikeGui {
                 });
 
                 if *select != 0 {
+
+                    ui.spacing_mut().item_spacing.x = 0.0;
                     ui.separator();
 
                     ui.vertical(|ui| {
@@ -391,9 +375,9 @@ impl epi::App for ClikeGui {
                                 
                                 //let dir = std::fs::read_dir(".");
 
-                                generate_tree(".".into(),code,  ui);
+                                generate_tree(".".into(),self, ui);
 
-                                fn generate_tree(path: std::path::PathBuf,t: &mut String,  ui: &mut egui::Ui){
+                                fn generate_tree(path: std::path::PathBuf, t: &mut ClikeGui,  ui: &mut egui::Ui){
                                     match std::fs::read_dir(path) {
                                         Ok(val) => {
                                             
@@ -431,7 +415,8 @@ impl epi::App for ClikeGui {
                                                         if ui.selectable_label(false, val.file_name().into_string().unwrap()).clicked(){
                                                             
                                                             if let Result::Ok(str) = std::fs::read_to_string(val.path()){
-                                                                *t = str;
+                                                                
+                                                                t.tabbed_area.add_tab(Box::new(CodeEditor::new(val.file_name().into_string().unwrap(), str)));
                                                             }
                                                             log::info!("loaded file: {}", val.path().display());
                                                         }
@@ -533,42 +518,7 @@ impl epi::App for ClikeGui {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-
-            ui.heading("Code Editor");
-            egui::warn_if_debug_build(ui);
-
-            let mut theme = crate::syntax_highlighter::CodeTheme::from_memory(ui.ctx());
-            ui.collapsing("Theme", |ui| {
-                ui.group(|ui| {
-                    theme.ui(ui);
-                    theme.clone().store_in_memory(ui.ctx());
-                });
-            });
-
-            let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-                let mut layout_job =
-                    crate::syntax_highlighter::highlight(ui.ctx(), &theme, string, "rs");
-                layout_job.wrap_width = wrap_width;
-                ui.fonts().layout_job(layout_job)
-            };
-
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(code)
-                            .font(egui::TextStyle::Monospace) // for cursor height
-                            .code_editor()
-                            //.desired_rows(10)
-                            .lock_focus(true)
-                            .desired_width(f32::INFINITY)
-                            .layouter(&mut layouter),
-                    )
-                    
-                });
-                //.on_hover_ui_at_pointer(|ui| {
-                //});
-            });
+            self.tabbed_area.ui(ui);
         });
 
         if false {
@@ -579,5 +529,158 @@ impl epi::App for ClikeGui {
                 ui.label("You would normally chose either panels OR windows.");
             });
         }
+    }
+}
+
+trait Tab{
+    fn ui(&mut self, ui: &mut egui::Ui);
+    fn get_name(&self) -> egui::WidgetText;
+}
+
+struct TabbedArea{
+    tabs: Vec<Box<dyn Tab>>,
+    selected: u32,
+}
+impl TabbedArea{
+    fn ui(&mut self, ui: &mut egui::Ui){
+        ui.vertical(|ui|{
+            
+            ui.horizontal_wrapped(|ui|{
+                let mut i = 1u32;
+                let len = self.tabs.len();
+                self.tabs.retain(|tab| {
+                    if ui.selectable_label(self.selected == i, tab.get_name()).clicked(){
+                        if self.selected == i{ 
+                            if (i as usize) >= len{
+                                self.selected -= 1;
+                            }
+                            return false    
+                        }
+                        
+                        self.selected = i;
+                    }
+                    i += 1;
+                    true
+                });
+            });
+            if self.selected > 0{
+                ui.separator();
+                self.tabs[self.selected as usize - 1].ui(ui);
+            }
+        });
+    }
+
+    fn add_tab(&mut self, tab: Box<dyn Tab>){
+        self.tabs.push(tab);
+        if self.selected == 0{
+            self.selected = 1;
+        }
+    }
+}
+
+impl Default for TabbedArea{
+    fn default() -> Self {
+        Self { 
+            tabs: Default::default(),
+            selected: 0
+        }
+    }
+}
+
+struct CodeEditor{
+    title: String,
+    code: String,
+}
+
+impl Default for CodeEditor{
+    fn default() -> Self {
+        Self { 
+            title: "CodeEditor".into(),
+            code: r#"
+/// Outer block single line documentation
+/**
+    /*
+        ps(you can have /*!BLOCKS*/ /**inside*/ blocks)
+    */
+    Outer block multiline documentation
+*/
+fn test(){
+    println!("dont change a thing! {}", "you are amazing ;)");
+    let r#fn = test;
+    let number = 12 + 2.3e-2;
+
+    //! some inner documentation
+    let boolean = false;
+
+    /*!
+        Outer block multiline documentation
+    */
+    for(i: i32, i < 50; i += 2){
+        println!("hello for the {} time!", i);
+    }
+
+    //this is a comment(crazy right)
+    /*
+        block comment
+        this one goes on for a while
+    */
+}
+"#
+                        .into(),
+        }
+    }
+}
+
+impl CodeEditor{
+    pub fn new(title: String, code: String) -> Self {
+        Self{
+            title,
+            code,
+        }
+    }
+}
+
+impl Tab for CodeEditor{
+    
+    fn ui(&mut self, ui: &mut egui::Ui) {
+        
+        ui.heading("Code Editor");
+        egui::warn_if_debug_build(ui);
+
+        let mut theme = crate::syntax_highlighter::CodeTheme::from_memory(ui.ctx());
+        ui.collapsing("Theme", |ui| {
+            ui.group(|ui| {
+                theme.ui(ui);
+                theme.clone().store_in_memory(ui.ctx());
+            });
+        });
+
+        let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+            let mut layout_job =
+                crate::syntax_highlighter::highlight(ui.ctx(), &theme, string, "rs");
+            layout_job.wrap_width = wrap_width;
+            ui.fonts().layout_job(layout_job)
+        };
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.code)
+                        .font(egui::TextStyle::Monospace) // for cursor height
+                        .code_editor()
+                        //.desired_rows(10)
+                        .lock_focus(true)
+                        .desired_width(f32::INFINITY)
+                        .layouter(&mut layouter),
+                )
+                
+            });
+            //.on_hover_ui_at_pointer(|ui| {
+            //});
+        });
+    }
+
+    fn get_name(&self) -> egui::WidgetText {
+        self.title.clone().into()
     }
 }
