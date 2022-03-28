@@ -4,8 +4,11 @@
 
 pub mod app;
 pub mod syntax_highlighter;
-pub use app::ClikeGui;
 pub mod loggers;
+pub mod tabbed_area;
+pub mod resource_manager;
+
+pub use app::ClikeGui;
 
 // ----------------------------------------------------------------------------
 // When compiling for web:
