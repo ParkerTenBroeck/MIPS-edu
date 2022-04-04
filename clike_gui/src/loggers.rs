@@ -1,4 +1,4 @@
-use std::{collections::LinkedList, sync::Mutex, io::Read, borrow::BorrowMut};
+use std::{collections::LinkedList, sync::Mutex, io::{Write}};
 
 
 
@@ -9,6 +9,7 @@ type Records = LinkedList<Record>;
 struct LogData{
     records: Records,
     log_file: Option<std::fs::File>,
+    sequence: usize,
 }
 
 fn get_logger_data() -> &'static Mutex<LogData> {
@@ -54,11 +55,16 @@ static LOGGER: Logger = Logger;
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-        metadata.level() <= log::Level::Info
+        metadata.level() <= log::Level::Trace
     }
 
     fn log(&self, record: &log::Record<'_>) {
         if self.enabled(record.metadata()) {
+
+            let start = std::time::SystemTime::now();
+            let since_the_epoch = start
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("Time went backwards");
             
             //logging to console
             println!("{} - {}", record.level(), record.args());
@@ -68,14 +74,67 @@ impl log::Log for Logger {
             //logging to file
             {
                 use std::io::*;
-                match &mut data.log_file{
+                let mut file = Option::None::<std::fs::File>;
+                std::mem::swap(&mut file, &mut data.log_file);
+                match &mut file{
                     Some(file) => {
 
-                        file.write_all(b"");
-                        
+                        //record.file()
+                        let mut buf = format!(
+"{{
+    millis: {},
+    nanos: {},
+    level: {},
+    sequence: {},
+    message: {:?},
+    target: {},
+",
+since_the_epoch.as_millis(),
+since_the_epoch.as_micros(),
+record.level(),
+data.sequence,
+record.args(),
+record.target());
+                        if let Option::Some(file) = record.file()
+                        {
+                            buf.push_str("\tfile: ");
+                            buf.push_str(file);
+                            buf.push_str(",\n");
+                        }
+                        if let Option::Some(file_static) = record.file_static()
+                        {
+                            buf.push_str("\tfile_static: ");
+                            buf.push_str(file_static);
+                            buf.push_str(",\n");
+                        }
+                        if let Option::Some(module_path) = record.module_path()
+                        {
+                            buf.push_str("\tmodule_path: ");
+                            buf.push_str(module_path);
+                            buf.push_str(",\n");
+                        }
+                        if let Option::Some(module_path_static) = record.module_path_static()
+                        {
+                            buf.push_str("\tmodule_path_static: ");
+                            buf.push_str(module_path_static);
+                            buf.push_str(",\n");
+                        }
+                        if let Option::Some(line) = record.line()
+                        {
+                            buf.push_str(format!("\tline: {},\n", line).as_str());
+                        }
+                        buf.push_str("}\n");
+                        let res = file.write_all(buf.as_bytes());
+                        match res{
+                            Ok(_) => {}
+                            Err(_err) => {
+
+                            }
+                        }
                     }
                     None => {}
                 }
+                std::mem::swap(&mut file, &mut data.log_file);
             }
 
             //logging to records
@@ -85,11 +144,19 @@ impl log::Log for Logger {
                     data.records.pop_back();
                 }    
             }
+            data.sequence += 1;
         }
     }
 
     fn flush(&self) {
 
+        let mut data = get_logger_data().lock().unwrap();
+        match &mut data.log_file{
+            Some(file) => {
+                let _ = file.flush();
+            },
+            None => {},
+        }
     }
 }
 
@@ -102,6 +169,7 @@ pub fn init_logger() -> Result<(), log::SetLoggerError> {
 pub fn init() -> bool{
     let mut data = get_logger_data().lock().unwrap();
     
+    let _ = std::fs::create_dir("./log/");
     data.log_file = match std::fs::File::create("./log/log.txt"){
         Ok(val) => Option::Some(val),
         Err(err) => {
@@ -116,6 +184,7 @@ pub fn init() -> bool{
           return false;
         },
     }
+    drop(data);
     log::info!("Initialized log");
     true
 }

@@ -195,7 +195,7 @@ impl epi::App for ClikeGui {
         let vis = unsafe { &mut VIS };
         //TEMP
 
-        let frame = egui::Frame {
+        let frame_no_marg = egui::Frame {
             margin: egui::style::Margin::symmetric(2.0, 2.0),
             rounding: eframe::epaint::Rounding::none(),
             fill: ctx.style().visuals.window_fill(),
@@ -204,7 +204,7 @@ impl epi::App for ClikeGui {
         };
         egui::SidePanel::left("side_panel")
             .min_width(0.0)
-            .frame(frame)
+            .frame(frame_no_marg.clone())
             .resizable(*select != 0)
             .show(ctx, |ui| {
             //let min_height = ui.min_rect().top();
@@ -549,7 +549,8 @@ impl epi::App for ClikeGui {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        let frame = frame_no_marg.clone();
+        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             self.tabbed_area.ui(ui);
         });
 

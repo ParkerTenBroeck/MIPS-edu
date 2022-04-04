@@ -1,17 +1,27 @@
-use std::mem;
+use std::{mem, ops::Index, sync::Mutex};
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
-const INIT: Option<Box<Page>> = None;
+const INIT: Option<&'static mut Page> = None;
+
+#[derive(Default)]
+struct PagePool{
+    page_pool: Vec<Page>,
+    address_mapping: Vec<u16>,
+}
 
 //maybe use a pool?
 pub struct Memory{
-    page_table: Box<[Option<Box<Page>>; SEG_SIZE]>,
+    page_pool: Mutex<PagePool>,
+    page_table: Box<[Option<&'static mut Page>; SEG_SIZE]>,
 }
 
 impl Default for Memory{
     fn default() -> Self {
-        Self::new()
+        Memory{
+            page_pool: Mutex::new(PagePool::default()),
+            page_table: Box::new([INIT; SEG_SIZE])
+        }
     }
 }
 
@@ -92,34 +102,72 @@ macro_rules! set_mem_alligned_o {
 impl Memory{
 
     pub fn new() -> Self{
-        Memory{
-            page_table: Box::new([INIT; SEG_SIZE])
-        }
+        Self::default()
+    }
+
+    #[inline(always)]
+    fn create_page(&mut self, addr: u16){
+        let page_pool = self.page_pool.get_mut().unwrap();
+        match page_pool.address_mapping.iter().position(|val|  {*val >= addr}) {
+            Some(index) => {
+                let val = unsafe{*page_pool.address_mapping.get_unchecked(index)};
+                if val as u16 == addr{
+
+                }else{
+                    page_pool.address_mapping.insert(index, addr);
+                    page_pool.page_pool.insert(index, Page::new());
+
+                    let ad = page_pool.address_mapping.iter();
+                    let mut pp = page_pool.page_pool.iter();
+                    for addr in ad{
+                        self.page_table[*addr as usize] = unsafe{mem::transmute(pp.next().unwrap())};
+                    }
+                }
+            },
+            None => {
+                page_pool.address_mapping.push(addr);
+                page_pool.page_pool.push(Page::new());
+                let len = page_pool.page_pool.len();
+                self.page_table[addr as usize] = unsafe{mem::transmute(page_pool.page_pool.get_mut( len - 1))};
+            },
+        };
     }
 
 
     #[inline(always)]
-    pub fn get_page(&mut self, address: u32) -> Option<&mut Box<Page>> {
+    fn get_page(&mut self, address: u32) -> Option<&mut Page> {
         let addr = (address >> 16) as usize;
-        self.page_table[addr].as_mut()
+        let p =unsafe{self.page_table.get_unchecked_mut(addr)};
+        match p{
+            Some(val) => Option::Some(val),
+            None => Option::None,
+        }
     }
 
     #[inline(always)]
     pub fn get_or_make_page<'a>(&'a mut self, address: u32) -> &'a mut Page {
         let addr = (address >> 16) as usize;
+        let test = self as *mut Self;
         //we dont need to check if the addr is in bounds since it is always below 2^16
-        let p =unsafe{self.page_table.get_unchecked_mut(addr)};
+        {
+            let p =unsafe{self.page_table.get_unchecked_mut(addr)};
 
-        match p{
-            Some(val) => return val,
-            None => {
-                let page = Box::new(Page::new());
-                *p = Option::Some(page);  
-                match p {
-                    Some(val) => return val,
-                    None => unsafe { std::hint::unreachable_unchecked() },
-                }
-            },
+            match p{
+                Some(val) => return val,
+                None => {
+                    
+                    //let p =unsafe{self.page_table.get_unchecked_mut(addr)};
+                    //let test = self as *mut Self;
+                    unsafe{mem::transmute::<*mut Self, &'static mut Self>(test)}.create_page(addr as u16);
+
+                    //*p =  Option::Some(tmp);  
+                    //let p =unsafe{self.page_table.get_unchecked_mut(addr)};
+                    match p {
+                        Some(val) => return val,
+                        None => unsafe { std::hint::unreachable_unchecked() },
+                    }  
+                },
+            }
         }
     }
 

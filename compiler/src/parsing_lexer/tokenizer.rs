@@ -1058,7 +1058,8 @@ impl<'a> Tokenizer<'a>{
                 size_real: (self.current.index_real - self.start_curr.index_real),
                 index_real: self.start_curr.index_real,
                 line: self.start_curr.line,
-                column: self.start_curr.column
+                column: self.start_curr.column,
+                file: 0,
             }
         };
         if self.matching {
@@ -1078,7 +1079,8 @@ impl<'a> Tokenizer<'a>{
                     size_real,
                     index_real,
                     line,
-                    column
+                    column,
+                    file: 0,
                 }
         })
     }

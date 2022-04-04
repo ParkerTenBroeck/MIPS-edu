@@ -29,6 +29,9 @@ impl<T> Token<T> {
     pub fn get_column(&self) -> usize {
         self.t_data.column
     }
+    pub fn get_file(&self) -> u16 {
+        self.t_data.file
+    }
 }
 
 use std::fmt::Formatter;
@@ -41,6 +44,35 @@ impl<T: Display> Display for Token<T>{
     }
 }
 
+#[derive(Debug)]
+pub struct TokenizerError{
+    pub part: Option<TokenData>,
+    pub error: String,
+}
+impl TokenizerError{
+    pub fn at_pos(error: String, pos: TokenData) -> Self{
+        Self{
+            error,
+            part: Option::Some(pos)
+        }
+    }
+    pub fn error(error: String) -> Self{
+        Self{
+            error,
+            part: Option::None,
+        }
+    }
+}
+
+impl std::error::Error for TokenizerError{
+
+}
+impl std::fmt::Display for TokenizerError{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!();
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct TokenData {
     pub size: usize,
@@ -48,7 +80,8 @@ pub struct TokenData {
     pub index_real:usize,
     pub size_real:usize,
     pub line: usize,
-    pub column: usize
+    pub column: usize,
+    pub file: u16,
 }
 
 #[allow(unused)]
@@ -61,6 +94,7 @@ impl TokenData {
             size_real: 0,
             line: 0,
             column: 0,
+            file: 0,
         }
     }
     pub fn get_real_size(&self) -> usize {
@@ -80,6 +114,9 @@ impl TokenData {
     }
     pub fn get_column(&self) -> usize {
         self.column
+    }    
+    pub fn get_file(&self) -> u16 {
+        self.file
     }
 
     pub fn string_from_token(&self, source: &str) -> String {

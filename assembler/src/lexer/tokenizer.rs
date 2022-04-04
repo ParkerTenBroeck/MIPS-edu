@@ -1,6 +1,8 @@
 use std::mem;
 use std::str::Chars;
 
+use util::token::TokenizerError;
+
 pub type Token = util::token::Token<TokenType>;
 pub type TokenData = util::token::TokenData;
 pub type BufferIndex = util::tokenizer::BufferIndex;
@@ -67,6 +69,7 @@ pub enum TokenType{
     Directive(String),
     PreProcessorStatement(String),
     Label(String),
+    Register(u32),
 
     Whitespace,
     NewLine,
@@ -75,7 +78,32 @@ pub enum TokenType{
     OuterDocumentation(String),
     InnerDocumentation(String),
 
-    ERROR(String)
+    //ERROR(String)
+}
+
+type TokenizerItem = std::option::Option<std::result::Result<Token, TokenizerError>>;
+
+trait IntoWithData<T>: Sized {
+    /// Performs the conversion.
+    fn into_w_data(self, _: TokenData) -> T;
+}
+
+impl IntoWithData<TokenizerItem> for TokenType{
+    fn into_w_data(self, t_data: TokenData) -> TokenizerItem {
+        Option::Some(Result::Ok(Token{t_data, t_type: self}))
+    }
+}
+
+impl IntoWithData<TokenizerItem> for String{
+    fn into_w_data(self, data: TokenData) -> TokenizerItem {
+        Option::Some(Result::Err(TokenizerError::at_pos(self, data)))
+    }
+}
+
+impl IntoWithData<TokenizerItem> for &str{
+    fn into_w_data(self, data: TokenData) -> TokenizerItem {
+        Option::Some(Result::Err(TokenizerError::at_pos(self.into(), data)))
+    }
 }
 
 
@@ -93,7 +121,7 @@ pub struct Tokenizer<'a> {
     state: State,
     matching: bool,
     stop_reset: bool,
-    new_token: Option<Token>,
+    new_token: TokenizerItem,
 
     current: BufferIndex,
     start_curr: BufferIndex,
@@ -158,11 +186,10 @@ enum State{
     EOF
 }
 
-
 impl Iterator for Tokenizer<'_>{
-    type Item = Token;
+    type Item = Result<Token, TokenizerError>;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> TokenizerItem {
         loop{
 
             match (&self.state, self.c){
@@ -172,7 +199,7 @@ impl Iterator for Tokenizer<'_>{
                 (State::Default, '\0') =>{}
                 (_, '\0') => {
                     self.matching = true;
-                    let tmp = self.create_token(TokenType::ERROR(format!("Reached EOF while in state: {:?}", self.state)));
+                    let tmp = self.create_token(format!("Reached EOF while in state: {:?}", self.state));
                     self.state = State::Default;
                     self.matching = false;
                     return tmp;
@@ -271,7 +298,7 @@ impl Iterator for Tokenizer<'_>{
                                     self.state = State::Whitespace;
                                 }else{
                                     let message = format!("Unexpected Char: {:?}", self.c);
-                                    self.new_token = self.create_token(TokenType::ERROR(message));
+                                    self.new_token = self.create_token(message);
                                 }
                             }
                         }
@@ -285,7 +312,7 @@ impl Iterator for Tokenizer<'_>{
                                 self.state = State::Default;
                             }
                             _ => {
-                                self.new_token = self.create_token(TokenType::ERROR(format!("illegal character after \\ {:?} can only have \\n or \\r", self.c)));
+                                self.new_token = self.create_token(format!("illegal character after \\ {:?} can only have \\n or \\r", self.c));
                                 self.state = State::Default;
                             } 
                         }
@@ -318,7 +345,7 @@ impl Iterator for Tokenizer<'_>{
                                         self.state = State::Default;
                                     }else{
                                         self.matching = true;
-                                        self.new_token = self.create_token(TokenType::ERROR(format!("Invalid starting character for lable: {:?}", start)));
+                                        self.new_token = self.create_token(format!("Invalid starting character for lable: {:?}", start));
                                         self.state = State::Default;
                                     }
                                 }
@@ -336,7 +363,8 @@ impl Iterator for Tokenizer<'_>{
                                         }
                                         '$' => {
                                             let ident = ident.replacen("$", "", 1);
-                                            self.new_token = self.create_token(TokenType::Identifier(ident));
+                                            self.new_token = self.create_identifier_or_keyword(ident);//self.create_token(TokenType::Identifier(ident.to_string()));
+                                            //self.new_token = self.create_token(TokenType::Identifier(ident));
                                             self.state = State::Default;
                                         }
                                         _ => {
@@ -353,7 +381,7 @@ impl Iterator for Tokenizer<'_>{
                             self.state = State::IdentifierContinue;
                         }else{
                             let message = format!("Unexpected Char: {:?} ident must be one or more characters", self.c);
-                            self.new_token = self.create_token(TokenType::ERROR(message));
+                            self.new_token = self.create_token(message);
                         }
                     }
                     State::Whitespace => {
@@ -735,7 +763,7 @@ impl Iterator for Tokenizer<'_>{
                                 self.new_token = Tokenizer::create_token_c(self.current.index - self.escape_start.index + 1, self.escape_start.index - 1,
                                                                            self.current.index_real - self.escape_start.index_real + 1, self.escape_start.index_real - 1,
                                                                            self.escape_start.line, self.escape_start.column - 1,
-                                                                           TokenType::ERROR(format!("Invalid character in escape sequence: {}", self.c)));
+                                                                           format!("Invalid character in escape sequence: {}", self.c));
                             }
                         }
                     }
@@ -748,7 +776,7 @@ impl Iterator for Tokenizer<'_>{
                                     self.default_reset(false, TokenType::CharLiteral(self.char_literal))
                                 }else{
                                     self.stop_reset = true;
-                                    self.new_token = self.create_token(TokenType::ERROR("Char literal cannot contain more than one character".into()));
+                                    self.new_token = self.create_token("Char literal cannot contain more than one character");
                                     self.matching = true;
                                     self.char_literal = '\0';
                                     //self.default_reset(false, TokenType::ERROR("Char literal cannot contain more than one character".into()));
@@ -759,7 +787,7 @@ impl Iterator for Tokenizer<'_>{
                             }
                             '\n'|'\r' => {
                                 self.default_reset(
-                                    true, TokenType::ERROR("Cannot have new line in char literal".into()));
+                                    true, "Cannot have new line in char literal");
                             }
                             char =>{
                                 self.char_literal = char;
@@ -776,7 +804,7 @@ impl Iterator for Tokenizer<'_>{
                     }
                     State::CharLiteralStart => {
                         match self.c {
-                            '\'' => self.default_reset(false, TokenType::ERROR("Empty Char Literal".into())),
+                            '\'' => self.default_reset(false, "Empty Char Literal"),
                             _ =>{
                                 self.string = String::new();
                                 self.char_literal = '\0';
@@ -886,17 +914,17 @@ impl Iterator for Tokenizer<'_>{
                         let mut new = Option::None;
                         mem::swap(&mut self.new_token,&mut new);
                         match new{
-                            Option::Some(Token{t_type: TokenType::Whitespace, ..}) => {
+                            Option::Some(Result::Ok(Token{t_type: TokenType::Whitespace, ..})) => {
                                 if self.include_whitespace {
                                     return new;
                                 }
                             }
-                            Option::Some(Token{t_type: TokenType::Comment(_), ..}) => {
+                            Option::Some(Result::Ok(Token{t_type: TokenType::Comment(_), ..})) => {
                                 if self.include_comments {
                                     return new;
                                 }
                             }
-                            Option::Some(Token{t_type: TokenType::OuterDocumentation(_) | TokenType::InnerDocumentation(_), ..}) => {
+                            Option::Some(Result::Ok(Token{t_type: TokenType::OuterDocumentation(_) | TokenType::InnerDocumentation(_), ..})) => {
                                 if self.include_documentation {
                                     return new;
                                 }
@@ -1024,40 +1052,55 @@ impl<'a> Tokenizer<'a>{
         self.c = '\0';
     }
 
-    fn create_token(&self, t_type: TokenType) -> Option<Token> {
-        let mut temp = Token{t_type,
-            t_data: TokenData{
-                index: self.start_curr.index,
-                size: (self.current.index - self.start_curr.index),
-                size_real: (self.current.index_real - self.start_curr.index_real),
-                index_real: self.start_curr.index_real,
-                line: self.start_curr.line,
-                column: self.start_curr.column
-            }
-        };
+    fn create_token(&self, t_type: impl IntoWithData<TokenizerItem>) -> TokenizerItem{
+        let mut data = TokenData{
+            index: self.start_curr.index,
+            size: (self.current.index - self.start_curr.index),
+            size_real: (self.current.index_real - self.start_curr.index_real),
+            index_real: self.start_curr.index_real,
+            line: self.start_curr.line,
+            column: self.start_curr.column,
+            file: 0,
+        };        
         if self.matching {
-            temp.t_data.size -= 1;
-            temp.t_data.size_real -= self.c.len_utf8();
-        }
-        Option::Some(temp)
+            data.size -= 1;
+            data.size_real -= self.c.len_utf8();
+        };
+        t_type.into_w_data(data)
     }
 
-    fn create_token_c(size: usize ,index: usize,size_real: usize ,index_real: usize, line: usize, column:usize, t_type: TokenType) -> Option<Token> {
-        Option::Some(
-            Token{
-                t_type,
-                t_data: TokenData{
-                    size,
-                    index,
-                    size_real,
-                    index_real,
-                    line,
-                    column
-                }
-        })
+    // fn create_token(&self, t_type: TokenType) -> TokenizerItem {
+    //     let mut temp = Token{t_type,
+    //         t_data: TokenData{
+    //             index: self.start_curr.index,
+    //             size: (self.current.index - self.start_curr.index),
+    //             size_real: (self.current.index_real - self.start_curr.index_real),
+    //             index_real: self.start_curr.index_real,
+    //             line: self.start_curr.line,
+    //             column: self.start_curr.column
+    //         }
+    //     };
+    //     if self.matching {
+    //         temp.t_data.size -= 1;
+    //         temp.t_data.size_real -= self.c.len_utf8();
+    //     }
+    //     Option::Some(Result::Ok(temp))
+    // }
+
+    fn create_token_c(size: usize ,index: usize,size_real: usize ,index_real: usize, line: usize, column:usize, t_type: impl IntoWithData<TokenizerItem>) -> TokenizerItem {
+        let data =TokenData{
+            size,
+            index,
+            size_real,
+            index_real,
+            line,
+            column,
+            file: 0,
+        };
+        t_type.into_w_data(data)
     }
 
-    fn create_number_token(&self, mut num: String) -> Option<Token>{
+    fn create_number_token(&self, mut num: String) -> TokenizerItem{
 
         let original:String = num.to_string();
         let suffixes = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64"];
@@ -1089,13 +1132,13 @@ impl<'a> Tokenizer<'a>{
             _ => base = 10
         }
 
-        let mut t_type: TokenType;
+        let t_type: Result<TokenType, String>;
 
         macro_rules! parse_to_token{
             ($a: path, $b: ident) => {
                 match num.parse::<$a>(){
-                    Ok(val) => t_type = TokenType::$b(val),
-                    Err(val) => t_type = TokenType::ERROR(val.to_string())
+                    Ok(val) => t_type = Result::Ok(TokenType::$b(val)),
+                    Err(val) => t_type = Result::Err(val.to_string())
                 }
             }
         }
@@ -1103,8 +1146,8 @@ impl<'a> Tokenizer<'a>{
         macro_rules! parse_to_token_base{
             ($a: ident, $b: ident, $c: ident) => {
                 match $a::from_str_radix(num.as_str(), $c){
-                    Ok(val) => t_type = TokenType::$b(val),
-                    Err(val) => t_type = TokenType::ERROR(val.to_string())
+                    Ok(val) => t_type = Result::Ok(TokenType::$b(val)),
+                    Err(val) => t_type = Result::Err(val.to_string())
                 }
             }
         }
@@ -1123,7 +1166,7 @@ impl<'a> Tokenizer<'a>{
             ("f32", 10) => parse_to_token!(f32, F32Literal),
             ("f64", 10) => parse_to_token!(f64, F64Literal),
             ("f32" | "f64", _) =>
-                t_type = TokenType::ERROR("Cannot have non base 10 floating point literal".into()),
+                t_type = Result::Err("Cannot have non base 10 floating point literal".into()),
             (_, base) => {
                 if base == 10{
                     if num.contains("e") || num.contains("E") || num.contains("."){
@@ -1137,21 +1180,53 @@ impl<'a> Tokenizer<'a>{
             }
         }
         match t_type{
-            TokenType::ERROR(string) =>{
-                t_type = TokenType::ERROR(format!("{} for: {}", string, original))
+            Ok(ok) => {
+                self.create_token(ok)
+            },
+            Err(err) => {
+                self.create_token(format!("{} for: {}", err, original))
             }
-            _ => {}
         }
-
-        self.create_token(t_type)
     }
 
-    fn create_identifier_or_keyword(&self, ident: String) -> Option<Token>{
+    fn create_identifier_or_keyword(&self, ident: String) -> TokenizerItem{
 
         let t_type: TokenType;
         match ident.as_str(){
             "true" => t_type = TokenType::BoolLiteral(true),
             "false" => t_type = TokenType::BoolLiteral(false),
+            "0" => t_type = TokenType::Register(0),
+            "1" => t_type = TokenType::Register(1),
+            "2" => t_type = TokenType::Register(2),
+            "3" => t_type = TokenType::Register(3),
+            "4" => t_type = TokenType::Register(4),
+            "5" => t_type = TokenType::Register(5),
+            "6" => t_type = TokenType::Register(6),
+            "7" => t_type = TokenType::Register(7),
+            "8" => t_type = TokenType::Register(8),
+            "9" => t_type = TokenType::Register(9),
+            "10" => t_type = TokenType::Register(10),
+            "11" => t_type = TokenType::Register(11),
+            "12" => t_type = TokenType::Register(12),
+            "13" => t_type = TokenType::Register(13),
+            "14" => t_type = TokenType::Register(14),
+            "15" => t_type = TokenType::Register(15),
+            "16" => t_type = TokenType::Register(16),
+            "17" => t_type = TokenType::Register(17),
+            "18" => t_type = TokenType::Register(18),
+            "19" => t_type = TokenType::Register(19),
+            "20" => t_type = TokenType::Register(20),
+            "21" => t_type = TokenType::Register(21),
+            "22" => t_type = TokenType::Register(22),
+            "23" => t_type = TokenType::Register(23),
+            "24" => t_type = TokenType::Register(24),
+            "25" => t_type = TokenType::Register(25),
+            "26" => t_type = TokenType::Register(26),
+            "27" => t_type = TokenType::Register(27),
+            "28" => t_type = TokenType::Register(28),
+            "29" => t_type = TokenType::Register(29),
+            "30" => t_type = TokenType::Register(30),
+            "31" => t_type = TokenType::Register(31),
             
             _=> t_type = TokenType::Identifier(ident)
         }
@@ -1159,7 +1234,7 @@ impl<'a> Tokenizer<'a>{
         self.create_token(t_type)
     }
 
-    fn default_reset(&mut self, matching:bool, tok:TokenType){
+    fn default_reset(&mut self, matching:bool, tok: impl IntoWithData<TokenizerItem>){
         self.matching = matching;
         self.new_token = self.create_token(tok);
         self.state = State::Default;
@@ -1215,7 +1290,7 @@ impl<'a> Tokenizer<'a>{
         self
     }
 
-    pub fn tokenize(&mut self) -> Vec<Token>{
+    pub fn tokenize(&mut self) -> Vec<Result<Token, TokenizerError>>{
         let mut tokens = Vec::new();
         loop{
             match self.next(){

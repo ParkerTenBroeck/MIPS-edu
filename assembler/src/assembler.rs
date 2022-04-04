@@ -1,4 +1,4 @@
-use std::{fs::File, error::Error, io::Read, collections::HashMap, ops::DerefMut};
+use std::{fs::File, error::Error, io::Read, collections::{HashMap, LinkedList}, ops::DerefMut, fmt::Display, rc::Rc};
 
 use crate::lexer::tokenizer::{Tokenizer, TokenType};
 type Token = util::token::Token<TokenType>;
@@ -35,13 +35,90 @@ impl Scope {
         }
     }
 }
+#[derive(Debug)]
+struct AssemblyError{
+    r#type: ErrorType,
+    message: String,
+    cause_area: Option<TokenData>,
+}
+#[derive(Debug)]
+enum ErrorType{
+    Tokenizer,
+    PreProcessor,
+    Assembler,
+    Linker,
+    File
+}
+
+impl AssemblyError{
+    fn tokenizer_error(error: TokenizerError) -> Self {
+        let TokenizerError{
+            error,
+            part
+        } = error;
+        AssemblyError{
+            r#type: ErrorType::Tokenizer,
+            message: error,
+            cause_area: part,
+        }
+    }
+
+    fn preprocessor_error(message: String) -> Self{
+        AssemblyError{
+            r#type: ErrorType::PreProcessor,
+            message,
+            cause_area: Option::None,
+        }
+    }
+    fn preprocessor_error_in_area(message: String, area: TokenData) -> Self{
+        AssemblyError{
+            r#type: ErrorType::PreProcessor,
+            message,
+            cause_area: Option::Some(area),
+        }
+    }
+}
+
+impl Error for AssemblyError{
+
+}
+
+impl Display for AssemblyError{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+struct FileInfo{
+    file: String,
+    data: String,
+}
 
 #[derive(Default)]
 struct Assembler{
     scope: Vec<Scope>,
+    errors: LinkedList<AssemblyError>,
+    files: LinkedList<Rc<FileInfo>>
 }
 
-impl Assembler{
+//errors
+use util::token::{TokenizerError, TokenData};
+impl Assembler {
+    fn report_tokenizer_error(&mut self, error: TokenizerError){
+        self.errors.push_back(AssemblyError::tokenizer_error(error));
+    }
+
+
+    fn report_preprocessor_error(&mut self, error: impl Into<String>, area: TokenData){
+        self.errors.push_back(AssemblyError::preprocessor_error_in_area(error.into(), area));
+    }
+
+    fn has_encountered_error(&self) -> bool{
+        self.errors.len() > 0
+    }
+}
+
+impl Assembler {
 
     pub fn new() -> Self{
         Assembler {
@@ -49,7 +126,7 @@ impl Assembler{
         }
     }
 
-    fn get_from_scope<'a>(&'a mut self, ident: &String) -> Option<&'a mut Define>{
+    fn get_from_scope<'b>(&'b mut self, ident: &String) -> Option<&'b mut Define>{
         
 
         for scope in self.scope.iter_mut().rev(){
@@ -62,24 +139,6 @@ impl Assembler{
         }
 
         Option::None
-        // let mut i = self.scope.len() as i32;
-        // while {i -= 1; i >= 0} 
-        // {
-        //     let scope: Option<&'a mut Scope> = self.scope.get_mut(i as usize);
-        //     match scope {
-        //         Some(val) => {
-        //             match val.values.get_mut(ident){
-        //                 Some(val) => {
-        //                     return Option::Some(val);
-        //                 },
-        //                 None => continue,
-        //             }
-        //         },
-        //         None => continue,
-        //     }
-            
-        // }
-        // Option::None
     }
 
     fn put_into_scope(&mut self, ident: String, val: Define) {
@@ -98,12 +157,17 @@ impl Assembler{
 
         //let input_buf =  std::fs::read_to_string("./assembler/res/snake.asm")?;
         let size = input.read_to_string(&mut input_buf)?;
+    
         
-        let mut tokenizer = Tokenizer::from_string(&input_buf)
+        let rc = Rc::new(FileInfo{data: input_buf, file: "".into()});
+        self.files.push_back(rc);
+        let input_buf = self.files.back().unwrap().clone();
+
+        let mut tokenizer = Tokenizer::from_string(&input_buf.data)
             .include_comments(false)
             .include_documentation(false)
             .include_whitespace(false);
-        let lines = Self::linafy(&mut tokenizer);
+        let lines = self.linafy(&mut tokenizer);
         
         let mut lines = self.preprocess(lines);
 
@@ -172,8 +236,16 @@ impl Assembler{
         for line in data{
             for tok in line{
                 match tok.tok.get_token_type(){
-                    TokenType::Identifier(_) => {
+                    TokenType::Identifier(ident) => {
                         bit += 32;
+                        match ident.as_str(){
+                            "add" => {
+                                
+                            }
+                            _ => {
+
+                            }
+                        }
                     }
                     TokenType::Label(val) => {
                         map.insert(val.clone(), bit);
@@ -186,24 +258,33 @@ impl Assembler{
         }
     }
 
-    fn linafy(tokenizer: &mut Tokenizer) -> Vec<Vec<Token>>{
+    fn linafy(&mut self, tokenizer: &mut Tokenizer) -> Vec<Vec<Token>>{
         let mut lines = Vec::new();
     
         let mut line = Vec::new();
         for token in tokenizer{
-            
-            use crate::lexer::tokenizer::TokenType::*;
-            match token.get_token_type(){
-                NewLine => {
-                    if line.len() > 0 {
-                        lines.push(line);
+
+            match token {
+                Ok(token) => {
+                    use crate::lexer::tokenizer::TokenType::*;
+                    match token.get_token_type(){
+                        NewLine => {
+                            if line.len() > 0 {
+                                lines.push(line);
+                            }
+                            line = Vec::new();
+                        }
+                        _ => {
+                            line.push(token);
+                        }
                     }
-                    line = Vec::new();
                 }
-                _ => {
-                    line.push(token);
-                }
+                Err(err) => {
+                    self.report_tokenizer_error(err);
+                },
             }
+            
+
         }
         if line.len() > 0 {
             lines.push(line);
@@ -233,22 +314,16 @@ impl Assembler{
                             self.put_into_scope(ident, Define::Nothing);
                         }
                     }else{
-                        let mut new: Vec<PPToken> = Vec::new();
-                        first.t_type = TokenType::ERROR(format!("Only a valid identifier can be used in define"));
-                        let first = PPToken { tok: first, parent: Option::None };
-                        new.push(first);
-                        return Option::Some(new);
+                        self.report_preprocessor_error("Only a valid identifier can be used in define", second.t_data);
+                        return Option::None;
                     }
                 },
                 "undefine" => {
 
                 },
-                _ => {
-                    let mut new: Vec<PPToken> = Vec::new();
-                    first.t_type = TokenType::ERROR(format!("how did this happen??"));
-                    let first = PPToken { tok: first, parent: Option::None };
-                    new.push(first);
-                    return Option::Some(new);
+                val => {
+                    self.report_preprocessor_error("Invalid preprocessing statement", first.t_data);
+                    return Option::None;
                 }
             }
         }

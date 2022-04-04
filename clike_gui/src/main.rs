@@ -10,7 +10,9 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    clike_gui::loggers::init();
+    if !clike_gui::loggers::init(){
+        std::process::exit(0);
+    }
 
     let app = clike_gui::ClikeGui::default();
 

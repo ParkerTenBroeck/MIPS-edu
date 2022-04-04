@@ -26,6 +26,8 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     // Make sure panics are logged using `console.error`.
     console_error_panic_hook::set_once();
 
+    clike_gui::loggers::init();
+
     // Redirect tracing to console.log and friends:
     tracing_wasm::set_as_global_default();
 
