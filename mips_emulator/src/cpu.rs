@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::{time::Duration, sync::{MutexGuard, Mutex}};
 
-use crate::memory::Memory;
+use crate::memory::{Memory, PagePool};
 
 //macros
 //jump encoding
@@ -125,8 +125,6 @@ impl Default for CpuExternalHandler{
 }
 
 
-
-
 impl MipsCpu{
     #[allow(unused)]
     pub fn new() -> Self{
@@ -153,9 +151,7 @@ impl MipsCpu{
     #[allow(unused)]
     pub fn get_pc(&self) -> u32 { self.pc }
     #[allow(unused)]
-    pub fn get_mem(&self) -> &Memory { 
-        &self.mem
-     }
+    pub fn get_mem(&mut self) -> &Memory { &self.mem }
 
     #[allow(unused)]
     pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] { &mut self.reg }

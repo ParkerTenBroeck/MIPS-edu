@@ -366,6 +366,21 @@ impl epi::App for ClikeGui {
                                         }
                                     }
                                 }
+                                let sel: &mut bool = unsafe{
+                                    static mut internal: bool = false;
+                                    &mut internal
+                                };
+                                if ui.selectable_label(*sel, "asdasd").clicked(){
+                                    *sel = !*sel;
+
+                                    unsafe{
+                                        if *sel{
+
+                                        }else{
+                                            
+                                        }
+                                    }
+                                }
                                 if ui.button("Reset CPU").clicked() {
                                     unsafe {
                                         if !MIPS_CPU.as_mut().unwrap().is_running() {

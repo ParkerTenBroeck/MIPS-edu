@@ -39,7 +39,7 @@ fn main(){
                          //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
                         //the version written in c++ seems to be around 17% faster
                         //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
-
+                        
                         CPU_TEST.as_mut().unwrap().clear();
 
                         let test_prog = [

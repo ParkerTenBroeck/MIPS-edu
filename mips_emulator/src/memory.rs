@@ -4,16 +4,17 @@ const SEG_SIZE:usize = 0x10000;
 //stupid workaround
 const INIT: Option<&'static mut Page> = None;
 
+
 #[derive(Default)]
-struct PagePool{
+pub (crate) struct PagePool{
     page_pool: Vec<Page>,
     address_mapping: Vec<u16>,
 }
 
 //maybe use a pool?
 pub struct Memory{
-    page_pool: Mutex<PagePool>,
-    page_table: Box<[Option<&'static mut Page>; SEG_SIZE]>,
+    pub(crate) page_pool: Mutex<PagePool>,
+    pub(crate) page_table: Box<[Option<&'static mut Page>; SEG_SIZE]>,
 }
 
 impl Default for Memory{
@@ -159,7 +160,7 @@ impl Memory{
                     //let p =unsafe{self.page_table.get_unchecked_mut(addr)};
                     //let test = self as *mut Self;
                     unsafe{mem::transmute::<*mut Self, &'static mut Self>(test)}.create_page(addr as u16);
-
+                    
                     //*p =  Option::Some(tmp);  
                     //let p =unsafe{self.page_table.get_unchecked_mut(addr)};
                     match p {
@@ -237,7 +238,6 @@ impl Memory{
     get_mem_alligned_o!(get_u8_o, u8);
     set_mem_alligned_o!(set_u8_o, u8);
 }
-
 
 pub struct Page{
     page: [u8; SEG_SIZE],
