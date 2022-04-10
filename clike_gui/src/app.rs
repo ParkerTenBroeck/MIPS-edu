@@ -43,8 +43,8 @@ pub struct ClikeGui {
     // this how you opt-out of serialization of a member
     //#[cfg_attr(feature = "persistence", serde(skip))]
     //value: f32,
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    cpu: MipsCpu,
+    //#[cfg_attr(feature = "persistence", serde(skip))]
+    //cpu: MipsCpu,
     #[cfg_attr(feature = "persistence", serde(skip))]
     tabbed_area: TabbedArea,
 }
@@ -53,7 +53,7 @@ impl Default for ClikeGui {
     fn default() -> Self {
         let mut ret = Self {
             settings: ApplicationSettings::default(),
-            cpu: MipsCpu::new(),
+            //cpu: MipsCpu::new(),
             tabbed_area: TabbedArea::default(),
         };
         ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
@@ -366,21 +366,21 @@ impl epi::App for ClikeGui {
                                         }
                                     }
                                 }
-                                let sel: &mut bool = unsafe{
-                                    static mut internal: bool = false;
-                                    &mut internal
-                                };
-                                if ui.selectable_label(*sel, "asdasd").clicked(){
-                                    *sel = !*sel;
+                                //let sel: &mut bool = unsafe{
+                                //    static mut internal: bool = false;
+                                //    &mut internal
+                                //};
+                                // if ui.selectable_label(*sel, "asdasd").clicked(){
+                                //     *sel = !*sel;
 
-                                    unsafe{
-                                        if *sel{
+                                //     unsafe{
+                                //         if *sel{
 
-                                        }else{
+                                //         }else{
                                             
-                                        }
-                                    }
-                                }
+                                //         }
+                                //     }
+                                // }
                                 if ui.button("Reset CPU").clicked() {
                                     unsafe {
                                         if !MIPS_CPU.as_mut().unwrap().is_running() {

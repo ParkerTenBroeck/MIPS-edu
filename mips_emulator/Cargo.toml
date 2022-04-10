@@ -13,3 +13,6 @@ memory_allignment_check = []
 
 [dependencies]
 log = "0.4.16"
+
+[profile.release]
+debug = true
