@@ -1,9 +1,9 @@
 use std::{
-    sync::{atomic::AtomicUsize, Mutex, MutexGuard},
-    time::Duration, cell::UnsafeCell, ops::DerefMut,
+    sync::{atomic::AtomicUsize},
+    time::Duration, ptr::NonNull,
 };
 
-use crate::memory::{Memory, PagePool, PagePoolRef};
+use crate::memory::{Memory, PagePoolRef, PagePoolListener};
 
 //macros
 //jump encoding
@@ -128,10 +128,28 @@ impl Default for CpuExternalHandler {
     }
 }
 
+impl PagePoolListener for MipsCpu{
+    fn lock(&mut self, initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if !initiator{
+            println!("Paused!!!");
+            self.pause();
+        }
+        Result::Ok(())
+    }
+
+    fn unlock(&mut self, initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if !initiator{
+            println!("Resumed!!!");
+            self.resume();
+        }
+        Result::Ok(())
+    }
+}
+
 impl MipsCpu {
     #[allow(unused)]
     pub fn new() -> Self {
-        MipsCpu {
+        let mut tmp =MipsCpu {
             pc: 0,
             reg: [0; 32],
             lo: 0,
@@ -143,7 +161,14 @@ impl MipsCpu {
             is_paused: true,
             mem: Memory::new(),
             //..Default::default()
-        }
+        };
+
+        tmp
+    }
+
+    unsafe fn into_listener(&mut self) -> &'static mut (dyn PagePoolListener + Sync + Send){
+        let test: &mut dyn PagePoolListener = self;
+        std::mem::transmute(test)
     }
 
     #[allow(unused)]
@@ -163,7 +188,7 @@ impl MipsCpu {
         self.pc
     }
     #[allow(unused)]
-    pub fn get_mem(&mut self) -> &Memory {
+    pub fn get_mem(&self) -> &Memory{
         &self.mem
     }
 
@@ -184,19 +209,23 @@ impl MipsCpu {
         &mut self.pc
     }
     #[allow(unused)]
-    pub fn get_mem_mut(&mut self) -> &mut Memory {
+    pub fn get_mem_mut(&mut self) -> &mut Memory{
         &mut self.mem
     }
 
     #[allow(unused)]
     pub fn is_running(&self) -> bool {
-        self.running | !self.finished
+        //this is a hack(dont come for me :))
+        *crate::black_box(&self.running) || !*crate::black_box(&self.finished)
     }
 
-    #[allow(unused)]
-    pub fn is_paused(&self) -> bool {
+    pub fn paused_or_stopped(&self) -> bool{
+        self.is_paused() || !self.is_running()
+    }
+
+    fn is_paused(&self) -> bool {
         //this is a hack(dont come for me :))
-        unsafe{(*(self as *const Self)).is_paused}
+        *crate::black_box(&self.is_paused)
     }
 
     #[allow(unused)]
@@ -225,10 +254,12 @@ impl MipsCpu {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         while {
+            //println!("CPU {:p}", self);
             self.i_check = !true;
+            !self.is_paused()
+        }{
             std::thread::sleep(std::time::Duration::from_millis(1));
-            self.is_paused()
-        }{}
+        }
     }
 
     #[allow(unused)]
@@ -450,6 +481,9 @@ impl MipsCpu {
                 unsafe { *self.reg.get_unchecked($reg) }
             };
         }
+        //TODO ensure that the memory isnt currently locked beforehand
+        let listener = unsafe{self.into_listener()};
+        self.mem.add_listener(listener);
 
         self.is_paused = false;
         'main_loop: while {
@@ -886,5 +920,6 @@ impl MipsCpu {
             self.running //do while self.running
         } {}
         self.finished = true;
+        self.mem.remove_listener();
     }
 }

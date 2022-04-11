@@ -284,7 +284,7 @@ impl epi::App for ClikeGui {
                                         cpu.get_general_registers(),
                                     )
                                 };
-                                if cpu.is_running() && !cpu.is_paused() {
+                                if cpu.is_running() && !cpu.paused_or_stopped() {
                                     ui.ctx().request_repaint();
                                 }
     
@@ -348,7 +348,7 @@ impl epi::App for ClikeGui {
                                 }
                                 if ui.button("Pause CPU").clicked() {
                                     unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().is_paused(){
+                                        if MIPS_CPU.as_mut().unwrap().paused_or_stopped(){
                                             log::warn!("CPU is already paused");
                                         }else{
                                             MIPS_CPU.as_mut().unwrap().pause();
@@ -358,7 +358,7 @@ impl epi::App for ClikeGui {
                                 }
                                 if ui.button("Resume CPU").clicked() {
                                     unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().is_paused(){
+                                        if MIPS_CPU.as_mut().unwrap().paused_or_stopped(){
                                             MIPS_CPU.as_mut().unwrap().resume();
                                             log::info!("CPU resumed");
                                         }else{

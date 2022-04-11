@@ -12,3 +12,12 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
+
+
+pub fn black_box_1<T>(dummy: T) -> T{
+    unsafe {
+        let ret = std::ptr::read_volatile(&dummy);
+        std::mem::forget(dummy);
+        ret
+    }
+}

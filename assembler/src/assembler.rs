@@ -293,7 +293,7 @@ impl Assembler {
     }
 
     fn accept_preprocess_statement(&mut self, line: &mut Vec<Token>) -> Option<Vec<PPToken>>{
-        let mut first = line.remove(0);
+        let first = line.remove(0);
         if let TokenType::PreProcessorStatement(ident) = first.t_type{
             match ident.as_str(){
                 "define" => {
@@ -322,7 +322,7 @@ impl Assembler {
 
                 },
                 val => {
-                    self.report_preprocessor_error("Invalid preprocessing statement", first.t_data);
+                    self.report_preprocessor_error(format!("Invalid preprocessing statement: {:?}", val), first.t_data);
                     return Option::None;
                 }
             }

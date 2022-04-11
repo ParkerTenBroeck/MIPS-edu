@@ -1,4 +1,4 @@
-use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, cell::UnsafeCell, ops::{DerefMut, Deref}, borrow::BorrowMut, pin::Pin, collections::LinkedList, ptr::NonNull, fmt::Debug};
+use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, borrow::BorrowMut, ptr::NonNull, fmt::Debug};
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
@@ -6,14 +6,32 @@ const INIT: Option<&'static mut Page> = None;
 
 
 pub trait PagePoolHolder{
-    fn lock(&mut self, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
-    fn unlock(&mut self, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
+    fn lock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
+    fn unlock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait PagePoolListener{
+    fn lock(&mut self, initiator: bool) -> Result<(), Box<dyn Error>>;
+    fn unlock(&mut self, initiator: bool) -> Result<(), Box<dyn Error>>;
 }
 
 pub struct PagePoolRef<T: PagePoolHolder + Send + Sync>{
     inner:  NonNull<T>,
     page_pool: Arc<Mutex<PagePoolController>>,
     id: usize,
+}
+
+pub struct PagePoolNotifier{
+    page_pool: Arc<Mutex<PagePoolController>>,
+    id: usize,
+}
+
+impl PagePoolNotifier{
+    fn get_page_pool(&self) -> MutexGuard<PagePoolController>{
+        let mut test = self.page_pool.lock().unwrap();
+        test.last_lock_id = self.id;
+        test
+    }
 }
 
 unsafe impl<T: PagePoolHolder + Send + Sync> Send for PagePoolRef<T>{
@@ -40,8 +58,11 @@ impl<T: PagePoolHolder + Send + Sync> PagePoolRef<T>{
         unsafe{self.inner.as_ref()}
     }
 
-    fn get_page_pool(&self) -> Arc<Mutex<PagePoolController>>{
-        self.page_pool.to_owned()
+    fn get_page_pool(&self) -> PagePoolNotifier{
+        PagePoolNotifier{
+            page_pool: self.page_pool.to_owned(),
+            id: self.id,
+        }
     } 
 }
 
@@ -76,6 +97,7 @@ pub (crate) struct PagePoolController{
     page_pool: PagePool,
     holders: Vec<(usize, NonNull<dyn PagePoolHolder + Send + Sync>)>,
     myself: Weak<Mutex<PagePoolController>>,
+    last_lock_id: usize,
 }
 
 impl Debug for PagePoolController{
@@ -106,7 +128,8 @@ impl PagePoolController{
                     test.write(PagePoolController { 
                         page_pool: PagePool::default(), 
                         holders: Vec::new(), 
-                        myself: weak 
+                        myself: weak,
+                        last_lock_id: 0,
                     });
                 },
                 Err(_err) => {
@@ -167,7 +190,7 @@ impl PagePoolController{
 
             let tmp = unsafe{holder.1.as_mut()};
             
-            match tmp.lock(&mut self.page_pool) {
+            match tmp.lock(holder.0 == self.last_lock_id, &mut self.page_pool) {
                 Ok(_) => {},
                 Err(_err) => {
                     err = true;
@@ -187,7 +210,7 @@ impl PagePoolController{
         for holder in &mut self.holders{
 
             let tmp = unsafe{holder.1.as_mut()};
-            match tmp.unlock(&mut self.page_pool){
+            match tmp.unlock(holder.0 == self.last_lock_id,&mut self.page_pool){
                 Ok(_) => {},
                 Err(_err) => {
                     err = true;
@@ -256,33 +279,17 @@ impl PagePoolController{
 
 }
 
-impl PagePoolHolder for Memory{
-    fn lock(&mut self, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
-        Result::Ok(())
-    }
-
-    fn unlock(&mut self, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
-        
-        for page in self.page_table.iter_mut(){
-            *page = Option::None;
-        }
-        
-        let pages = page_pool.pool.iter_mut();
-        let mut addresses = page_pool.address_mapping.iter();
-        for page in pages{
-            unsafe{
-                self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(mem::transmute(page));
-            }
-        }
-
-        Result::Ok(())
-    }
-}
-
 pub struct Memory{
-    pub(crate) page_pool: Option<Arc<Mutex<PagePoolController>>>,
+    pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
+    pub(crate) page_pool: Option<PagePoolNotifier>,
     pub(crate) page_table: [Option<&'static mut Page>; SEG_SIZE],
 }
+
+pub struct MemoryGuard{
+
+}
+
+
 
 impl Drop for Memory{
     fn drop(&mut self) {
@@ -363,6 +370,42 @@ macro_rules! set_mem_alligned_o {
     };
 }
 
+impl PagePoolHolder for Memory{
+    fn lock(&mut self, initiator: bool, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
+        match &mut self.listener{
+            Some(val) => {
+                val.lock(initiator)
+            },
+            None => {
+                Result::Ok(())
+            },
+        }
+    }
+
+    fn unlock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
+        for page in self.page_table.iter_mut(){
+            *page = Option::None;
+        }
+        
+        let pages = page_pool.pool.iter_mut();
+        let mut addresses = page_pool.address_mapping.iter();
+        for page in pages{
+            unsafe{
+                self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(mem::transmute(page));
+            }
+        }
+
+        match &mut self.listener{
+            Some(val) => {
+                val.unlock(initiator)
+            },
+            None => {
+                Result::Ok(())
+            },
+        }
+    }
+}
+
 #[allow(dead_code)]
 impl Memory{
 
@@ -373,7 +416,8 @@ impl Memory{
             Ok(lock) => {
                 let mem = Memory{
                     page_pool: Option::None,
-                    page_table: [INIT; SEG_SIZE]
+                    page_table: [INIT; SEG_SIZE],
+                    listener: Option::None,
                 };
                 let mut mem = lock.add_holder(mem);
                 let pool = mem.get_page_pool();
@@ -382,6 +426,13 @@ impl Memory{
             }
             Err(_err) => todo!(),
         }
+    }
+
+    pub fn add_listener(&mut self, listener: &'static mut (dyn PagePoolListener + Send + Sync)) {
+        self.listener = Option::Some(listener);
+    }
+    pub fn remove_listener(&mut self){
+        self.listener = Option::None;
     }
 
     #[inline(always)]
@@ -410,11 +461,8 @@ impl Memory{
                     
                     match &self.page_pool{
                         Some(val) => {
-                            let mut val = val.lock().unwrap();
-                            let val = val.borrow_mut();
+                            let mut val = val.get_page_pool();
                             let val = val.create_page(addr as u16);
-                            //the value is already in memory but because I made this horrific system it gets optimized (rightfully so) so unless
-                            //i dont set the value it will break and assume its empty
                             match val{
                                 Ok(ok) => {
                                     *p = Option::Some(unsafe{mem::transmute(ok)});
@@ -455,8 +503,7 @@ impl Memory{
     pub fn unload_page_at_address(&mut self, address: u32){
         match &self.page_pool{
             Some(val) => {
-                let _ = val.lock().unwrap().borrow_mut().remove_page((address >> 16) as u16);
-                //the values should already be set but this forces rust to 'relize' these values have actually been modified
+                let _ = val.get_page_pool().remove_page((address >> 16) as u16);
                 self.page_table[(address >> 16) as usize] = Option::None;
             },
             None => todo!(),
@@ -465,8 +512,7 @@ impl Memory{
     pub fn unload_all_pages(&mut self) {
         match &self.page_pool{
             Some(val) => {
-                let _ = val.lock().unwrap().borrow_mut().remove_all_pages();
-                //the values should already be set but this forces rust to 'relize' these values have actually been modified
+                let _ = val.get_page_pool().remove_all_pages();
                 for i in 0..(1<<16 -1){
                     self.page_table[i] = Option::None;
                 }

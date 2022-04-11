@@ -2,10 +2,6 @@ use std::{io::Read};
 
 use mips_emulator::cpu::MipsCpu;
 
-//use cpu::MipsCpu;
-mod memory;
-mod cpu;
-
 
 static mut CPU_TEST: Option<MipsCpu> = Option::None;
 
