@@ -1,4 +1,4 @@
-use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, borrow::BorrowMut, ptr::NonNull, fmt::Debug};
+use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, ptr::NonNull, fmt::Debug};
 
 const SEG_SIZE:usize = 0x10000;
 //stupid workaround
@@ -63,7 +63,7 @@ impl<T: PagePoolHolder + Send + Sync> PagePoolRef<T>{
             page_pool: self.page_pool.to_owned(),
             id: self.id,
         }
-    } 
+    }
 }
 
 impl Default for PagePoolRef<Memory>{
@@ -279,14 +279,19 @@ impl PagePoolController{
 
 }
 
+
+
 pub struct Memory{
     pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
     pub(crate) page_pool: Option<PagePoolNotifier>,
+    pub(crate) going_to_lock: Option<&'static mut bool>,
     pub(crate) page_table: [Option<&'static mut Page>; SEG_SIZE],
 }
 
-pub struct MemoryGuard{
-
+impl<'a> DerefMut for MemoryGuard<'a>{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.mem
+    }
 }
 
 
@@ -406,6 +411,53 @@ impl PagePoolHolder for Memory{
     }
 }
 
+
+pub struct MemoryGuard<'a>{
+    mem: &'a mut Memory,
+    lock_id: usize,
+    ppref: &'a mut PagePoolRef<Memory>,
+}
+
+impl<'a> Deref for MemoryGuard<'a>{
+    type Target = Memory;
+
+    fn deref(&self) -> &Self::Target {
+        self.mem
+    }
+}
+
+impl<'a> Drop for MemoryGuard<'a>{
+    fn drop(&mut self) {
+        self.ppref.id = self.lock_id;
+    }
+}
+
+impl PagePoolRef<Memory>{
+    pub fn create_guard<'a>(&'a mut self) -> MemoryGuard<'a>{
+        unsafe{
+
+            let mut lock;
+            match &mut self.inner.as_mut().page_pool{
+                Some(val) => {
+                    lock = val.get_page_pool();
+                },
+                None => {
+                    panic!()
+                },
+            }
+            let lock_id = self.id;
+            self.id = usize::MAX;
+            lock.last_lock_id = self.id;
+
+            return MemoryGuard{
+                mem: self.inner.as_mut(),
+                lock_id,
+                ppref: self,
+            }
+        }
+    }
+}
+
 #[allow(dead_code)]
 impl Memory{
 
@@ -415,6 +467,7 @@ impl Memory{
         match lock.as_mut(){
             Ok(lock) => {
                 let mem = Memory{
+                    going_to_lock: Option::None,
                     page_pool: Option::None,
                     page_table: [INIT; SEG_SIZE],
                     listener: Option::None,
@@ -426,6 +479,13 @@ impl Memory{
             }
             Err(_err) => todo!(),
         }
+    }
+
+    pub fn add_thing(&mut self, thing: &'static mut bool){
+        self.going_to_lock = Option::Some(thing);
+    }
+    pub fn remove_thing(&mut self){
+        self.going_to_lock = Option::None;
     }
 
     pub fn add_listener(&mut self, listener: &'static mut (dyn PagePoolListener + Send + Sync)) {
@@ -458,7 +518,7 @@ impl Memory{
             match p{
                 Some(val) => return val,
                 None => {
-                    
+                    set_thing(&mut self.going_to_lock);
                     match &self.page_pool{
                         Some(val) => {
                             let mut val = val.get_page_pool();
@@ -472,6 +532,7 @@ impl Memory{
                         },
                         None => todo!(),
                     }
+                    unset_thing(&mut self.going_to_lock);
 
                     match p {
                         Some(val) => return val,
@@ -503,7 +564,9 @@ impl Memory{
     pub fn unload_page_at_address(&mut self, address: u32){
         match &self.page_pool{
             Some(val) => {
+                set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_page((address >> 16) as u16);
+                unset_thing(&mut self.going_to_lock);
                 self.page_table[(address >> 16) as usize] = Option::None;
             },
             None => todo!(),
@@ -512,7 +575,9 @@ impl Memory{
     pub fn unload_all_pages(&mut self) {
         match &self.page_pool{
             Some(val) => {
+                set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_all_pages();
+                unset_thing(&mut self.going_to_lock);
                 for i in 0..(1<<16 -1){
                     self.page_table[i] = Option::None;
                 }
@@ -571,5 +636,22 @@ impl Page{
         Page{
             page: [0xdf; SEG_SIZE]
         }
+    }
+}
+
+fn set_thing(thing: &mut Option<&'static mut bool>){
+    match thing{
+        Some(some) => {
+            **some = true;
+        },
+        None => {},
+    }
+}
+fn unset_thing(thing: &mut Option<&'static mut bool>){
+    match thing{
+        Some(some) => {
+            **some = false;
+        },
+        None => {},
     }
 }

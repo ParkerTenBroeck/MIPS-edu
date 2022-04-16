@@ -49,11 +49,11 @@ fn main(){
                         CPU_TEST
                             .as_mut()
                             .unwrap()
-                            .get_mem_mut()
+                            .get_mem()
                             .copy_into_raw(0, &test_prog);
 
                         //let test_prog = [0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000];//
-                        CPU_TEST.as_mut().unwrap().get_mem_mut().copy_into_raw(0, &test_prog);
+                        CPU_TEST.as_mut().unwrap().get_mem().copy_into_raw(0, &test_prog);
                         
                         println!("reset CPU");
                     

@@ -1,20 +1,20 @@
 use eframe::{egui, epaint::Color32};
 
-pub trait Tab{
+pub trait Tab {
     fn ui(&mut self, ui: &mut egui::Ui);
     fn get_name(&self) -> egui::WidgetText;
 }
 
-pub struct TabbedArea{
+pub struct TabbedArea {
     tabs: Vec<Box<dyn Tab>>,
     selected: u32,
 }
 
-impl TabbedArea{
-    pub fn ui(&mut self, ui: &mut egui::Ui){                
+impl TabbedArea {
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
         // ui.spacing_mut().item_spacing.x = 0.0;
         // ui.add(tab());
-        
+
         // ui.spacing_mut().window_margin.top = 0.0;
         // ui.spacing_mut().window_margin.left = 0.0;
         // ui.spacing_mut().window_margin.bottom = 0.0;
@@ -22,15 +22,16 @@ impl TabbedArea{
         // ui.spacing_mut().item_spacing.y = 0.0;
         // ui.spacing_mut().item_spacing.x = 0.0;
 
-        if self.selected > 0{
-        
-            ui.vertical(|ui|{
-                
-                
-
-                let color = ui.style().visuals.window_fill().linear_multiply(1.4).to_opaque();
+        if self.selected > 0 {
+            ui.vertical(|ui| {
+                let color = ui
+                    .style()
+                    .visuals
+                    .window_fill()
+                    .linear_multiply(1.4)
+                    .to_opaque();
                 let mut frame_no_marg = egui::Frame {
-                    margin: egui::style::Margin{
+                    margin: egui::style::Margin {
                         left: 0.0,
                         right: 0.0,
                         top: 0.0,
@@ -38,63 +39,36 @@ impl TabbedArea{
                     },
                     rounding: eframe::epaint::Rounding::none(),
                     fill: color,
-                    stroke: eframe::epaint::Stroke::default(),//egui::Stroke::new(5.0, color),
+                    stroke: eframe::epaint::Stroke::default(), //egui::Stroke::new(5.0, color),
                     ..Default::default()
                 };
-            egui::panel::TopBottomPanel::top("idk").min_height(0.0).frame(frame_no_marg).show_inside(ui, |ui|{
-
-                //ui.spacing_mut().item_spacing.y = 0.0;
-                //ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.horizontal_wrapped(|ui|{
+                egui::panel::TopBottomPanel::top("idk")
+                    .min_height(0.0)
+                    .frame(frame_no_marg)
+                    .show_inside(ui, |ui| {
                         //ui.spacing_mut().item_spacing.y = 0.0;
-                        let mut i = 1u32;
-                        let len = self.tabs.len();
-                        
-                        ui.spacing_mut().item_spacing.x = 0.0;
-                        ui.add(tab());
-
-                        self.tabs.retain(|tab| {
-                            //ui.spacing_mut().item_spacing.x = 0.0;
-                            if ui.selectable_label(self.selected == i, tab.get_name()).clicked(){
-                                if self.selected == i{ 
-                                    if (i as usize) >= len{
-                                        self.selected -= 1;
-                                    }
-                                    return false    
-                                }
-                                
-                                self.selected = i;
-                            }
-                            i += 1;
-                            true
-                        });
-                    });
-                });
-                let color = Color32::from_rgb(0, 255, 0);
-                frame_no_marg.fill = color;
-                //frame_no_marg.stroke = egui::Stroke::new(5.0, color);
-                egui::panel::TopBottomPanel::top("idk").min_height(0.0).frame(frame_no_marg).show_inside(ui, |ui|{
-
-                    //ui.spacing_mut().item_spacing.y = 0.0;
-                    //ui.spacing_mut().item_spacing.x = 0.0;
-                        ui.horizontal_wrapped(|ui|{
+                        //ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.horizontal_wrapped(|ui| {
                             //ui.spacing_mut().item_spacing.y = 0.0;
                             let mut i = 1u32;
                             let len = self.tabs.len();
-                            
+
                             ui.spacing_mut().item_spacing.x = 0.0;
                             ui.add(tab());
-    
+
                             self.tabs.retain(|tab| {
                                 //ui.spacing_mut().item_spacing.x = 0.0;
-                                if ui.selectable_label(self.selected == i, tab.get_name()).clicked(){
-                                    if self.selected == i{ 
-                                        if (i as usize) >= len{
+                                if ui
+                                    .selectable_label(self.selected == i, tab.get_name())
+                                    .clicked()
+                                {
+                                    if self.selected == i {
+                                        if (i as usize) >= len {
                                             self.selected -= 1;
                                         }
-                                        return false    
+                                        return false;
                                     }
-                                    
+
                                     self.selected = i;
                                 }
                                 i += 1;
@@ -102,40 +76,76 @@ impl TabbedArea{
                             });
                         });
                     });
-                if self.selected > 0{
+                let color = Color32::from_rgb(0, 255, 0);
+                frame_no_marg.fill = color;
+                //frame_no_marg.stroke = egui::Stroke::new(5.0, color);
+                egui::panel::TopBottomPanel::top("idk")
+                    .min_height(0.0)
+                    .frame(frame_no_marg)
+                    .show_inside(ui, |ui| {
+                        //ui.spacing_mut().item_spacing.y = 0.0;
+                        //ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.horizontal_wrapped(|ui| {
+                            //ui.spacing_mut().item_spacing.y = 0.0;
+                            let mut i = 1u32;
+                            let len = self.tabs.len();
+
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            ui.add(tab());
+
+                            self.tabs.retain(|tab| {
+                                //ui.spacing_mut().item_spacing.x = 0.0;
+                                if ui
+                                    .selectable_label(self.selected == i, tab.get_name())
+                                    .clicked()
+                                {
+                                    if self.selected == i {
+                                        if (i as usize) >= len {
+                                            self.selected -= 1;
+                                        }
+                                        return false;
+                                    }
+
+                                    self.selected = i;
+                                }
+                                i += 1;
+                                true
+                            });
+                        });
+                    });
+                if self.selected > 0 {
                     ui.separator();
                     self.tabs[self.selected as usize - 1].ui(ui);
                 }
-            
             });
         }
     }
 
-    pub fn add_tab(&mut self, tab: Box<dyn Tab>){
+    pub fn add_tab(&mut self, tab: Box<dyn Tab>) {
         self.tabs.push(tab);
-        if self.selected == 0{
+        if self.selected == 0 {
             self.selected = 1;
         }
     }
 }
 
-impl Default for TabbedArea{
+impl Default for TabbedArea {
     fn default() -> Self {
-        Self { 
+        Self {
             tabs: Default::default(),
-            selected: 0
+            selected: 0,
         }
     }
 }
 
-pub struct CodeEditor{
+pub struct CodeEditor {
     title: String,
     code: String,
 }
 
-impl Default for CodeEditor{
+impl Default for CodeEditor {
     fn default() -> Self {
-        Self { 
+        Self {
             title: "CodeEditor".into(),
             code: r#"
 /// Outer block single line documentation
@@ -167,24 +177,19 @@ fn test(){
     */
 }
 "#
-                        .into(),
+            .into(),
         }
     }
 }
 
-impl CodeEditor{
+impl CodeEditor {
     pub fn new(title: String, code: String) -> Self {
-        Self{
-            title,
-            code,
-        }
+        Self { title, code }
     }
 }
 
-impl Tab for CodeEditor{
-    
+impl Tab for CodeEditor {
     fn ui(&mut self, ui: &mut egui::Ui) {
-        
         ui.heading("Code Editor");
         egui::warn_if_debug_build(ui);
 
@@ -216,7 +221,6 @@ impl Tab for CodeEditor{
                         .desired_width(f32::INFINITY)
                         .layouter(&mut layouter),
                 )
-                
             });
             //.on_hover_ui_at_pointer(|ui| {
             //});
@@ -232,10 +236,11 @@ pub fn tab_ui(ui: &mut egui::Ui) -> egui::Response {
     let desired_size = ui.spacing().interact_size;
     let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click_and_drag());
 
-    if ui.is_visible(){
+    if ui.is_visible() {
         let visuals = ui.style().interact(&response);
         let rect = rect.expand(visuals.expansion);
-        ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(255, 0, 0));
+        ui.painter()
+            .rect_filled(rect, 0.0, Color32::from_rgb(255, 0, 0));
     }
 
     response
@@ -299,7 +304,259 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     response
 }
 
-
 pub fn toggle(on: &mut bool) -> impl egui::Widget + '_ {
     move |ui: &mut egui::Ui| toggle_ui(ui, on)
+}
+
+pub struct HexEditor {
+    offset: Option<(u32, bool)>,
+    selection: Option<u32>,
+    bytes_per_line: u8,
+    show_disassembly: bool,
+}
+
+impl HexEditor {
+    pub fn new() -> Self {
+        HexEditor {
+            offset: Option::None,
+            selection: Option::None,
+            bytes_per_line: 16,
+            show_disassembly: false,
+        }
+    }
+
+    fn u8_to_display_char(input: u8) -> char{
+        //let input = input as char;
+        if !input.is_ascii_control(){
+            return input as char;
+        }
+        match input{
+            _ => '.'
+        }
+    }
+}
+
+impl Tab for HexEditor {
+    fn ui(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.add_enabled_ui(!self.show_disassembly, |ui| {
+                        ui.label("Bytes Per Row");
+                        ui.add(egui::Slider::new(&mut self.bytes_per_line, 1u8..=32))
+                    });
+                });
+                ui.vertical(|ui| {
+                    if ui
+                        .checkbox(&mut self.show_disassembly, "Show Disassembly")
+                        .clicked()
+                    {
+                        if self.show_disassembly {
+                            self.bytes_per_line = 4;
+                        } else {
+                            self.bytes_per_line = 16;
+                        }
+                    }
+
+                    //let previous_frame_time = previous_frame_time.unwrap_or_default();
+                    // if let Some(latest) = self.frame_times.latest_mut() {
+                    //     *latest = previous_frame_time; // rewrite history now that we know
+                    // }
+                    // self.frame_times.add(now, previous_frame_time);
+
+                    // ui.label(format!("frame time: {:.2}ms", 1e3 * ui.ctx().input().time))
+                });
+            });
+
+            ui.separator();
+
+            //ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+
+            //});
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                
+
+                ui.horizontal(|ui| {
+                    let text = egui::RichText::new(match self.offset{
+                        Some(val) => {
+                            let mut string = format!("offset: {:#08X}", val.0);
+                            string.insert(12, ':');
+                            string
+                        },
+                        None => "offset: ----:----".into(),
+                    }).monospace();
+                    
+                    ui.label(text);
+
+                    let text = egui::RichText::new(match self.selection{
+                        Some(val) => {
+                            let mut string = format!("selection: {:#08X}", val);
+                            string.insert(15, ':');
+                            string
+                        },
+                        None => "selection: ----:----".into(),
+                    }).monospace();
+                    
+                    ui.label(text);
+                });
+                ui.separator();
+
+                ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui|{
+                    ui.set_clip_rect(ui.max_rect());
+                    ui.vertical(|ui|{
+                        ui.horizontal(|ui| {
+                            egui::ScrollArea::horizontal().show(ui, |ui| {
+                                if let Option::Some((offset, _)) = &mut self.offset {
+                                    if ui.ctx().input().key_pressed(egui::Key::ArrowDown) {
+                                        if let Option::Some(new) =
+                                            offset.checked_add(self.bytes_per_line as u32)
+                                        {
+                                            *offset = new;
+                                        }
+                                    }
+                                    if ui.ctx().input().key_pressed(egui::Key::ArrowLeft) {
+                                        if let Option::Some(new) = offset.checked_sub(1) {
+                                            *offset = new;
+                                        }
+                                    }
+                                    if ui.ctx().input().key_pressed(egui::Key::ArrowRight) {
+                                        if let Option::Some(new) = offset.checked_add(1) {
+                                            *offset = new;
+                                        }
+                                    }
+                                    if ui.ctx().input().key_pressed(egui::Key::ArrowUp) {
+                                        if let Option::Some(new) =
+                                            offset.checked_sub(self.bytes_per_line as u32)
+                                        {
+                                            *offset = new;
+                                        }
+                                    }
+                                    use egui::Key::*;
+                                    let keys = [Num0,Num1,Num2,Num3,Num4,Num5,Num6,Num7,Num8,Num9,A,B,C,D,E,F];
+                                    for i in 0..16{
+                                        if ui.ctx().input().key_pressed(keys[i]){
+                                            if let Option::Some((pos, middle)) = &mut self.offset{
+                                                if *middle{
+                                                    *pos = pos.wrapping_add(1);
+                                                    *middle = false;
+                                                }else{
+                                                    *middle = true;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                }
+            
+                                let response = ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing.y = 0.0;
+                                    for h in 0..=128 {
+                                        let mut exit = false;
+                                        ui.horizontal(|ui| {
+                                            let mut string = format!("{:08X}", h * self.bytes_per_line as u32);
+                                            string.insert(4, ':');
+            
+                                            let res = ui.label(
+                                                egui::RichText::new(string)
+                                                    .background_color(egui::Color32::from_gray(70))
+                                                    .monospace(),
+                                            );
+                                            if !ui.is_rect_visible(res.rect) {
+                                                exit = true;
+                                            }
+            
+                                            for i in 0u32..self.bytes_per_line as u32 {
+                                                ui.spacing_mut().item_spacing.x = 3.0;
+            
+                                                if i % 4 == 0 && i > 0 {
+                                                    ui.allocate_space(egui::vec2(3.0, 0.0));
+                                                }
+                                                let label = egui::RichText::new("00").monospace();
+            
+                                                let response = ui.label(label);
+                                                //println!("{:?}", response);
+            
+                                                let response = ui.interact(
+                                                    response.rect.expand(2.0),
+                                                    response.id,
+                                                    egui::Sense::click_and_drag(),
+                                                );
+            
+                                                if response.clicked() {
+                                                    self.offset =
+                                                        Option::Some((h * self.bytes_per_line as u32 + i, false));
+                                                }
+            
+                                                if let Option::Some((offset, typing)) = self.offset {
+                                                    if offset == self.bytes_per_line as u32 * h + i {
+                                                        let mut rect = response.rect;
+                                                        if typing{
+                                                            let test = (rect.left() + rect.right()) / 2.0;
+                                                            *rect.left_mut()  = test - 0.5;
+                                                            *rect.right_mut()  = test + 0.5;
+                                                        }else{
+                                                            let test = rect.left();
+                                                            *rect.right_mut() = test + 2.0;
+                                                            *rect.left_mut() += 1.0;
+                                                        }
+                                                        ui.painter().rect_filled(
+                                                            rect,
+                                                            egui::Rounding::none(),
+                                                            egui::Color32::from_rgb(255, 0, 0),
+                                                        );
+                                                    }
+                                                }
+                                            }
+            
+                                            ui.separator();
+            
+                                            for _i in 0u32..self.bytes_per_line as u32 {
+                                                ui.spacing_mut().item_spacing.x = 0.0;
+                                                ui.label(egui::RichText::new(Self::u8_to_display_char(0)).monospace());
+                                            }
+            
+                                            if self.show_disassembly {
+                                                ui.separator();
+                                                let text = assembler::disassembler::simple::disassemble(0);
+                                                let text = egui::RichText::new(text).monospace();
+                                                ui.label(text);
+                                            }
+                                        });
+                                        //ui.horizontal(add_contents)
+                                        if exit {
+                                            break;
+                                        }
+                                    }
+                                });
+                                let response = ui.interact(
+                                    response.response.rect,
+                                    response.response.id,
+                                    egui::Sense {
+                                        click: true,
+                                        drag: false,
+                                        focusable: true,
+                                    },
+                                );
+            
+                                if response.clicked() {
+                                    response.request_focus();
+                                }
+                                if response.lost_focus() {
+                                    println!("{:?}", response);
+                                    self.offset = Option::None;
+                                    self.selection = Option::None;
+                                }
+                            });
+                        });
+                
+                    });
+                });
+
+            });
+        });
+    }
+
+    fn get_name(&self) -> egui::WidgetText {
+        "CPU memory".into()
+    }
 }

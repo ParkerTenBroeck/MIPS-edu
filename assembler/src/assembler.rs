@@ -1,4 +1,4 @@
-use std::{fs::File, error::Error, io::Read, collections::{HashMap, LinkedList}, ops::DerefMut, fmt::Display, rc::Rc};
+use std::{fs::File, error::Error, io::Read, collections::{HashMap, LinkedList},fmt::Display, rc::Rc};
 
 use crate::lexer::tokenizer::{Tokenizer, TokenType};
 type Token = util::token::Token<TokenType>;

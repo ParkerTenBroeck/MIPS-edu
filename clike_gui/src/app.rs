@@ -76,6 +76,7 @@ trap 0
 "#.into()
      )));
         ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
+        ret.tabbed_area.add_tab(Box::new(crate::tabbed_area::HexEditor::new()));
         ret
     }
 }
@@ -182,6 +183,8 @@ impl epi::App for ClikeGui {
                     ui.add(
                         egui::Hyperlink::from_label_and_url("Website", "https://parkertenbroeck.com")
                     );
+                    ui.separator();
+                    ui.label(format!("CPU Time: {:.2} ms", 1e3 * frame.info().cpu_usage.unwrap_or_default()));
                     ui.separator();
                 });
             });
@@ -401,7 +404,7 @@ impl epi::App for ClikeGui {
                                             MIPS_CPU
                                                 .as_mut()
                                                 .unwrap()
-                                                .get_mem_mut()
+                                                .get_mem()
                                                 .copy_into_raw(0, &test_prog);
     
                                             log::info!("reset CPU");
