@@ -174,6 +174,10 @@ impl MipsCpu {
         &self.reg
     }
     #[allow(unused)]
+    pub fn get_reg(&self, reg: usize) -> u32 {
+        self.reg[reg]
+    }
+    #[allow(unused)]
     pub fn get_hi_register(&self) -> u32 {
         self.hi
     }
@@ -402,7 +406,9 @@ impl MipsCpu {
                 111 => {
                     self.stop();
                 }
-                _ => {}
+                _ => {
+                    log::warn!("invalid system call: {}, {:#X}", call_id, call_id);
+                }
             }
         }
     }
@@ -461,6 +467,7 @@ impl MipsCpu {
         }
         self.running = false;
         self.finished = false;
+        self.i_check = !true;
 
         let _handle = std::thread::spawn(|| {
             log::info!("CPU Step Started");
@@ -482,6 +489,7 @@ impl MipsCpu {
 
         self.running = true;
         self.finished = false;
+        self.i_check = !true;
 
         log::info!("CPU Step Started");
         let start = std::time::SystemTime::now();
@@ -524,7 +532,7 @@ impl MipsCpu {
             self.is_paused = false;
 
             //let mem = unsafe{&mut *(self.mem.deref_mut() as *mut Memory)};
-            while self.i_check {
+            while {
                 let op =
                     self.mem.get_u32_alligned(self.pc);
                     //*[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000].get_unchecked((self.pc >> 2) as usize)
@@ -561,8 +569,8 @@ impl MipsCpu {
                             }
                             0b011010 => {
                                 //DIV
-                                let t = self.reg[register_d!(op)] as i32;
-                                if t == 0 {
+                                let t = self.reg[register_t!(op)] as i32;
+                                if t != 0 {
                                     let s = self.reg[register_s!(op)] as i32;
                                     self.lo = (s.wrapping_div(t)) as u32;
                                     self.hi = (s.wrapping_rem(t)) as u32;
@@ -572,8 +580,8 @@ impl MipsCpu {
                             }
                             0b011011 => {
                                 //DIVU
-                                let t = self.reg[register_d!(op)];
-                                if t == 0 {
+                                let t = self.reg[register_t!(op)];
+                                if t != 0 {
                                     let s = self.reg[register_s!(op)];
                                     self.lo = s.wrapping_div(t);
                                     self.hi = s.wrapping_rem(t);
@@ -825,7 +833,7 @@ impl MipsCpu {
                     0b100000 => {
                         //LB
                         self.reg[immediate_t!(op)] = self.mem.get_i8(
-                            (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op))
+                            (self.reg[immediate_s!(op)] as i32 + immediate_immediate!(op))
                                 as u32,
                         ) as u32
                     }
@@ -833,14 +841,14 @@ impl MipsCpu {
                         //LBU
 
                         self.reg[immediate_t!(op)] = self.mem.get_u8(
-                            (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op))
+                            (self.reg[immediate_s!(op)] as i32 + immediate_immediate!(op))
                                 as u32,
                         ) as u32
                     }
                     0b100001 => {
                         //LH
                         let address = (self.reg[immediate_s!(op)] as i32
-                            + immediate_immediate_address!(op))
+                            + immediate_immediate!(op))
                             as u32;
 
                         #[cfg(feature = "memory_allignment_check")]
@@ -857,7 +865,7 @@ impl MipsCpu {
                     0b100101 => {
                         //LHU
                         let address = (self.reg[immediate_s!(op)] as i32
-                            + immediate_immediate_address!(op))
+                            + immediate_immediate!(op))
                             as u32;
 
                         #[cfg(feature = "memory_allignment_check")]
@@ -874,7 +882,7 @@ impl MipsCpu {
                     0b100011 => {
                         //LW
                         let address = (self.reg[immediate_s!(op)] as i32
-                            + immediate_immediate_address!(op))
+                            + immediate_immediate!(op))
                             as u32;
 
                         #[cfg(feature = "memory_allignment_check")]
@@ -893,7 +901,7 @@ impl MipsCpu {
                     0b101000 => {
                         //SB
                         self.mem.set_u8(
-                            (self.reg[immediate_s!(op)] as i32 + immediate_immediate_address!(op))
+                            (self.reg[immediate_s!(op)] as i32 + immediate_immediate!(op))
                                 as u32,
                             (self.reg[immediate_t!(op)] & 0xFF) as u8,
                         );
@@ -901,7 +909,7 @@ impl MipsCpu {
                     0b101001 => {
                         //SH
                         let address = (self.reg[immediate_s!(op)] as i32
-                            + immediate_immediate_address!(op))
+                            + immediate_immediate!(op))
                             as u32;
 
                         if address & 0b11 == 0 {
@@ -923,7 +931,7 @@ impl MipsCpu {
                     0b101011 => {
                         //SW
                         let address = (self.reg[immediate_s!(op)] as i32
-                            + immediate_immediate_address!(op))
+                            + immediate_immediate!(op))
                             as u32;
                         if address & 0b11 == 0 {
                             self.mem
@@ -940,7 +948,8 @@ impl MipsCpu {
 
                     _ => self.invalid_op_code(),
                 }
-            }
+                self.i_check
+            }{}
             self.i_check = !false;
 
             //TODO clear paused state and check states when CPU stops running

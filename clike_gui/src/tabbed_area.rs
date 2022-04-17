@@ -311,20 +311,35 @@ pub fn toggle(on: &mut bool) -> impl egui::Widget + '_ {
 
 pub struct HexEditor {
     mem: mips_emulator::memory::PagePoolRef<LooslyCachedMemory>,
+    cpu: &'static mut mips_emulator::cpu::MipsCpu,
     offset: Option<(u32, bool)>,
     selection: Option<u32>,
     bytes_per_line: u8,
     show_disassembly: bool,
+    scroll_to_pc: bool,
+    highlight_pc: bool,
+    highlight_return: bool,
+    highlight_frame: bool,
+    highlight_stack: bool,
+    highlight_global: bool,
 }
 
 impl HexEditor {
-    pub fn new(mem: mips_emulator::memory::PagePoolRef<LooslyCachedMemory>) -> Self {
+    pub fn new(cpu: &'static mut mips_emulator::cpu::MipsCpu) -> Self {
+        
         HexEditor {
-            mem,
+            mem: cpu.get_mem_controller().lock().unwrap().add_holder(LooslyCachedMemory::new()),
+            cpu,
             offset: Option::None,
             selection: Option::None,
             bytes_per_line: 16,
             show_disassembly: false,
+            highlight_pc: true,
+            scroll_to_pc: false,
+            highlight_return: true,
+            highlight_frame: false,
+            highlight_stack: false,
+            highlight_global: false,
         }
     }
 
@@ -336,6 +351,41 @@ impl HexEditor {
         match input{
             _ => '.'
         }
+    }
+
+    fn calculate_highlight(&self, address: u32) -> Option<Color32>{
+        if self.highlight_pc{
+            let val = self.cpu.get_pc();
+            if val <= address && address <= (val + 3){
+                return Option::Some(Color32::DARK_BLUE);
+            }
+        }
+        if self.highlight_return{
+            let val = self.cpu.get_reg(31);
+            if val <= address && address <= (val + 3){
+                return Option::Some(Color32::DARK_RED);
+            }
+        }
+        if self.highlight_stack{
+            let val = self.cpu.get_reg(29);
+            if val <= address && address <= (val + 3){
+                return Option::Some(Color32::DARK_GREEN);
+            }
+        }
+        if self.highlight_frame{
+            let val = self.cpu.get_reg(30);
+            if val <= address && address <= (val + 3){
+                return Option::Some(Color32::GOLD);
+            }
+        }
+        if self.highlight_global{
+            let val = self.cpu.get_reg(28);
+            if val <= address && address <= (val + 3){
+                return Option::Some(Color32::KHAKI);
+            }
+        }
+
+        Option::None
     }
 }
 
@@ -360,15 +410,19 @@ impl Tab for HexEditor {
                             self.bytes_per_line = 16;
                         }
                     }
-
-                    //let previous_frame_time = previous_frame_time.unwrap_or_default();
-                    // if let Some(latest) = self.frame_times.latest_mut() {
-                    //     *latest = previous_frame_time; // rewrite history now that we know
-                    // }
-                    // self.frame_times.add(now, previous_frame_time);
-
-                    // ui.label(format!("frame time: {:.2}ms", 1e3 * ui.ctx().input().time))
                 });
+                ui.vertical(|ui|{
+                    ui.checkbox(&mut self.highlight_pc, "highlight PC");
+                    ui.checkbox(&mut self.highlight_return, "highlight Return");
+                    ui.checkbox(&mut self.highlight_stack, "highlight Stack");
+                    ui.checkbox(&mut self.highlight_frame, "highlight Frame");
+                    ui.checkbox(&mut self.highlight_global, "highlight Global");
+                });
+
+                ui.vertical(|ui|{
+                    ui.checkbox(&mut self.scroll_to_pc, "Scroll to PC");
+                });
+
             });
 
             ui.separator();
@@ -500,7 +554,7 @@ impl Tab for HexEditor {
                                                 if i % 4 == 0 && i > 0 {
                                                     ui.allocate_space(egui::vec2(3.0, 0.0));
                                                 }
-                                                let label = match self.mem.get_u8_o(address + i){
+                                                let mut label = match self.mem.get_u8_o(address + i){
                                                     Some(val) => {
                                                         egui::RichText::new(format!("{:02X}", val))
                                                     },
@@ -508,6 +562,10 @@ impl Tab for HexEditor {
                                                         egui::RichText::new("--").color(Color32::DARK_RED)
                                                     },
                                                 }.monospace();
+
+                                                if let Option::Some(color) = self.calculate_highlight(address + i){
+                                                    label = label.background_color(color);
+                                                }
             
                                                 let response = ui.label(label);
                                                 //println!("{:?}", response);
@@ -548,7 +606,7 @@ impl Tab for HexEditor {
             
                                             for i in 0u32..self.bytes_per_line as u32 {
                                                 ui.spacing_mut().item_spacing.x = 0.0;
-                                                let label = match self.mem.get_u8_o(address + i){
+                                                let mut label = match self.mem.get_u8_o(address + i){
                                                     Some(val) => {
                                                         egui::RichText::new(Self::u8_to_display_char(val))
                                                     },
@@ -556,6 +614,9 @@ impl Tab for HexEditor {
                                                         egui::RichText::new(".").color(Color32::DARK_RED)
                                                     },
                                                 }.monospace();
+                                                if let Option::Some(color) = self.calculate_highlight(address + i){
+                                                    label = label.background_color(color);
+                                                }
                                                 ui.label(label);
                                             }
             
@@ -569,7 +630,10 @@ impl Tab for HexEditor {
                                                         "".into()
                                                     },
                                                 };
-                                                let text = egui::RichText::new(text).monospace();
+                                                let mut text = egui::RichText::new(text).monospace();
+                                                if let Option::Some(color) = self.calculate_highlight(address){
+                                                    text = text.background_color(color);
+                                                }
                                                 ui.label(text);
                                             }
                                         });

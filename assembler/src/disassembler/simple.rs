@@ -117,15 +117,15 @@ fn immediate_encoding(opcode: u32) -> String{
 
         //load instrictions
         0b100000 =>  //lb
-            format!("lb    ${}, {}, (${})", t, sei, s),
+            format!("lb    ${}, {}(${})", t, sei, s),
         0b100100 =>  //lbu
-            format!("lbu   ${}, {}, (${})", t, sei, s),
+            format!("lbu   ${}, {}(${})", t, sei, s),
         0b100001 =>  //lh
-            format!("lh    ${}, {}, (${})", t, sei, s),
+            format!("lh    ${}, {}(${})", t, sei, s),
         0b100101 =>  //lhu
-            format!("lhu   ${}, {}, (${})", t, sei, s),
+            format!("lhu   ${}, {}(${})", t, sei, s),
         0b100011 =>  //lw
-            format!("lw    ${}, {}, (${})", t, sei, s),
+            format!("lw    ${}, {}(${})", t, sei, s),
 
         //store instrictions
         0b101000 =>  //sb

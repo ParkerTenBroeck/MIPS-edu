@@ -1,5 +1,7 @@
+use std::io::Read;
+
 use eframe::{egui::{self}, epi};
-use mips_emulator::{cpu::MipsCpu, memory::LooslyCachedMemory};
+use mips_emulator::{cpu::MipsCpu};
 
 use crate::tabbed_area::{TabbedArea, CodeEditor};
 
@@ -112,6 +114,15 @@ fn test(){
 
 pub static mut MIPS_CPU: Option<MipsCpu> = Option::None;
 
+fn get_cpu() -> &'static mut MipsCpu{
+    unsafe{
+        match &mut MIPS_CPU{
+            Some(val) => val,
+            None => panic!(),
+        }
+    }
+}
+
 impl epi::App for ClikeGui {
     fn name(&self) -> &str {
         "CLike"
@@ -138,16 +149,7 @@ impl epi::App for ClikeGui {
         }
 
 
-        self.tabbed_area.add_tab(Box::new(crate::tabbed_area::HexEditor::new(
-            unsafe{match &mut MIPS_CPU{
-                Some(val) => {
-                    let val = val.get_mem_controller();
-                    let mut val = val.lock().unwrap();
-                    val.add_holder(LooslyCachedMemory::new())
-                },
-                None => panic!(),
-            }}
-        )));
+        self.tabbed_area.add_tab(Box::new(crate::tabbed_area::HexEditor::new(get_cpu())));
 
         match self.settings.theme {
             Theme::DarkMode => {
@@ -403,20 +405,42 @@ impl epi::App for ClikeGui {
                                             //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
     
                                             MIPS_CPU.as_mut().unwrap().clear();
+
+                                            let f = std::fs::File::open("clike_gui/res/snake.mxn").unwrap();
+                                            let mut reader = std::io::BufReader::new(f);
+                                            let mut buffer = Vec::new();
+                                            
+                                            // Read file into vector.
+                                            
+                                            let size = reader.read_to_end(&mut buffer).unwrap();
+
+                                            let test_prog = buffer.as_mut_slice();
+                                            for i in 0..(size / 4){
+                                                let base = i * 4;
+                                                let b1 = test_prog[base];
+                                                let b2 = test_prog[base + 1];
+
+                                                test_prog[base] = test_prog[base + 3];
+                                                test_prog[base + 1] = test_prog[base + 2];
+                                                test_prog[base + 3] = b1;
+                                                test_prog[base + 2] = b2;
+                                            }
+
+                                            
     
-                                            let test_prog = [
-                                                0x64027FFFu32,
-                                                0x00000820,
-                                                0x20210001,
-                                                0x10220001,
-                                                0x0BFFFFFD,
-                                                0x68000000,
-                                            ]; //
+                                            // let test_prog = &[
+                                            //    0x64027FFFu32,
+                                            //    0x00000820,
+                                            //    0x20210001,
+                                            //    0x10220001,
+                                            //    0x0BFFFFFD,
+                                            //    0x68000000,
+                                            // ];
                                             MIPS_CPU
                                                 .as_mut()
                                                 .unwrap()
                                                 .get_mem()
-                                                .copy_into_raw(0, &test_prog);
+                                                .copy_into_raw(0, test_prog);
     
                                             log::info!("reset CPU");
                                         } else {
