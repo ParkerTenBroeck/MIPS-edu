@@ -1,5 +1,5 @@
 use eframe::{egui::{self}, epi};
-use mips_emulator::cpu::MipsCpu;
+use mips_emulator::{cpu::MipsCpu, memory::LooslyCachedMemory};
 
 use crate::tabbed_area::{TabbedArea, CodeEditor};
 
@@ -76,7 +76,6 @@ trap 0
 "#.into()
      )));
         ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
-        ret.tabbed_area.add_tab(Box::new(crate::tabbed_area::HexEditor::new()));
         ret
     }
 }
@@ -137,6 +136,18 @@ impl epi::App for ClikeGui {
         if let Some(storage) = _storage {
             *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
         }
+
+
+        self.tabbed_area.add_tab(Box::new(crate::tabbed_area::HexEditor::new(
+            unsafe{match &mut MIPS_CPU{
+                Some(val) => {
+                    let val = val.get_mem_controller();
+                    let mut val = val.lock().unwrap();
+                    val.add_holder(LooslyCachedMemory::new())
+                },
+                None => panic!(),
+            }}
+        )));
 
         match self.settings.theme {
             Theme::DarkMode => {

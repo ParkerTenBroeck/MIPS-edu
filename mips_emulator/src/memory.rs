@@ -6,6 +6,7 @@ const INIT: Option<&'static mut Page> = None;
 
 
 pub trait PagePoolHolder{
+    fn init_holder(&mut self, _notifier: PagePoolNotifier) {}
     fn lock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
     fn unlock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
 }
@@ -26,11 +27,38 @@ pub struct PagePoolNotifier{
     id: usize,
 }
 
+struct NotifierGuard<'a>{
+    guard: MutexGuard<'a, PagePoolController>
+}
+
+impl<'a> Drop for NotifierGuard<'a>{
+    fn drop(&mut self) {
+        self.guard.last_lock_id = usize::MAX;
+    }
+}
+impl<'a> Deref for NotifierGuard<'a>{
+    type Target = MutexGuard<'a, PagePoolController>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+impl<'a> DerefMut for NotifierGuard<'a>{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
 impl PagePoolNotifier{
-    fn get_page_pool(&self) -> MutexGuard<PagePoolController>{
+    
+    fn get_page_pool(&self) -> NotifierGuard{
         let mut test = self.page_pool.lock().unwrap();
         test.last_lock_id = self.id;
-        test
+        NotifierGuard{guard: test}
+    }
+
+    pub fn clone_page_pool_mutex(&self) -> Arc<Mutex<PagePoolController>>{
+        self.page_pool.clone()
     }
 }
 
@@ -93,7 +121,7 @@ pub struct PagePool{
     pub address_mapping: Vec<u16>,
 }
 
-pub (crate) struct PagePoolController{
+pub struct PagePoolController{
     page_pool: PagePool,
     holders: Vec<(usize, NonNull<dyn PagePoolHolder + Send + Sync>)>,
     myself: Weak<Mutex<PagePoolController>>,
@@ -115,7 +143,7 @@ unsafe impl Sync for PagePoolController{
 
 impl PagePoolController{
 
-    fn new() -> Arc<Mutex<Self>>{
+    pub fn new() -> Arc<Mutex<Self>>{
         let arc;
         unsafe{
             let tmp = mem::MaybeUninit::<PagePoolController>::zeroed();
@@ -142,7 +170,7 @@ impl PagePoolController{
         arc
     }
 
-    fn add_holder<T: PagePoolHolder + Send + Sync + 'static>(&mut self, holder: T) -> PagePoolRef<T>{
+    pub fn add_holder<T: PagePoolHolder + Send + Sync + 'static>(&mut self, holder: T) -> PagePoolRef<T>{
         let mut id: usize = 0;
 
         for holder in & self.holders{
@@ -152,19 +180,23 @@ impl PagePoolController{
         }
 
         let test = Box::new(holder);
-        let ptr = NonNull::new(Box::into_raw(test)).unwrap();
+        let mut ptr = NonNull::new(Box::into_raw(test)).unwrap();
 
         self.holders.push((id, ptr));
 
         
-        PagePoolRef { 
+        let ppref = PagePoolRef { 
             inner: ptr,
             page_pool: self.myself.upgrade().unwrap(), 
             id: id
-        }
+        };
+
+        unsafe{ptr.as_mut()}.init_holder(ppref.get_page_pool());        
+
+        ppref
     }
 
-    fn remove_holder(&mut self, id: usize){
+    pub fn remove_holder(&mut self, id: usize){
         let index = self.holders.iter().position(|i| {
             id == i.0
         });
@@ -223,10 +255,18 @@ impl PagePoolController{
         Result::Ok(())
     }
 
-    #[inline(always)]
-    fn create_page(&mut self, addr: u16) -> Result<&mut Page, Box<dyn Error>>{
+    pub fn get_page(&mut self, addr: u16) -> Option<&mut Page>{
+        let thing = self.page_pool.address_mapping.iter().position(|val| {*val == addr});
+        if let Option::Some(addr) = thing{
+            Option::Some(unsafe{self.page_pool.pool.get_unchecked_mut(addr)})
+        }else{
+            Option::None
+        }
+    }
 
-        self.lock()?;
+    #[inline(always)]
+    pub fn create_page(&mut self, addr: u16) -> Result<&mut Page, Box<dyn Error>>{
+
 
         match self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}) {
             Some(index) => {
@@ -234,22 +274,25 @@ impl PagePoolController{
                 if val as u16 == addr{
                     
                 }else{
+                    self.lock()?;
                     self.page_pool.address_mapping.insert(index, addr);
                     self.page_pool.pool.insert(index, Page::new());
+                    self.unlock()?;
                 }
             },
             None => {
+                self.lock()?;
                 self.page_pool.address_mapping.push(addr);
                 self.page_pool.pool.push(Page::new());
+                self.unlock()?;
             },
         }
 
-        self.unlock()?;
         Result::Ok(self.page_pool.pool.get_mut(self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}).unwrap()).unwrap())
     }
 
     #[inline(always)]
-    fn remove_all_pages(&mut self) -> Result<(), Box<dyn Error>>{
+    pub fn remove_all_pages(&mut self) -> Result<(), Box<dyn Error>>{
         self.lock()?;
         self.page_pool.address_mapping.clear();
         self.page_pool.pool.clear();
@@ -258,7 +301,7 @@ impl PagePoolController{
     }
 
     #[inline(always)]
-    fn remove_page(&mut self, add: u16) -> Result<(), Box<dyn Error>>{
+    pub fn remove_page(&mut self, add: u16) -> Result<(), Box<dyn Error>>{
         
         let pos = self.page_pool.address_mapping.iter().position(|i| {
             *i == add
@@ -276,7 +319,198 @@ impl PagePoolController{
         }
         Result::Ok(())
     }
+}
 
+pub struct LooslyCachedMemory{
+    page_pool: Option<PagePoolNotifier>,
+    cache: Option<(u16, &'static mut Page)>,
+}
+
+macro_rules! get_mem_alligned {
+    ($func_name:ident, $fn_type:ty) => {
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32) -> $fn_type{
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            unsafe{
+                *mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                    (&mut self.get_or_make_page(address).page).get_unchecked(tmp)
+            }
+        }
+    };
+}
+
+macro_rules! set_mem_alligned {
+    // Arguments are module name and function name of function to tests bench
+    ($func_name:ident, $fn_type:ty) => {
+        // The macro will expand into the contents of this block.
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32, data: $fn_type){
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            unsafe{
+                *mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                    (&mut self.get_or_make_page(address).page).get_unchecked_mut(tmp) = data;
+            }
+        }
+    };
+}
+
+macro_rules! get_mem_alligned_o {
+    ($func_name:ident, $fn_type:ty) => {
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32) -> Option<$fn_type>{
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            unsafe{
+                match &mut self.get_page(address){
+                    Option::Some(val) => {
+                        return Option::Some(
+                            mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                            (&mut val.page)[tmp]);
+                    }
+                    Option::None => {
+                        return Option::None;
+                    }
+                }
+            }
+        }
+    };
+}
+
+macro_rules! set_mem_alligned_o {
+    // Arguments are module name and function name of function to tests bench
+    ($func_name:ident, $fn_type:ty) => {
+        // The macro will expand into the contents of this block.
+        #[inline(always)]
+        pub fn $func_name(&mut self, address: u32, data: $fn_type) -> Result<(), ()>{
+            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+            match self.get_page(address){
+                Option::Some(val) => {
+                    unsafe{
+                        mem::transmute::<&mut[u8; SEG_SIZE], &mut[$fn_type; SEG_SIZE / mem::size_of::<$fn_type>()]>
+                            (&mut val.page)[tmp] = data;
+                    }
+                    return Result::Ok(());
+                }
+                Option::None => {
+                    return Result::Err(());
+                }
+            }
+        }
+    };
+}
+
+impl LooslyCachedMemory{
+
+    fn get_or_make_page(&mut self, page: u32) -> &mut Page{
+        let page = (page >> 16) as u16;
+
+        let tmp: &'static mut Option<(u16, &'static mut Page)> = unsafe{mem::transmute(&mut self.cache)};
+
+        if let Option::Some((page, add)) = &mut self.cache{
+            if page == page{
+                return add;
+            }
+        }
+
+        match &mut self.page_pool{
+            Some(val) => {
+                let page_ref = unsafe{mem::transmute(val.get_page_pool().create_page(page).unwrap())};
+                *tmp = Option::Some((page, page_ref));
+                match tmp{
+                    Some(val) => val.1,
+                    None => unsafe{std::hint::unreachable_unchecked()},
+                }
+            },
+            None => panic!(),
+        }
+    }
+
+    fn get_page(&mut self, page: u32) -> Option<&mut Page>{
+        let page = (page >> 16) as u16;
+        let tmp: &'static mut Option<(u16, &'static mut Page)> = unsafe{mem::transmute(&mut self.cache)};
+        if let Option::Some((page, add)) = &mut self.cache{
+            if page == page{
+                return Option::Some(add);
+            }
+        }
+        match &mut self.page_pool{
+            Some(val) => {
+                let page_ref: Option<&'static mut Page> = unsafe{mem::transmute(val.get_page_pool().get_page(page))};
+
+                if let Option::Some(page_ref) = page_ref{
+                    *tmp = Option::Some((page, page_ref));
+                    match tmp{
+                        Some(val) => Option::Some(val.1),
+                        None => unsafe{std::hint::unreachable_unchecked()},
+                    }
+                }else{
+                    Option::None
+                }
+            },
+            None => panic!(),
+        }
+    }
+
+    pub fn new() -> Self{
+        LooslyCachedMemory { page_pool: Option::None, cache: Option::None }
+    }
+
+    get_mem_alligned!(get_i64_alligned, i64);
+    set_mem_alligned!(set_i64_alligned, i64);
+    get_mem_alligned!(get_u64_alligned, u64);
+    set_mem_alligned!(set_u64_alligned, u64);
+
+    get_mem_alligned!(get_i32_alligned, i32);
+    set_mem_alligned!(set_i32_alligned, i32);
+    get_mem_alligned!(get_u32_alligned, u32);
+    set_mem_alligned!(set_u32_alligned, u32);
+
+    get_mem_alligned!(get_i16_alligned, i16);
+    set_mem_alligned!(set_i16_alligned, i16);
+    get_mem_alligned!(get_u16_alligned, u16);
+    set_mem_alligned!(set_u16_alligned, u16);
+
+    get_mem_alligned!(get_i8, i8);
+    set_mem_alligned!(set_i8, i8);
+    get_mem_alligned!(get_u8, u8);
+    set_mem_alligned!(set_u8, u8);
+
+    get_mem_alligned_o!(get_i64_alligned_o, i64);
+    set_mem_alligned_o!(set_i64_alligned_o, i64);
+    get_mem_alligned_o!(get_u64_alligned_o, u64);
+    set_mem_alligned_o!(set_u64_alligned_o, u64);
+
+    get_mem_alligned_o!(get_i32_alligned_o, i32);
+    set_mem_alligned_o!(set_i32_alligned_o, i32);
+    get_mem_alligned_o!(get_u32_alligned_o, u32);
+    set_mem_alligned_o!(set_u32_alligned_o, u32);
+
+    get_mem_alligned_o!(get_i16_alligned_o, i16);
+    set_mem_alligned_o!(set_i16_alligned_o, i16);
+    get_mem_alligned_o!(get_u16_alligned_o, u16);
+    set_mem_alligned_o!(set_u16_alligned_o, u16);
+
+    get_mem_alligned_o!(get_i8_o, i8);
+    set_mem_alligned_o!(set_i8_o, i8);
+    get_mem_alligned_o!(get_u8_o, u8);
+    set_mem_alligned_o!(set_u8_o, u8);
+}
+
+
+impl PagePoolHolder for LooslyCachedMemory{
+    fn lock(&mut self, initiator: bool, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
+        if !initiator{
+            self.cache = Option::None;
+        }
+        Result::Ok(())
+    }
+
+    fn unlock(&mut self, _initiator: bool, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
+        Result::Ok(())
+    }
+
+    fn init_holder(&mut self, notifier: PagePoolNotifier) {
+        self.page_pool = Option::Some(notifier);
+    }
 }
 
 
@@ -291,14 +525,6 @@ pub struct Memory{
 impl<'a> DerefMut for MemoryGuard<'a>{
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.mem
-    }
-}
-
-
-
-impl Drop for Memory{
-    fn drop(&mut self) {
-        log::warn!("Droppping Memory: {:p}", self);
     }
 }
 

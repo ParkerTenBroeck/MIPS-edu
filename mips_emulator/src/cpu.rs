@@ -1,6 +1,6 @@
 use std::{sync::{atomic::AtomicUsize}, time::Duration};
 
-use crate::memory::{Memory, PagePoolRef, PagePoolListener, MemoryGuard};
+use crate::memory::{Memory, PagePoolRef, PagePoolListener, MemoryGuard, PagePoolController};
 
 //macros
 //jump encoding
@@ -210,6 +210,15 @@ impl MipsCpu {
     pub fn get_mem(&mut self) -> MemoryGuard{
         self.mem.create_guard()
     }
+    #[allow(unused)]
+    pub fn get_mem_controller(&mut self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>>{
+        match &mut self.mem.page_pool{
+            Some(val) => {
+                val.clone_page_pool_mutex()
+            },
+            None => panic!(),
+        }
+    }
 
     #[allow(unused)]
     pub fn is_running(&self) -> bool {
@@ -417,7 +426,10 @@ impl MipsCpu {
             (self.external_handler.invalid_opcode)(self);
         }
         #[cfg(not(feature = "external_handlers"))]
-        {}
+        {
+            log::warn!("invalid opcode {:#08X} at {:#08X}", self.mem.get_u32_alligned(self.pc.wrapping_sub(4)), self.pc.wrapping_sub(4));
+            self.stop();
+        }
     }
 
     #[allow(dead_code)]

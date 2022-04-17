@@ -1,4 +1,5 @@
 use eframe::{egui, epaint::Color32};
+use mips_emulator::memory::LooslyCachedMemory;
 
 pub trait Tab {
     fn ui(&mut self, ui: &mut egui::Ui);
@@ -309,6 +310,7 @@ pub fn toggle(on: &mut bool) -> impl egui::Widget + '_ {
 }
 
 pub struct HexEditor {
+    mem: mips_emulator::memory::PagePoolRef<LooslyCachedMemory>,
     offset: Option<(u32, bool)>,
     selection: Option<u32>,
     bytes_per_line: u8,
@@ -316,8 +318,9 @@ pub struct HexEditor {
 }
 
 impl HexEditor {
-    pub fn new() -> Self {
+    pub fn new(mem: mips_emulator::memory::PagePoolRef<LooslyCachedMemory>) -> Self {
         HexEditor {
+            mem,
             offset: Option::None,
             selection: Option::None,
             bytes_per_line: 16,
@@ -379,7 +382,7 @@ impl Tab for HexEditor {
                 ui.horizontal(|ui| {
                     let text = egui::RichText::new(match self.offset{
                         Some(val) => {
-                            let mut string = format!("offset: {:#08X}", val.0);
+                            let mut string = format!("offset: {:08X}", val.0);
                             string.insert(12, ':');
                             string
                         },
@@ -390,7 +393,7 @@ impl Tab for HexEditor {
 
                     let text = egui::RichText::new(match self.selection{
                         Some(val) => {
-                            let mut string = format!("selection: {:#08X}", val);
+                            let mut string = format!("selection: {:08X}", val);
                             string.insert(15, ':');
                             string
                         },
@@ -406,22 +409,25 @@ impl Tab for HexEditor {
                     ui.vertical(|ui|{
                         ui.horizontal(|ui| {
                             egui::ScrollArea::horizontal().show(ui, |ui| {
-                                if let Option::Some((offset, _)) = &mut self.offset {
+                                if let Option::Some((offset, middle)) = &mut self.offset {
                                     if ui.ctx().input().key_pressed(egui::Key::ArrowDown) {
                                         if let Option::Some(new) =
                                             offset.checked_add(self.bytes_per_line as u32)
                                         {
                                             *offset = new;
+                                            *middle = false;
                                         }
                                     }
                                     if ui.ctx().input().key_pressed(egui::Key::ArrowLeft) {
                                         if let Option::Some(new) = offset.checked_sub(1) {
                                             *offset = new;
+                                            *middle = false;
                                         }
                                     }
                                     if ui.ctx().input().key_pressed(egui::Key::ArrowRight) {
                                         if let Option::Some(new) = offset.checked_add(1) {
                                             *offset = new;
+                                            *middle = false;
                                         }
                                     }
                                     if ui.ctx().input().key_pressed(egui::Key::ArrowUp) {
@@ -429,23 +435,45 @@ impl Tab for HexEditor {
                                             offset.checked_sub(self.bytes_per_line as u32)
                                         {
                                             *offset = new;
+                                            *middle = false;
+                                        }
+                                    }
+                                    if ui.ctx().input().key_pressed(egui::Key::Backspace) {
+                                        if *middle{
+                                            *middle = false;
+                                            let val = self.mem.get_u8(*offset);
+                                            let val = val & 0b1111u8;
+                                            self.mem.set_u8(*offset, val);
+                                        }else{
+                                            if let Option::Some(new) = offset.checked_sub(1) {
+                                                *offset = new;
+                                                *middle = true;
+                                                let val = self.mem.get_u8(*offset);
+                                                let val = val & 0b11110000u8;
+                                                self.mem.set_u8(*offset, val);
+                                            }
                                         }
                                     }
                                     use egui::Key::*;
                                     let keys = [Num0,Num1,Num2,Num3,Num4,Num5,Num6,Num7,Num8,Num9,A,B,C,D,E,F];
-                                    for i in 0..16{
-                                        if ui.ctx().input().key_pressed(keys[i]){
+                                    for i in 0u8..16{
+                                        if ui.ctx().input().key_pressed(keys[i as usize]){
                                             if let Option::Some((pos, middle)) = &mut self.offset{
                                                 if *middle{
+                                                    let val = self.mem.get_u8(*pos);
+                                                    let val = (val & 0b11110000u8) + i;
+                                                    self.mem.set_u8(*pos, val);
                                                     *pos = pos.wrapping_add(1);
                                                     *middle = false;
                                                 }else{
+                                                    let val = self.mem.get_u8(*pos);
+                                                    let val = (val & 0b1111u8) + (i << 4);
+                                                    self.mem.set_u8(*pos, val);
                                                     *middle = true;
                                                 }
                                             }
                                         }
                                     }
-
                                 }
             
                                 let response = ui.vertical(|ui| {
@@ -453,7 +481,8 @@ impl Tab for HexEditor {
                                     for h in 0..=128 {
                                         let mut exit = false;
                                         ui.horizontal(|ui| {
-                                            let mut string = format!("{:08X}", h * self.bytes_per_line as u32);
+                                            let address = h * self.bytes_per_line as u32;
+                                            let mut string = format!("{:08X}", address);
                                             string.insert(4, ':');
             
                                             let res = ui.label(
@@ -471,7 +500,14 @@ impl Tab for HexEditor {
                                                 if i % 4 == 0 && i > 0 {
                                                     ui.allocate_space(egui::vec2(3.0, 0.0));
                                                 }
-                                                let label = egui::RichText::new("00").monospace();
+                                                let label = match self.mem.get_u8_o(address + i){
+                                                    Some(val) => {
+                                                        egui::RichText::new(format!("{:02X}", val))
+                                                    },
+                                                    None => {
+                                                        egui::RichText::new("--").color(Color32::DARK_RED)
+                                                    },
+                                                }.monospace();
             
                                                 let response = ui.label(label);
                                                 //println!("{:?}", response);
@@ -510,14 +546,29 @@ impl Tab for HexEditor {
             
                                             ui.separator();
             
-                                            for _i in 0u32..self.bytes_per_line as u32 {
+                                            for i in 0u32..self.bytes_per_line as u32 {
                                                 ui.spacing_mut().item_spacing.x = 0.0;
-                                                ui.label(egui::RichText::new(Self::u8_to_display_char(0)).monospace());
+                                                let label = match self.mem.get_u8_o(address + i){
+                                                    Some(val) => {
+                                                        egui::RichText::new(Self::u8_to_display_char(val))
+                                                    },
+                                                    None => {
+                                                        egui::RichText::new(".").color(Color32::DARK_RED)
+                                                    },
+                                                }.monospace();
+                                                ui.label(label);
                                             }
             
                                             if self.show_disassembly {
                                                 ui.separator();
-                                                let text = assembler::disassembler::simple::disassemble(0);
+                                                let text = match self.mem.get_u32_alligned_o(address){
+                                                    Some(val) => {
+                                                        assembler::disassembler::simple::disassemble(val)
+                                                    },
+                                                    None => {
+                                                        "".into()
+                                                    },
+                                                };
                                                 let text = egui::RichText::new(text).monospace();
                                                 ui.label(text);
                                             }
