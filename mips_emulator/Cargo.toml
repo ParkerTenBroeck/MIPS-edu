@@ -8,7 +8,6 @@ edition = "2021"
 [features]
 default = ["memory_allignment_check"]
 external_handlers = []
-system_call_plugins = ["external_handlers"]
 memory_allignment_check = []
 
 [dependencies]

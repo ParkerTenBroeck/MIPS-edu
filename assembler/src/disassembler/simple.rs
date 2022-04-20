@@ -79,7 +79,7 @@ fn immediate_encoding(opcode: u32) -> String{
     let o = (opcode >> 26) & 0b111111;
     let s = (opcode >> 21) & 0b11111;
     let t = (opcode >> 16) & 0b11111;
-    let sei = ((opcode) << 16) >> 16;
+    let sei = ((opcode as i32) << 16) >> 16;
     let zei = opcode & 0xFFFF;
 
     match o {

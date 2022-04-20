@@ -14,8 +14,6 @@ fn main() {
         std::process::exit(0);
     }
 
-    let app = clike_gui::ClikeGui::default();
-
     let icon = match image::open("./clike_gui/docs/icon-256.png"){
         Result::Ok(val) => {
             let icon = val.to_rgba8();
@@ -34,6 +32,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions{
         icon_data: icon,
+        
         ..Default::default()
     };
 
@@ -45,7 +44,20 @@ fn main() {
         },
     }
 
-    eframe::run_native(Box::new(app), native_options);
+    eframe::run_native("CLike", native_options, Box::new(|cc|{
+        
+        let app = clike_gui::ClikeGui::new(&cc.egui_ctx);
+        
+        match app.settings().theme {
+            clike_gui::app::Theme::DarkMode => {
+                cc.egui_ctx.set_visuals(eframe::egui::Visuals::dark());
+            }
+            clike_gui::app::Theme::LightMode => {
+                cc.egui_ctx.set_visuals(eframe::egui::Visuals::light());
+            }   
+        }     
+        Box::new(app)
+    }));
 }
 
 #[cfg(target_os= "linux")]    

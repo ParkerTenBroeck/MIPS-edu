@@ -1,9 +1,9 @@
-use std::io::Read;
+use std::{io::Read, pin::Pin};
 
-use eframe::{egui::{self}, epi};
+use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
 use mips_emulator::{cpu::MipsCpu};
 
-use crate::tabbed_area::{TabbedArea, CodeEditor};
+use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler};
 
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -19,12 +19,13 @@ use crate::tabbed_area::{TabbedArea, CodeEditor};
 //    };
 //}
 
-enum Theme {
+pub enum Theme {
     DarkMode,
     LightMode,
 }
+#[allow(unused)]
 pub struct ApplicationSettings {
-    theme: Theme,
+    pub theme: Theme,
 }
 
 impl Default for ApplicationSettings {
@@ -42,21 +43,24 @@ pub struct ClikeGui {
     // Example stuff:
     settings: ApplicationSettings,
 
-    // this how you opt-out of serialization of a member
-    //#[cfg_attr(feature = "persistence", serde(skip))]
-    //value: f32,
-    //#[cfg_attr(feature = "persistence", serde(skip))]
-    //cpu: MipsCpu,
+
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    cpu: Pin<Box<MipsCpu>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
     tabbed_area: TabbedArea,
 }
 
-impl Default for ClikeGui {
-    fn default() -> Self {
+impl ClikeGui {
+    pub fn new(ctx: &egui::Context) -> Self {
+
         let mut ret = Self {
             settings: ApplicationSettings::default(),
             //cpu: MipsCpu::new(),
             tabbed_area: TabbedArea::default(),
+            cpu: Box::pin(MipsCpu::new()),
+            cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
         };
         ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
 r#"//runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
@@ -77,110 +81,43 @@ end:
 trap 0
 "#.into()
      )));
+     
+        ret.cpu.set_external_handlers(ExternalHandler::new(ret.cpu_screen.clone()));
         ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
+        let tab = Box::new(crate::tabs::image_tab::ImageTab::new("CPU screen", ret.cpu_screen.clone()));
+        ret.tabbed_area.add_tab(tab);
+        ret.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(unsafe{std::mem::transmute(ret.cpu.as_mut().get_mut())})));
         ret
     }
 }
-/*
-/// Outer block single line documentation
-/**
-    /*
-        ps(you can have /*!BLOCKS*/ /**inside*/ blocks)
-    */
-    Outer block multiline documentation
-*/
-fn test(){
-    println!("dont change a thing! {}", "you are amazing ;)");
-    let r#fn = test;
-    let number = 12 + 2.3e-2;
 
-    //! some inner documentation
-    let boolean = false;
-
-    /*!
-        Outer block multiline documentation
-    */
-    for(i: i32, i < 50; i += 2){
-        println!("hello for the {} time!", i);
-    }
-
-    //this is a comment(crazy right)
-    /*
-        block comment
-        this one goes on for a while
-    */
-}
- */
-
-pub static mut MIPS_CPU: Option<MipsCpu> = Option::None;
-
-fn get_cpu() -> &'static mut MipsCpu{
-    unsafe{
-        match &mut MIPS_CPU{
-            Some(val) => val,
-            None => panic!(),
-        }
-    }
+impl ClikeGui{
+    pub fn settings(&self) -> &ApplicationSettings{
+        &self.settings
+    } 
 }
 
 impl epi::App for ClikeGui {
-    fn name(&self) -> &str {
-        "CLike"
-    }
 
-    /// Called once before the first frame.
-    fn setup(
-        &mut self,
-        _ctx: &egui::Context,
-        _frame: &epi::Frame,
-        _storage: Option<&dyn epi::Storage>,
-    ) {
-        unsafe {
-            MIPS_CPU = Option::Some(MipsCpu::new());
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        wasm_logger::init(wasm_logger::Config::default());
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        #[cfg(feature = "persistence")]
-        if let Some(storage) = _storage {
-            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-        }
-
-
-        self.tabbed_area.add_tab(Box::new(crate::tabbed_area::HexEditor::new(get_cpu())));
-
-        match self.settings.theme {
-            Theme::DarkMode => {
-                _ctx.set_visuals(egui::Visuals::dark());
-            }
-            Theme::LightMode => {
-                _ctx.set_visuals(egui::Visuals::light());
-            }
-        }
-    }
-
-    /// Called by the frame work to save state before shutdown.
-    /// Note that you must enable the `persistence` feature for this to work.
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
-    /// Called each time the UI needs repainting, which may be many times per second.
-    /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self { .. } = self;
-        //let mut val6 = 1f32;
+    fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
 
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
+
+        // for event in ctx.input().events.iter(){
+        //     match event{
+        //         egui::Event::Key { key, pressed, modifiers } => {
+                    
+        //         },
+        //         _ => {}
+        //     }
+        // }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
+            
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
@@ -212,10 +149,12 @@ impl epi::App for ClikeGui {
         //TEMP
 
         let frame_no_marg = egui::Frame {
-            margin: egui::style::Margin::symmetric(2.0, 2.0),
+            //margin: egui::style::Margin::symmetric(2.0, 2.0),
             rounding: eframe::epaint::Rounding::none(),
             fill: ctx.style().visuals.window_fill(),
             stroke: ctx.style().visuals.window_stroke(),
+            inner_margin: egui::style::Margin::symmetric(2.0, 2.0),
+            outer_margin: egui::style::Margin::symmetric(0.0, 0.0),
             ..Default::default()
         };
         egui::SidePanel::left("side_panel")
@@ -290,17 +229,16 @@ impl epi::App for ClikeGui {
                                 //    ui.label("Write something: ");
                                 //    ui.text_edit_singleline(label);
                                 //});
-                                let cpu = unsafe { MIPS_CPU.as_mut().unwrap() };
     
                                 let (pc, hi, lo, reg) = {
                                     (
-                                        cpu.get_pc(),
-                                        cpu.get_hi_register(),
-                                        cpu.get_lo_register(),
-                                        cpu.get_general_registers(),
+                                        self.cpu.get_pc(),
+                                        self.cpu.get_hi_register(),
+                                        self.cpu.get_lo_register(),
+                                        self.cpu.get_general_registers(),
                                     )
                                 };
-                                if cpu.is_running() && !cpu.paused_or_stopped() {
+                                if self.cpu.is_running() && !self.cpu.paused_or_stopped() {
                                     ui.ctx().request_repaint();
                                 }
     
@@ -330,56 +268,51 @@ impl epi::App for ClikeGui {
                                 //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
                                 if ui.button("Start CPU").clicked() {
                                     unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().is_running() {
+                                        if self.cpu.is_running() {
                                             log::warn!("CPU is already running");
                                         } else {
                                             log::info!("CPU Starting");
                                             let cpu: &'static mut MipsCpu =
-                                                std::mem::transmute(MIPS_CPU.as_mut().unwrap());
+                                                std::mem::transmute(self.cpu.as_mut());
+                                                
                                             cpu.start_new_thread();
                                         }
                                     }
                                 }
                                 if ui.button("Step CPU").clicked() {
                                     unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().is_running() {
+                                        if self.cpu.is_running() {
                                             log::warn!("CPU is already running");
                                         } else {
                                             let cpu: &'static mut MipsCpu =
-                                                std::mem::transmute(MIPS_CPU.as_mut().unwrap());
+                                                std::mem::transmute(self.cpu.as_mut());
                                             cpu.step_new_thread();
                                         }
                                     }
                                 }
     
                                 if ui.button("Stop CPU").clicked() {
-                                    unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().is_running() {
-                                            MIPS_CPU.as_mut().unwrap().stop();
-                                            log::info!("Stopping CPU");
-                                        } else {
-                                            log::warn!("CPU is already stopped");
-                                        }
+                                    if self.cpu.is_running() {
+                                        self.cpu.stop();
+                                        log::info!("Stopping CPU");
+                                    } else {
+                                        log::warn!("CPU is already stopped");
                                     }
                                 }
                                 if ui.button("Pause CPU").clicked() {
-                                    unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().paused_or_stopped(){
-                                            log::warn!("CPU is already paused");
-                                        }else{
-                                            MIPS_CPU.as_mut().unwrap().pause();
-                                            log::info!("CPU is paused");
-                                        }
+                                    if self.cpu.paused_or_stopped(){
+                                        log::warn!("CPU is already paused");
+                                    }else{
+                                        self.cpu.pause();
+                                        log::info!("CPU is paused");
                                     }
                                 }
                                 if ui.button("Resume CPU").clicked() {
-                                    unsafe {
-                                        if MIPS_CPU.as_mut().unwrap().paused_or_stopped(){
-                                            MIPS_CPU.as_mut().unwrap().resume();
-                                            log::info!("CPU resumed");
-                                        }else{
-                                            log::warn!("CPU is already resumed");
-                                        }
+                                    if self.cpu.paused_or_stopped(){
+                                        self.cpu.resume();
+                                        log::info!("CPU resumed");
+                                    }else{
+                                        log::warn!("CPU is already resumed");
                                     }
                                 }
                                 //let sel: &mut bool = unsafe{
@@ -398,54 +331,48 @@ impl epi::App for ClikeGui {
                                 //     }
                                 // }
                                 if ui.button("Reset CPU").clicked() {
-                                    unsafe {
-                                        if !MIPS_CPU.as_mut().unwrap().is_running() {
-                                            //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
-                                            //the version written in c++ seems to be around 17% faster
-                                            //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
-    
-                                            MIPS_CPU.as_mut().unwrap().clear();
+                                    if !self.cpu.is_running() {
+                                        //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
+                                        //the version written in c++ seems to be around 17% faster
+                                        //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
 
-                                            let f = std::fs::File::open("clike_gui/res/snake.mxn").unwrap();
-                                            let mut reader = std::io::BufReader::new(f);
-                                            let mut buffer = Vec::new();
-                                            
-                                            // Read file into vector.
-                                            
-                                            let size = reader.read_to_end(&mut buffer).unwrap();
+                                        self.cpu.clear();
 
-                                            let test_prog = buffer.as_mut_slice();
-                                            for i in 0..(size / 4){
-                                                let base = i * 4;
-                                                let b1 = test_prog[base];
-                                                let b2 = test_prog[base + 1];
+                                        let f = std::fs::File::open("clike_gui/res/tri.mxn").unwrap();
+                                        let mut reader = std::io::BufReader::new(f);
+                                        let mut buffer = Vec::new();
+                                        
+                                        // Read file into vector.
+                                        
+                                        let size = reader.read_to_end(&mut buffer).unwrap();
 
-                                                test_prog[base] = test_prog[base + 3];
-                                                test_prog[base + 1] = test_prog[base + 2];
-                                                test_prog[base + 3] = b1;
-                                                test_prog[base + 2] = b2;
-                                            }
+                                        let test_prog = buffer.as_mut_slice();
+                                        for i in 0..(size / 4){
+                                            let base = i * 4;
+                                            let b1 = test_prog[base];
+                                            let b2 = test_prog[base + 1];
 
-                                            
-    
-                                            // let test_prog = &[
-                                            //    0x64027FFFu32,
-                                            //    0x00000820,
-                                            //    0x20210001,
-                                            //    0x10220001,
-                                            //    0x0BFFFFFD,
-                                            //    0x68000000,
-                                            // ];
-                                            MIPS_CPU
-                                                .as_mut()
-                                                .unwrap()
-                                                .get_mem()
-                                                .copy_into_raw(0, test_prog);
-    
-                                            log::info!("reset CPU");
-                                        } else {
-                                            log::warn!("Cannot reset CPU while running");
+                                            test_prog[base] = test_prog[base + 3];
+                                            test_prog[base + 1] = test_prog[base + 2];
+                                            test_prog[base + 3] = b1;
+                                            test_prog[base + 2] = b2;
                                         }
+
+                                        
+
+                                        // let test_prog = &[
+                                        //    0x64027FFFu32,
+                                        //    0x00000820,
+                                        //    0x20210001,
+                                        //    0x10220001,
+                                        //    0x0BFFFFFD,
+                                        //    0x68000000,
+                                        // ];
+                                        self.cpu.get_mem().copy_into_raw(0, test_prog);
+
+                                        log::info!("reset CPU");
+                                    } else {
+                                        log::warn!("Cannot reset CPU while running");
                                     }
                                 }
                             } else if *select == 2{
@@ -457,8 +384,6 @@ impl epi::App for ClikeGui {
                                     ui.label("note opening files will only read them and never save to them currently");    
                                 });
                                 ui.separator();
-                                
-                                //let dir = std::fs::read_dir(".");
 
                                 generate_tree(".".into(),self, ui);
 
@@ -520,44 +445,10 @@ impl epi::App for ClikeGui {
                         ui.allocate_space(ui.available_size());
                     });
                 }
-
-                /*
-                    ui.horizontal(|ui| {
-                        ui.text_edit_multiline(code).context_menu(|ui| {
-                            ui.menu_button("Plot", |ui| {
-                                if ui.radio_value(value, 2f32, "2").clicked()
-                                    || ui
-                                    .radio_value(value, 3f32, "3")
-                                    .clicked()
-                                    || ui
-                                    .radio_value(value, 4.5f32, "4.5")
-                                    .clicked()
-                                {
-                                    ui.close_menu();
-                                }
-                            });
-                            egui::Grid::new("button_grid").show(ui, |ui| {
-                                ui.add(
-                                    egui::DragValue::new(value)
-                                        .speed(1.0)
-                                        .prefix("Width:"),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(value)
-                                        .speed(1.0)
-                                        .prefix("Height:"),
-                                );
-                                ui.end_row();
-                            });
-                        });
-                    });
-
-                */
             });
         });
 
         egui::TopBottomPanel::bottom("bottom_panel").resizable(true).show(ctx, |ui| {
-            
             
             egui::ScrollArea::both().stick_to_bottom().show(ui, |ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
@@ -600,6 +491,7 @@ impl epi::App for ClikeGui {
                 ui.allocate_space(ui.available_size());
 
             });
+
         });
 
         let frame = frame_no_marg.clone();

@@ -5,8 +5,9 @@
 pub mod app;
 pub mod syntax_highlighter;
 pub mod loggers;
-pub mod tabbed_area;
+pub mod tabs;
 pub mod resource_manager;
+pub mod emulator;
 
 pub use app::ClikeGui;
 

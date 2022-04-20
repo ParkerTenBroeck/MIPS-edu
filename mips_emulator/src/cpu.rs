@@ -1,4 +1,5 @@
-use std::{sync::{atomic::AtomicUsize}, time::Duration};
+use core::panic;
+use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
 
 use crate::memory::{Memory, PagePoolRef, PagePoolListener, MemoryGuard, PagePoolController};
 
@@ -77,52 +78,172 @@ macro_rules! register_a {
 }
 //Macros
 
-#[derive(Default)]
+    #[cfg(feature = "external_handlers")]
 pub struct MipsCpu {
-    pub(crate) pc: u32,
-    pub(crate) reg: [u32; 32],
-    pub(crate) lo: u32,
-    pub(crate) hi: u32,
+    pub pc: u32,
+    pub reg: [u32; 32],
+    pub lo: u32,
+    pub hi: u32,
     i_check: bool,
     running: bool,
     finished: bool,
     paused: AtomicUsize,
     is_paused: bool,
     is_within_memory_event: bool,
-    pub(crate) mem: PagePoolRef<Memory>,
+    pub mem: PagePoolRef<Memory>,
     #[cfg(feature = "external_handlers")]
-    external_handler: CpuExternalHandler,
+    external_handler: Box<dyn CpuExternalHandler>,
 }
 
 #[cfg(feature = "external_handlers")]
-pub struct CpuExternalHandler {
-    pub arithmetic_error: fn(&mut MipsCpu, u32),
-    pub memory_error: fn(&mut MipsCpu, u32),
-    pub invalid_opcode: fn(&mut MipsCpu),
-    pub system_call: fn(&mut MipsCpu, u32),
-    pub system_call_error: fn(&mut MipsCpu, u32, u32, &str),
+pub trait CpuExternalHandler: Sync + Send {
+    fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32);
+    fn memory_error(&mut self, cpu: &mut MipsCpu, error_id: u32);
+    fn invalid_opcode(&mut self, cpu: &mut MipsCpu);
+    fn system_call(&mut self, cpu: &mut MipsCpu, call_id: u32);
+    fn system_call_error(&mut self, cpu: &mut MipsCpu, call_id: u32, error_id: u32, message:  &str);
+}
+
+
+#[cfg(feature = "external_handlers")]
+struct DefaultExternalHandler{
+
 }
 
 #[cfg(feature = "external_handlers")]
-impl Default for CpuExternalHandler {
+impl DefaultExternalHandler{
+    fn opcode_address(cpu: &mut MipsCpu) -> u32{
+        cpu.pc.wrapping_sub(4)
+    }
+
+    fn opcode(cpu: &mut MipsCpu) -> u32{
+        cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
+    }
+}
+
+#[cfg(feature = "external_handlers")]
+impl Default for DefaultExternalHandler{
     fn default() -> Self {
-        fn f1(_a1: &mut MipsCpu, _a2: u32) {
-            panic!("Unimplemented External Handler for CPU");
-        }
-        fn f2(_a1: &mut MipsCpu) {
-            panic!("Unimplemented External Handler for CPU");
-        }
-        fn f3(_a1: &mut MipsCpu, _a2: u32, _a3: u32, _a4: &str) {
-            panic!("Unimplemented External Handler for CPU");
-        }
+        Self {  }
+    }
+}
 
-        Self {
-            arithmetic_error: f1,
-            memory_error: f1,
-            system_call: f1,
-            invalid_opcode: f2,
-            system_call_error: f3,
+#[cfg(feature = "external_handlers")]
+impl CpuExternalHandler for DefaultExternalHandler {
+    fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32) {
+        log::warn!("arithmetic error {}", error_id);
+        cpu.stop();
+    }
+
+    fn memory_error(&mut self, cpu: &mut MipsCpu, error_id: u32) {
+        log::warn!("Memory Error: {}", error_id);
+        cpu.stop();
+    }
+
+    fn invalid_opcode(&mut self, cpu: &mut MipsCpu) {            
+        log::warn!("invalid opcode {:#08X} at {:#08X}", Self::opcode(cpu), Self::opcode_address(cpu));
+        cpu.stop();
+    }
+
+    fn system_call(&mut self, cpu: &mut MipsCpu, call_id: u32) {
+        match call_id {
+            0 => cpu.stop(),
+            1 => log::info!("{}", cpu.reg[4] as i32),
+            4 => {
+                let _address = cpu.reg[4];
+            }
+            5 => {
+                let mut string = String::new();
+                let _ = std::io::stdin().read_line(&mut string);
+                match string.parse::<i32>() {
+                    Ok(val) => cpu.reg[2] = val as u32,
+                    Err(_) => match string.parse::<u32>() {
+                        Ok(val) => cpu.reg[2] = val,
+                        Err(_) => {
+                            cpu.system_call_error(
+                                call_id,
+                                0,
+                                "unable to parse integer".into(),
+                            );
+                        }
+                    },
+                }
+            }
+            99 => {}
+            101 => match char::from_u32(cpu.reg[4]) {
+                Some(val) => log::info!("{}", val),
+                None => log::warn!("Invalid char{}", cpu.reg[4]),
+            },
+            102 => {
+                let mut string = String::new();
+                let _ = std::io::stdin().read_line(&mut string);
+                string = string.replace("\n", "");
+                string = string.replace("\r", "");
+                if string.len() != 1 {
+                    cpu.reg[2] = string.chars().next().unwrap() as u32;
+                } else {
+                    cpu.system_call_error(call_id, 0, "invalid input");
+                }
+            }
+            105 => {
+                use std::thread;
+                thread::sleep(Duration::from_millis(cpu.reg[4] as u64));
+            }
+            106 => {
+                static mut LAST: u128 = 0;
+                let time =
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis();
+                let dur = unsafe{time - LAST};
+                cpu.reg[4] *= 2;
+                if (cpu.reg[4]  as u128 ) >= dur{
+                    std::thread::sleep(std::time::Duration::from_millis((cpu.reg[4] as u64) - (dur as u64)));
+                    unsafe{
+                        LAST =
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis();
+                    }
+                }else{
+                    unsafe{
+                        LAST = time;
+                    }
+                }
+                
+            }
+            107 => {
+                cpu.reg[2] = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    & 0xFFFFFFFFu128) as u32;
+            }
+            130 => {
+                cpu.reg[2] = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros()
+                    & 0xFFFFFFFFu128) as u32;
+            }
+            111 => {
+                cpu.stop();
+            }
+            _ => {
+                self.system_call_error(cpu, call_id, 0, "invalid system call");
+            }
         }
+    }
+
+    fn system_call_error(&mut self, _cpu: &mut MipsCpu, call_id: u32, error_id: u32, message:  &str) {
+        log::warn!(
+            "System Call: {} Error: {} Message: {}",
+            call_id,
+            error_id,
+            message
+        );
     }
 }
 
@@ -159,6 +280,8 @@ impl MipsCpu {
             is_paused: true,
             is_within_memory_event: false,
             mem: Memory::new(),
+            #[cfg(feature = "external_handlers")]
+            external_handler: Box::new(DefaultExternalHandler::default()),
         };
 
         tmp
@@ -222,6 +345,9 @@ impl MipsCpu {
             },
             None => panic!(),
         }
+    }
+    pub fn set_external_handlers(&mut self, handlers: impl CpuExternalHandler + 'static){
+        self.external_handler = Box::new(handlers);
     }
 
     #[allow(unused)]
@@ -295,12 +421,19 @@ impl MipsCpu {
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    #[cfg(feature = "external_handlers")]
+    #[inline(always)]
+    fn get_handler(&mut self) -> &'static mut dyn CpuExternalHandler {
+        let thing = self.external_handler.as_mut();
+        unsafe{std::mem::transmute(thing)}
+    }
+
     #[inline(always)]
     #[allow(unused)]
     fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str) {
         #[cfg(feature = "external_handlers")]
         {
-            (self.external_handler.system_call_error)(self, call_id, error_id, message);
+            self.get_handler().system_call_error(self, call_id, error_id, message);
         }
         #[cfg(not(feature = "external_handlers"))]
         {
@@ -313,11 +446,21 @@ impl MipsCpu {
         }
     }
 
+    fn run_panic(&mut self){
+
+        self.running = false;
+        self.finished = true;
+        self.i_check = !false;
+        self.paused.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.is_paused = false;
+        self.clear();
+    }
+
     #[inline(always)]
     fn memory_error(&mut self, error_id: u32) {
         #[cfg(feature = "external_handlers")]
         {
-            (self.external_handler.memory_error)(self, error_id);
+            self.get_handler().memory_error(self, error_id);
         }
         #[cfg(not(feature = "external_handlers"))]
         {
@@ -326,10 +469,35 @@ impl MipsCpu {
     }
 
     #[inline(always)]
+    fn arithmetic_error(&mut self, id: u32) {
+        #[cfg(feature = "external_handlers")]
+        {
+            self.get_handler().arithmetic_error(self, id);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+            log::warn!("arithmetic error {}", id);
+        }
+    }
+
+    #[inline(always)]
+    fn invalid_op_code(&mut self) {
+        #[cfg(feature = "external_handlers")]
+        {
+            self.get_handler().invalid_opcode(self);
+        }
+        #[cfg(not(feature = "external_handlers"))]
+        {
+            log::warn!("invalid opcode {:#08X} at {:#08X}", self.mem.get_u32_alligned(self.pc.wrapping_sub(4)), self.pc.wrapping_sub(4));
+            self.stop();
+        }
+    }
+
+    #[inline(always)]
     fn system_call(&mut self, call_id: u32) {
         #[cfg(feature = "external_handlers")]
         {
-            (self.external_handler.system_call)(self, call_id);
+            self.get_handler().system_call(self, call_id);
         }
         #[cfg(not(feature = "external_handlers"))]
         {
@@ -377,17 +545,29 @@ impl MipsCpu {
                     thread::sleep(Duration::from_millis(self.reg[4] as u64));
                 }
                 106 => {
-                    static mut LAST: std::time::SystemTime = std::time::UNIX_EPOCH;
-                    let time = unsafe {
+                    static mut LAST: u128 = 0;
+                    let time =
                         std::time::SystemTime::now()
-                            .duration_since(LAST)
+                            .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
-                            .as_millis()
-                    };
-                    if time < self.reg[4] as u128 {
-                        let time = self.reg[4] as u128 - time;
-                        std::thread::sleep(std::time::Duration::from_millis(time as u64));
+                            .as_millis();
+                    let dur = unsafe{time - LAST};
+                    self.reg[4] *= 2;
+                    if (self.reg[4]  as u128 ) >= dur{
+                        std::thread::sleep(std::time::Duration::from_millis((self.reg[4] as u64) - (dur as u64)));
+                        unsafe{
+                            LAST =
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis();
+                        }
+                    }else{
+                        unsafe{
+                            LAST = time;
+                        }
                     }
+                    
                 }
                 107 => {
                     self.reg[2] = (std::time::SystemTime::now()
@@ -396,7 +576,7 @@ impl MipsCpu {
                         .as_millis()
                         & 0xFFFFFFFFu128) as u32;
                 }
-                108 => {
+                130 => {
                     self.reg[2] = (std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
@@ -406,35 +586,72 @@ impl MipsCpu {
                 111 => {
                     self.stop();
                 }
+                150|151|152|153|154|155|156 => {
+                    let (x,y,vec) = unsafe{
+                        static mut thing: Option<(usize, usize, Vec<char>)> = Option::None;
+                        match &mut thing{
+                            Some(val) => {
+                                val
+                            },
+                            None => {
+                                thing = Option::Some((0,0, Vec::new()));
+                                thing.as_mut().unwrap()
+                            },
+                        }
+                    };
+                    fn color_to_char(color: u32) -> char{
+                        match color {
+                            0 => {
+                                '.'
+                            }
+                            _ => {
+                                'E'
+                            }
+                        }
+                    }
+
+                    match call_id{
+                        
+                        150 => {
+                            *x = self.reg[4] as usize;
+                            *y = self.reg[5] as usize;
+                            *vec = vec!['.'; *x**y];
+                        }
+                        151 => {
+                            vec[(self.reg[4] + self.reg[5] * ((*x) as u32)) as usize] = color_to_char(self.reg[6]);
+                        }
+                        152 => {
+                            vec[self.reg[4] as usize] = color_to_char(self.reg[5]);    
+                        }
+                        153 => {
+                            for i in 0..*x**y{
+                                if i % *x == 0{
+                                    println!();
+                                }
+                                print!("{}", vec[i]);
+                            }
+                            println!();
+                        }
+                        154 => {
+                            
+                        }
+                        155 => {
+                            
+                        }
+                        156 => {
+                            for i in 0..*x**y{
+                                vec[i] = color_to_char(self.reg[4]);
+                            }
+                        }
+                        _ =>{
+
+                        }
+                    }
+                }
                 _ => {
                     log::warn!("invalid system call: {}, {:#X}", call_id, call_id);
                 }
             }
-        }
-    }
-
-    #[inline(always)]
-    fn arithmetic_error(&mut self, id: u32) {
-        #[cfg(feature = "external_handlers")]
-        {
-            (self.external_handler.arithmetic_error)(self, id);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            log::warn!("arithmetic error {}", id);
-        }
-    }
-
-    #[inline(always)]
-    fn invalid_op_code(&mut self) {
-        #[cfg(feature = "external_handlers")]
-        {
-            (self.external_handler.invalid_opcode)(self);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            log::warn!("invalid opcode {:#08X} at {:#08X}", self.mem.get_u32_alligned(self.pc.wrapping_sub(4)), self.pc.wrapping_sub(4));
-            self.stop();
         }
     }
 
@@ -447,16 +664,32 @@ impl MipsCpu {
         self.running = true;
         self.finished = false;
 
+
         let _handle = std::thread::spawn(|| {
             // some work here
             log::info!("CPU Started");
             let start = std::time::SystemTime::now();
-            self.run();
+
+
+            let result = std::panic::catch_unwind(AssertUnwindSafe(||{
+                self.run();
+            }));
+
             let since_the_epoch = std::time::SystemTime::now()
                 .duration_since(start)
                 .expect("Time went backwards");
             log::info!("{:?}", since_the_epoch);
             log::info!("CPU stopping");
+
+            match result{
+                Ok(_) => {
+                },
+                Err(err) => {
+                    self.run_panic();
+                    std::panic::resume_unwind(err);
+                },
+            }
+        
         });
     }
 
@@ -472,12 +705,25 @@ impl MipsCpu {
         let _handle = std::thread::spawn(|| {
             log::info!("CPU Step Started");
             let start = std::time::SystemTime::now();
-            self.run();
+            
+            let result = std::panic::catch_unwind(AssertUnwindSafe(||{
+                self.run();
+            }));
+
+
             let since_the_epoch = std::time::SystemTime::now()
                 .duration_since(start)
                 .expect("Time went backwards");
             log::info!("{:?}", since_the_epoch);
             log::info!("CPU Step Stopping");
+            
+            match result{
+                Ok(_) => {},
+                Err(err) => {
+                    self.run_panic();
+                    std::panic::resume_unwind(err);
+                },
+            }
         });
     }
 
@@ -503,6 +749,9 @@ impl MipsCpu {
 
     #[allow(arithmetic_overflow)]
     fn run(&mut self) {
+
+        //let result = std::panic::catch_unwind(||{
+
         macro_rules! set_reg {
             ($reg:expr, $val:expr) => {
                 unsafe {
@@ -805,20 +1054,19 @@ impl MipsCpu {
                     // branch instructions
                     0b000100 => {
                         //BEQ
-
                         if get_reg!(immediate_s!(op)) == get_reg!(immediate_t!(op)) {
                             self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                         }
                     }
                     0b000111 => {
                         //BGTZ
-                        if self.reg[immediate_s!(op)] > 0 {
+                        if self.reg[immediate_s!(op)] as i32 > 0 {
                             self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                         }
                     }
                     0b000110 => {
                         //BLEZ
-                        if self.reg[immediate_s!(op)] <= 0 {
+                        if self.reg[immediate_s!(op)] as i32 <= 0 {
                             self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                         }
                     }
