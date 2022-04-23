@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["memory_allignment_check"]
-external_handlers = []
+default = ["memory_allignment_check", "big_endian"]
+big_endian = []
 memory_allignment_check = []
 
 [dependencies]

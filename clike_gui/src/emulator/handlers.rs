@@ -1,13 +1,16 @@
-use std::time::Duration;
+use std::{time::Duration, sync::{Mutex, Arc}};
 
 use eframe::epaint::{TextureHandle, ColorImage, Color32};
 use mips_emulator::cpu::{MipsCpu, CpuExternalHandler};
+
+use crate::util::keyboard_util::KeyboardMemory;
 
 
 pub struct ExternalHandler{
     last_106: u128,
     rand_seed: u128,
     screen_texture: TextureHandle,
+    keyboard: Arc<Mutex<KeyboardMemory>>,
     image: ColorImage,
     screen_x: usize,
     screen_y: usize,
@@ -22,7 +25,7 @@ impl ExternalHandler{
         cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
     }
 
-    pub fn new(screen_texture: TextureHandle) -> Self {
+    pub fn new(screen_texture: TextureHandle, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
         let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -30,6 +33,7 @@ impl ExternalHandler{
         Self {
             screen_texture,
             image: ColorImage::new([0,0], Color32::BLACK), 
+            keyboard,
             screen_x: 0,
             screen_y: 0, 
             last_106: time,
@@ -106,7 +110,11 @@ impl CpuExternalHandler for ExternalHandler {
                 }
             }
             104 => {
-                cpu.reg[4] = 0;
+                if self.keyboard.lock().unwrap().is_pressed((cpu.reg[4] as u8 as char).to_ascii_uppercase()){
+                    cpu.reg[2] = 1;
+                }else{
+                    cpu.reg[2] = 0;
+                }
             }
             105 => {
                 use std::thread;
@@ -152,8 +160,8 @@ impl CpuExternalHandler for ExternalHandler {
             }
                  
             150 => {                
-                self.screen_x = cpu.reg[4] as usize;
-                self.screen_y = cpu.reg[5] as usize;
+                self.screen_x = cpu.reg[4] as usize + 1;
+                self.screen_y = cpu.reg[5] as usize + 1;
                 self.image = ColorImage::new([self.screen_x, self.screen_y], Color32::BLACK)
             }
             151 => {
@@ -163,13 +171,19 @@ impl CpuExternalHandler for ExternalHandler {
                 self.image.pixels[cpu.reg[4] as usize] = u32_to_color32(cpu.reg[5]);
             }
             153 => {                
-                self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Linear);
+                self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
             }
             154 => {
-                
+
             }
             155 => {
-                
+                let (h,s,v) = (cpu.reg[4] as f32, cpu.reg[5] as f32, cpu.reg[6] as f32);
+                let (h ,s, v) = (h / 255.0, s / 255.0, v / 255.0);
+                let (r,g,b) = eframe::egui::color::hsv_from_rgb([h, s, v]);
+                let (r,g,b) = (r * 255.0, g * 255.0, b * 255.0);
+                let (r,g,b) = (r as u32, g as u32, b as u32);
+                let color = r | g << 8 | b << 16;
+                cpu.reg[2] = color;
             }
             156 => {
                 let color = u32_to_color32(cpu.reg[4]);

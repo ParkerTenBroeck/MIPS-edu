@@ -1,9 +1,9 @@
-use std::{io::Read, pin::Pin};
+use std::{io::Read, pin::Pin, sync::{Arc, Mutex}};
 
 use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
 use mips_emulator::{cpu::MipsCpu};
 
-use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler};
+use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler, util::keyboard_util::KeyboardMemory};
 
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -49,6 +49,8 @@ pub struct ClikeGui {
     #[cfg_attr(feature = "persistence", serde(skip))]
     cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
+    cpu_virtual_keyboard: Arc<Mutex<KeyboardMemory>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
     tabbed_area: TabbedArea,
 }
 
@@ -61,7 +63,9 @@ impl ClikeGui {
             tabbed_area: TabbedArea::default(),
             cpu: Box::pin(MipsCpu::new()),
             cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
+            cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())),
         };
+
         ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
 r#"//runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
 //0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000
@@ -82,7 +86,7 @@ trap 0
 "#.into()
      )));
      
-        ret.cpu.set_external_handlers(ExternalHandler::new(ret.cpu_screen.clone()));
+        ret.cpu.set_external_handlers(ExternalHandler::new(ret.cpu_screen.clone(), ret.cpu_virtual_keyboard.clone()));
         ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
         let tab = Box::new(crate::tabs::image_tab::ImageTab::new("CPU screen", ret.cpu_screen.clone()));
         ret.tabbed_area.add_tab(tab);
@@ -106,15 +110,7 @@ impl epi::App for ClikeGui {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
 
-
-        // for event in ctx.input().events.iter(){
-        //     match event{
-        //         egui::Event::Key { key, pressed, modifiers } => {
-                    
-        //         },
-        //         _ => {}
-        //     }
-        // }
+        self.cpu_virtual_keyboard.lock().unwrap().update(ctx);
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             
@@ -338,7 +334,7 @@ impl epi::App for ClikeGui {
 
                                         self.cpu.clear();
 
-                                        let f = std::fs::File::open("clike_gui/res/tri.mxn").unwrap();
+                                        let f = std::fs::File::open("clike_gui/res/snake.mxn").unwrap();
                                         let mut reader = std::io::BufReader::new(f);
                                         let mut buffer = Vec::new();
                                         
@@ -360,14 +356,14 @@ impl epi::App for ClikeGui {
 
                                         
 
-                                        // let test_prog = &[
-                                        //    0x64027FFFu32,
-                                        //    0x00000820,
-                                        //    0x20210001,
-                                        //    0x10220001,
-                                        //    0x0BFFFFFD,
-                                        //    0x68000000,
-                                        // ];
+                                         let test_prog = &[
+                                            0x64027FFFu32.to_be(),
+                                            0x00000820u32.to_be(),
+                                            0x20210001u32.to_be(),
+                                            0x10220001u32.to_be(),
+                                            0x0BFFFFFDu32.to_be(),
+                                            0x68000000u32.to_be(),
+                                         ];
                                         self.cpu.get_mem().copy_into_raw(0, test_prog);
 
                                         log::info!("reset CPU");

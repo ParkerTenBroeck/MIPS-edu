@@ -8,6 +8,7 @@ pub mod loggers;
 pub mod tabs;
 pub mod resource_manager;
 pub mod emulator;
+pub mod util;
 
 pub use app::ClikeGui;
 

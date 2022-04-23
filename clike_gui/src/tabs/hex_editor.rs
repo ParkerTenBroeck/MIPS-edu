@@ -1,10 +1,9 @@
 use eframe::{epaint::Color32, egui};
-use mips_emulator::memory::LooslyCachedMemory;
-
+use mips_emulator::memory::single_cached_memory::SingleCachedMemory;
 use super::tabbed_area::Tab;
 
 pub struct HexEditor {
-    mem: mips_emulator::memory::PagePoolRef<LooslyCachedMemory>,
+    mem: mips_emulator::memory::page_pool::PagePoolRef<SingleCachedMemory>,
     cpu: &'static mut mips_emulator::cpu::MipsCpu,
     offset: Option<(u32, bool)>,
     selection: Option<u32>,
@@ -22,7 +21,7 @@ impl HexEditor {
     pub fn new(cpu: &'static mut mips_emulator::cpu::MipsCpu) -> Self {
 
         HexEditor {
-            mem: cpu.get_mem_controller().lock().unwrap().add_holder(LooslyCachedMemory::new()),
+            mem: cpu.get_mem_controller().lock().unwrap().add_holder(SingleCachedMemory::new()),
             cpu,
             offset: Option::None,
             selection: Option::None,
@@ -90,7 +89,7 @@ impl Tab for HexEditor {
                 ui.vertical(|ui| {
                     ui.add_enabled_ui(!self.show_disassembly, |ui| {
                         ui.label("Bytes Per Row");
-                        ui.add(egui::Slider::new(&mut self.bytes_per_line, 1u8..=32))
+                        ui.add(egui::Slider::new(&mut self.bytes_per_line, 1u8..=128))
                     });
                 });
                 ui.vertical(|ui| {

@@ -1,7 +1,9 @@
 use core::panic;
 use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
 
-use crate::memory::{Memory, PagePoolRef, PagePoolListener, MemoryGuard, PagePoolController};
+use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController}, fully_cached_memory::Memory};
+
+
 
 //macros
 //jump encoding
@@ -78,7 +80,6 @@ macro_rules! register_a {
 }
 //Macros
 
-    #[cfg(feature = "external_handlers")]
 pub struct MipsCpu {
     pub pc: u32,
     pub reg: [u32; 32],
@@ -91,11 +92,9 @@ pub struct MipsCpu {
     is_paused: bool,
     is_within_memory_event: bool,
     pub mem: PagePoolRef<Memory>,
-    #[cfg(feature = "external_handlers")]
     external_handler: Box<dyn CpuExternalHandler>,
 }
 
-#[cfg(feature = "external_handlers")]
 pub trait CpuExternalHandler: Sync + Send {
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32);
     fn memory_error(&mut self, cpu: &mut MipsCpu, error_id: u32);
@@ -105,12 +104,10 @@ pub trait CpuExternalHandler: Sync + Send {
 }
 
 
-#[cfg(feature = "external_handlers")]
 struct DefaultExternalHandler{
 
 }
 
-#[cfg(feature = "external_handlers")]
 impl DefaultExternalHandler{
     fn opcode_address(cpu: &mut MipsCpu) -> u32{
         cpu.pc.wrapping_sub(4)
@@ -121,14 +118,12 @@ impl DefaultExternalHandler{
     }
 }
 
-#[cfg(feature = "external_handlers")]
 impl Default for DefaultExternalHandler{
     fn default() -> Self {
         Self {  }
     }
 }
 
-#[cfg(feature = "external_handlers")]
 impl CpuExternalHandler for DefaultExternalHandler {
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32) {
         log::warn!("arithmetic error {}", error_id);
@@ -249,19 +244,22 @@ impl CpuExternalHandler for DefaultExternalHandler {
 
 impl PagePoolListener for MipsCpu{
     fn lock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
-        //if !initiator{
-        println!("Paused!!!");
         self.pause_exclude_memory_event();
-        //}
         Result::Ok(())
     }
 
     fn unlock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
-        //if !initiator{
-        println!("Resumed!!!");
         self.resume();
-        //}
         Result::Ok(())
+    }
+}
+
+impl Drop for MipsCpu{
+    fn drop(&mut self) {
+        self.stop();
+        while self.is_running(){
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 }
 
@@ -280,7 +278,6 @@ impl MipsCpu {
             is_paused: true,
             is_within_memory_event: false,
             mem: Memory::new(),
-            #[cfg(feature = "external_handlers")]
             external_handler: Box::new(DefaultExternalHandler::default()),
         };
 
@@ -312,10 +309,10 @@ impl MipsCpu {
     pub fn get_pc(&self) -> u32 {
         self.pc
     }
-    //#[allow(unused)]
-    //pub fn get_mem(&self) -> &Memory{
-    //    &self.mem
-    //}
+    #[allow(unused)]
+    pub fn get_mem(&mut self) -> &mut Memory{
+       &mut self.mem
+    }
 
     #[allow(unused)]
     pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] {
@@ -333,10 +330,10 @@ impl MipsCpu {
     pub fn get_pc_mut(&mut self) -> &mut u32 {
         &mut self.pc
     }
-    #[allow(unused)]
-    pub fn get_mem(&mut self) -> MemoryGuard{
-        self.mem.create_guard()
-    }
+    // #[allow(unused)]
+    // pub fn get_mem(&mut self) -> MemoryGuard{
+    //     self.mem.create_guard()
+    // }
     #[allow(unused)]
     pub fn get_mem_controller(&mut self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>>{
         match &mut self.mem.page_pool{
@@ -417,11 +414,13 @@ impl MipsCpu {
 
     #[allow(unused)]
     pub fn resume(&mut self) {
-        self.paused
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        if self.paused.load(std::sync::atomic::Ordering::Relaxed) > 0{
+            self.paused
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
-    #[cfg(feature = "external_handlers")]
+    //#[cfg(feature = "external_handlers")]
     #[inline(always)]
     fn get_handler(&mut self) -> &'static mut dyn CpuExternalHandler {
         let thing = self.external_handler.as_mut();
@@ -431,19 +430,16 @@ impl MipsCpu {
     #[inline(always)]
     #[allow(unused)]
     fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str) {
-        #[cfg(feature = "external_handlers")]
-        {
-            self.get_handler().system_call_error(self, call_id, error_id, message);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            log::warn!(
-                "System Call: {} Error: {} Message: {}",
-                call_id,
-                error_id,
-                message
-            );
-        }
+        
+        self.get_handler().system_call_error(self, call_id, error_id, message);
+        
+        // log::warn!(
+        //     "System Call: {} Error: {} Message: {}",
+        //     call_id,
+        //     error_id,
+        //     message
+        // );
+        
     }
 
     fn run_panic(&mut self){
@@ -458,201 +454,201 @@ impl MipsCpu {
 
     #[inline(always)]
     fn memory_error(&mut self, error_id: u32) {
-        #[cfg(feature = "external_handlers")]
-        {
-            self.get_handler().memory_error(self, error_id);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            log::warn!("Memory Error: {}", error_id);
-        }
+        // #[cfg(feature = "external_handlers")]
+        // {
+        self.get_handler().memory_error(self, error_id);
+        // }
+        // #[cfg(not(feature = "external_handlers"))]
+        // {
+        //     log::warn!("Memory Error: {}", error_id);
+        // }
     }
 
     #[inline(always)]
     fn arithmetic_error(&mut self, id: u32) {
-        #[cfg(feature = "external_handlers")]
-        {
-            self.get_handler().arithmetic_error(self, id);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            log::warn!("arithmetic error {}", id);
-        }
+        //#[cfg(feature = "external_handlers")]
+        //{
+        self.get_handler().arithmetic_error(self, id);
+        //}
+        // #[cfg(not(feature = "external_handlers"))]
+        // {
+        //     log::warn!("arithmetic error {}", id);
+        // }
     }
 
     #[inline(always)]
     fn invalid_op_code(&mut self) {
-        #[cfg(feature = "external_handlers")]
-        {
-            self.get_handler().invalid_opcode(self);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            log::warn!("invalid opcode {:#08X} at {:#08X}", self.mem.get_u32_alligned(self.pc.wrapping_sub(4)), self.pc.wrapping_sub(4));
-            self.stop();
-        }
+        //#[cfg(feature = "external_handlers")]
+        //{
+        self.get_handler().invalid_opcode(self);
+        //}
+        // #[cfg(not(feature = "external_handlers"))]
+        // {
+        //     log::warn!("invalid opcode {:#08X} at {:#08X}", self.mem.get_u32_alligned(self.pc.wrapping_sub(4)), self.pc.wrapping_sub(4));
+        //     self.stop();
+        // }
     }
 
     #[inline(always)]
     fn system_call(&mut self, call_id: u32) {
-        #[cfg(feature = "external_handlers")]
-        {
-            self.get_handler().system_call(self, call_id);
-        }
-        #[cfg(not(feature = "external_handlers"))]
-        {
-            match call_id {
-                0 => self.stop(),
-                1 => log::info!("{}", self.reg[4] as i32),
-                4 => {
-                    let _address = self.reg[4];
-                }
-                5 => {
-                    let mut string = String::new();
-                    let _ = std::io::stdin().read_line(&mut string);
-                    match string.parse::<i32>() {
-                        Ok(val) => self.reg[2] = val as u32,
-                        Err(_) => match string.parse::<u32>() {
-                            Ok(val) => self.reg[2] = val,
-                            Err(_) => {
-                                self.system_call_error(
-                                    call_id,
-                                    0,
-                                    "unable to parse integer".into(),
-                                );
-                            }
-                        },
-                    }
-                }
-                99 => {}
-                101 => match char::from_u32(self.reg[4]) {
-                    Some(val) => log::info!("{}", val),
-                    None => log::warn!("Invalid char{}", self.reg[4]),
-                },
-                102 => {
-                    let mut string = String::new();
-                    let _ = std::io::stdin().read_line(&mut string);
-                    string = string.replace("\n", "");
-                    string = string.replace("\r", "");
-                    if string.len() != 1 {
-                        self.reg[2] = string.chars().next().unwrap() as u32;
-                    } else {
-                        self.system_call_error(call_id, 0, "invalid input");
-                    }
-                }
-                105 => {
-                    use std::thread;
-                    thread::sleep(Duration::from_millis(self.reg[4] as u64));
-                }
-                106 => {
-                    static mut LAST: u128 = 0;
-                    let time =
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis();
-                    let dur = unsafe{time - LAST};
-                    self.reg[4] *= 2;
-                    if (self.reg[4]  as u128 ) >= dur{
-                        std::thread::sleep(std::time::Duration::from_millis((self.reg[4] as u64) - (dur as u64)));
-                        unsafe{
-                            LAST =
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis();
-                        }
-                    }else{
-                        unsafe{
-                            LAST = time;
-                        }
-                    }
+        //#[cfg(feature = "external_handlers")]
+        //{
+        self.get_handler().system_call(self, call_id);
+        // }
+        // #[cfg(not(feature = "external_handlers"))]
+        // {
+        //     match call_id {
+        //         0 => self.stop(),
+        //         1 => log::info!("{}", self.reg[4] as i32),
+        //         4 => {
+        //             let _address = self.reg[4];
+        //         }
+        //         5 => {
+        //             let mut string = String::new();
+        //             let _ = std::io::stdin().read_line(&mut string);
+        //             match string.parse::<i32>() {
+        //                 Ok(val) => self.reg[2] = val as u32,
+        //                 Err(_) => match string.parse::<u32>() {
+        //                     Ok(val) => self.reg[2] = val,
+        //                     Err(_) => {
+        //                         self.system_call_error(
+        //                             call_id,
+        //                             0,
+        //                             "unable to parse integer".into(),
+        //                         );
+        //                     }
+        //                 },
+        //             }
+        //         }
+        //         99 => {}
+        //         101 => match char::from_u32(self.reg[4]) {
+        //             Some(val) => log::info!("{}", val),
+        //             None => log::warn!("Invalid char{}", self.reg[4]),
+        //         },
+        //         102 => {
+        //             let mut string = String::new();
+        //             let _ = std::io::stdin().read_line(&mut string);
+        //             string = string.replace("\n", "");
+        //             string = string.replace("\r", "");
+        //             if string.len() != 1 {
+        //                 self.reg[2] = string.chars().next().unwrap() as u32;
+        //             } else {
+        //                 self.system_call_error(call_id, 0, "invalid input");
+        //             }
+        //         }
+        //         105 => {
+        //             use std::thread;
+        //             thread::sleep(Duration::from_millis(self.reg[4] as u64));
+        //         }
+        //         106 => {
+        //             static mut LAST: u128 = 0;
+        //             let time =
+        //                 std::time::SystemTime::now()
+        //                     .duration_since(std::time::UNIX_EPOCH)
+        //                     .unwrap()
+        //                     .as_millis();
+        //             let dur = unsafe{time - LAST};
+        //             self.reg[4] *= 2;
+        //             if (self.reg[4]  as u128 ) >= dur{
+        //                 std::thread::sleep(std::time::Duration::from_millis((self.reg[4] as u64) - (dur as u64)));
+        //                 unsafe{
+        //                     LAST =
+        //                     std::time::SystemTime::now()
+        //                         .duration_since(std::time::UNIX_EPOCH)
+        //                         .unwrap()
+        //                         .as_millis();
+        //                 }
+        //             }else{
+        //                 unsafe{
+        //                     LAST = time;
+        //                 }
+        //             }
                     
-                }
-                107 => {
-                    self.reg[2] = (std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis()
-                        & 0xFFFFFFFFu128) as u32;
-                }
-                130 => {
-                    self.reg[2] = (std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_micros()
-                        & 0xFFFFFFFFu128) as u32;
-                }
-                111 => {
-                    self.stop();
-                }
-                150|151|152|153|154|155|156 => {
-                    let (x,y,vec) = unsafe{
-                        static mut thing: Option<(usize, usize, Vec<char>)> = Option::None;
-                        match &mut thing{
-                            Some(val) => {
-                                val
-                            },
-                            None => {
-                                thing = Option::Some((0,0, Vec::new()));
-                                thing.as_mut().unwrap()
-                            },
-                        }
-                    };
-                    fn color_to_char(color: u32) -> char{
-                        match color {
-                            0 => {
-                                '.'
-                            }
-                            _ => {
-                                'E'
-                            }
-                        }
-                    }
+        //         }
+        //         107 => {
+        //             self.reg[2] = (std::time::SystemTime::now()
+        //                 .duration_since(std::time::UNIX_EPOCH)
+        //                 .unwrap()
+        //                 .as_millis()
+        //                 & 0xFFFFFFFFu128) as u32;
+        //         }
+        //         130 => {
+        //             self.reg[2] = (std::time::SystemTime::now()
+        //                 .duration_since(std::time::UNIX_EPOCH)
+        //                 .unwrap()
+        //                 .as_micros()
+        //                 & 0xFFFFFFFFu128) as u32;
+        //         }
+        //         111 => {
+        //             self.stop();
+        //         }
+        //         150|151|152|153|154|155|156 => {
+        //             let (x,y,vec) = unsafe{
+        //                 static mut thing: Option<(usize, usize, Vec<char>)> = Option::None;
+        //                 match &mut thing{
+        //                     Some(val) => {
+        //                         val
+        //                     },
+        //                     None => {
+        //                         thing = Option::Some((0,0, Vec::new()));
+        //                         thing.as_mut().unwrap()
+        //                     },
+        //                 }
+        //             };
+        //             fn color_to_char(color: u32) -> char{
+        //                 match color {
+        //                     0 => {
+        //                         '.'
+        //                     }
+        //                     _ => {
+        //                         'E'
+        //                     }
+        //                 }
+        //             }
 
-                    match call_id{
+        //             match call_id{
                         
-                        150 => {
-                            *x = self.reg[4] as usize;
-                            *y = self.reg[5] as usize;
-                            *vec = vec!['.'; *x**y];
-                        }
-                        151 => {
-                            vec[(self.reg[4] + self.reg[5] * ((*x) as u32)) as usize] = color_to_char(self.reg[6]);
-                        }
-                        152 => {
-                            vec[self.reg[4] as usize] = color_to_char(self.reg[5]);    
-                        }
-                        153 => {
-                            for i in 0..*x**y{
-                                if i % *x == 0{
-                                    println!();
-                                }
-                                print!("{}", vec[i]);
-                            }
-                            println!();
-                        }
-                        154 => {
+        //                 150 => {
+        //                     *x = self.reg[4] as usize;
+        //                     *y = self.reg[5] as usize;
+        //                     *vec = vec!['.'; *x**y];
+        //                 }
+        //                 151 => {
+        //                     vec[(self.reg[4] + self.reg[5] * ((*x) as u32)) as usize] = color_to_char(self.reg[6]);
+        //                 }
+        //                 152 => {
+        //                     vec[self.reg[4] as usize] = color_to_char(self.reg[5]);    
+        //                 }
+        //                 153 => {
+        //                     for i in 0..*x**y{
+        //                         if i % *x == 0{
+        //                             println!();
+        //                         }
+        //                         print!("{}", vec[i]);
+        //                     }
+        //                     println!();
+        //                 }
+        //                 154 => {
                             
-                        }
-                        155 => {
+        //                 }
+        //                 155 => {
                             
-                        }
-                        156 => {
-                            for i in 0..*x**y{
-                                vec[i] = color_to_char(self.reg[4]);
-                            }
-                        }
-                        _ =>{
+        //                 }
+        //                 156 => {
+        //                     for i in 0..*x**y{
+        //                         vec[i] = color_to_char(self.reg[4]);
+        //                     }
+        //                 }
+        //                 _ =>{
 
-                        }
-                    }
-                }
-                _ => {
-                    log::warn!("invalid system call: {}, {:#X}", call_id, call_id);
-                }
-            }
-        }
+        //                 }
+        //             }
+        //         }
+        //         _ => {
+        //             log::warn!("invalid system call: {}, {:#X}", call_id, call_id);
+        //         }
+        //     }
+        // }
     }
 
     #[allow(dead_code)]
@@ -686,6 +682,7 @@ impl MipsCpu {
                 },
                 Err(err) => {
                     self.run_panic();
+                    log::error!("{:?}", err.type_id());
                     std::panic::resume_unwind(err);
                 },
             }
