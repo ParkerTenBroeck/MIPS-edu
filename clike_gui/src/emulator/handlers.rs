@@ -1,7 +1,7 @@
 use std::{time::Duration, sync::{Mutex, Arc}};
 
 use eframe::epaint::{TextureHandle, ColorImage, Color32};
-use mips_emulator::cpu::{MipsCpu, CpuExternalHandler};
+use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::MemoryDefault};
 
 use crate::util::keyboard_util::KeyboardMemory;
 

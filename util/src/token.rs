@@ -11,6 +11,7 @@ impl<T> Token<T> {
     pub fn get_token_type_mut(&mut self) -> &mut T { &mut self.t_type }
     
     pub fn get_token_data(&self) -> &TokenData { &self.t_data }
+    pub fn get_token_data_mut(&mut self) -> &mut TokenData { &mut self.t_data }
     pub fn get_real_size(&self) -> usize {
         self.t_data.size_real
     }
@@ -29,7 +30,7 @@ impl<T> Token<T> {
     pub fn get_column(&self) -> usize {
         self.t_data.column
     }
-    pub fn get_file(&self) -> u16 {
+    pub fn get_file(&self) -> Option<u16> {
         self.t_data.file
     }
 }
@@ -81,7 +82,7 @@ pub struct TokenData {
     pub size_real:usize,
     pub line: usize,
     pub column: usize,
-    pub file: u16,
+    pub file: Option<u16>,
 }
 
 #[allow(unused)]
@@ -94,7 +95,7 @@ impl TokenData {
             size_real: 0,
             line: 0,
             column: 0,
-            file: 0,
+            file: Option::None,
         }
     }
     pub fn get_real_size(&self) -> usize {
@@ -115,7 +116,7 @@ impl TokenData {
     pub fn get_column(&self) -> usize {
         self.column
     }    
-    pub fn get_file(&self) -> u16 {
+    pub fn get_file(&self) -> Option<u16> {
         self.file
     }
 

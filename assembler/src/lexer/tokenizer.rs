@@ -228,11 +228,12 @@ impl Iterator for Tokenizer<'_>{
 
                     }
                 }
+                if self.c == '\n' {
+                    self.current.line += 1;
+                    self.current.column = 0;
+                }
+
                 self.matching = true;
-            }
-            if self.c == '\n' {
-                self.current.line += 1;
-                self.current.column = 0;
             }
 
             while self.matching {
@@ -1060,7 +1061,7 @@ impl<'a> Tokenizer<'a>{
             index_real: self.start_curr.index_real,
             line: self.start_curr.line,
             column: self.start_curr.column,
-            file: 0,
+            file: None,
         };        
         if self.matching {
             data.size -= 1;
@@ -1095,7 +1096,7 @@ impl<'a> Tokenizer<'a>{
             index_real,
             line,
             column,
-            file: 0,
+            file: None,
         };
         t_type.into_w_data(data)
     }

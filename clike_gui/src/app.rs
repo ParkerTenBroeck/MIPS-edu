@@ -1,7 +1,7 @@
 use std::{io::Read, pin::Pin, sync::{Arc, Mutex}};
 
 use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
-use mips_emulator::{cpu::MipsCpu};
+use mips_emulator::{cpu::MipsCpu, memory::page_pool::MemoryDefault};
 
 use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler, util::keyboard_util::KeyboardMemory};
 

@@ -1,6 +1,6 @@
 use std::{io::Read};
 
-use mips_emulator::cpu::MipsCpu;
+use mips_emulator::{cpu::MipsCpu, memory::page_pool::MemoryDefault};
 
 
 static mut CPU_TEST: Option<MipsCpu> = Option::None;

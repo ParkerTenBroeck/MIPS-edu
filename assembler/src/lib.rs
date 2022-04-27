@@ -1,4 +1,4 @@
-#![allow(warnings)]
+//#![allow(warnings)]
 
 pub mod lexer;
 pub mod assembler;
