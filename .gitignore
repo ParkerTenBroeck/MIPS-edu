@@ -17,6 +17,7 @@
 !/clike_gui/Cargo.toml
 !/clike_gui/build.rs
 !/clike_gui/src**
+!/clike_gui/res**
 !/clike_gui/docs**
 !/clike_gui/build_web.bat
 !/clike_gui/build_web.sh
@@ -37,6 +38,7 @@
 !/assembler/Cargo.lock
 !/assembler/Cargo.toml
 !/assembler/src**
+!/assembler/res**
 
 !util/
 !util/Cargo.lock

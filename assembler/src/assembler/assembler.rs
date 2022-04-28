@@ -1,4 +1,4 @@
-use std::{fs::File, error::Error, collections::{HashMap, LinkedList}, rc::Rc, cell::RefCell, io::Read, ops::{Deref, DerefMut}};
+use std::{fs::File, error::Error, collections::{HashMap, LinkedList}, rc::Rc, cell::RefCell, io::Read, ops::{Deref}};
 
 
 pub enum Define{
@@ -20,12 +20,14 @@ impl Scope {
         }
     }
 }
+
+//-------------------------------------------------------------------------------------------
 #[derive(Debug)]
 struct Report{
     level: ReportLevel,
     r#type: ReportType,
     message: String,
-    cause_area: Option<TokenData>,
+    cause_area: Option<PPArea>,
 }
 #[derive(Debug)]
 enum ReportType{
@@ -33,7 +35,7 @@ enum ReportType{
     PreProcessor,
     Assembler,
     Linker,
-    File
+    OS
 }
 
 #[derive(Debug)]
@@ -52,7 +54,10 @@ impl Report{
         Report{
             r#type: ReportType::Tokenizer,
             message: error,
-            cause_area: part,
+            cause_area: match part{
+                Some(part) => Option::Some(PPArea::from_t_data(part)),
+                None => Option::None,
+            },
             level: ReportLevel::Error,
         }
     }
@@ -65,41 +70,96 @@ impl Report{
             level: ReportLevel::Error,
         }
     }
-    fn preprocessor_error_in_area(message: String, area: TokenData) -> Self{
+    fn preprocessor_error_in_area(message: String, area: impl Into<PPArea>) -> Self{
         Report{
             r#type: ReportType::PreProcessor,
             message,
-            cause_area: Option::Some(area),
+            cause_area: Option::Some(area.into()),
             level: ReportLevel::Error,
         }
     }
 
-    fn assembler_error_in_area(message: String, area: TokenData) -> Self{
+    fn assembler_error_in_area(message: String, area: impl Into<PPArea>) -> Self{
         Report{
             r#type: ReportType::Assembler,
             message,
-            cause_area: Option::Some(area),
+            cause_area: Option::Some(area.into()),
+            level: ReportLevel::Error,
+        }
+    }
+    fn os_error(message: String) -> Self{
+        Report{
+            r#type: ReportType::OS,
+            message,
+            cause_area: Option::None,
             level: ReportLevel::Error,
         }
     }
 
     fn to_string(&self, assembler: &AssemblerState) -> String {
-        if let Option::Some(area) = self.cause_area{
+        if let Option::Some(area) = &self.cause_area{
 
-            let area_str;
-            if let Option::Some(file) = area.file{
-                let file = assembler.get_file(file as usize);
-                area_str = format!("\n   --> {}:{}:{}\n     |\n{: <5}|\t{}\n     |\n", file.as_ref().file, area.line + 1, area.column + 1, area.line + 1, area.str_from_token(file.as_ref().data.as_str()));
-            }else{
-                area_str = format!("(line: {}, column: {})", area.line + 1, area.column);
+            fn generate_message(assembler: &AssemblerState, area: TokenData) -> String{
+                let area_str;
+                if let Option::Some(file) = area.file{
+                    let file = assembler.get_file(file as usize);
+                    area_str = format!("\n    --> {}:{}:{}\n     |\n{: <5}|\t{}\n     |", file.as_ref().file, area.line + 1, area.column + 1, area.line + 1, area.str_from_token(file.as_ref().data.as_str()));
+                }else{
+                    area_str = format!("(line: {}, column: {})", area.line + 1, area.column);
+                }
+                area_str
             }
-            format!("{:?} {:?}: {} {}",self.r#type, self.level, self.message, area_str)
+
+            fn generate_message_2(assembler: &AssemblerState, area: TokenData) -> String{
+                let area_str;
+                if let Option::Some(file) = area.file{
+                    let file = assembler.get_file(file as usize);
+                    area_str = format!("\n    ::: {}:{}:{}\n     |\n{: <5}|\t{}\n     |", file.as_ref().file, area.line + 1, area.column + 1, area.line + 1, area.str_from_token(file.as_ref().data.as_str()));
+                }else{
+                    area_str = format!("(line: {}, column: {})", area.line + 1, area.column);
+                }
+                area_str
+            }
+            let mut msg = generate_message(assembler, area.area);
+            let mut parent = &area.parent;
+            while let Option::Some(p) = parent{
+                msg = format!("{}{}", msg, generate_message_2(assembler, p.area));
+                parent = &p.parent;
+            }
+
+            format!("{:?} {:?}: {} {}\n",self.r#type, self.level, self.message, msg)
         }else{
             format!("{:?}: {}",self.r#type, self.message)
         }
     }
 }
+//-------------------------------------------------------------------------------------------
 
+pub struct AssemblerReport{
+    state: Rc<RefCell<AssemblerState>>,
+}
+
+impl AssemblerReport{
+    fn new(assembler: &mut Assembler) -> Self{
+        Self{
+            state: assembler.asm_state.clone(),
+        }
+    }
+}
+
+impl std::fmt::Display for AssemblerReport{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut string = String::new();
+        let state = self.state.deref().borrow();
+        let assembler = state.deref();
+        for report in &assembler.errors{
+            string = format!("{}\n{}", string, report.to_string(assembler))
+        }
+        write!(f, "{}", string)
+    }
+}
+
+//-------------------------------------------------------------------------------------------
 
 pub struct FileInfo{
     pub file: String,
@@ -133,16 +193,24 @@ impl AssemblerState{
     }
 
 
-    pub fn report_preprocessor_error(&mut self, error: impl Into<String>, area: TokenData){
+    pub fn report_preprocessor_error(&mut self, error: impl Into<String>, area: PPArea){
         self.errors.push_back(Report::preprocessor_error_in_area(error.into(), area));
     }
 
-    pub fn report_assembler_error(&mut self, error: impl Into<String>, area: TokenData){
+    pub fn report_assembler_error(&mut self, error: impl Into<String>, area: PPArea){
         self.errors.push_back(Report::preprocessor_error_in_area(error.into(), area));
     }
 
+    pub fn report_os_error(&mut self, error: impl Into<String>){
+        self.errors.push_back(Report::os_error(error.into()))
+    }
     pub fn has_encountered_error(&self) -> bool{
-        self.errors.len() > 0
+        self.errors.iter().any(|x|{
+            match x.level {
+                ReportLevel::Error => true,
+                _ => false,
+            }
+        })
     }
 
     pub fn get_from_scope<'b>(&'b mut self, ident: &String) -> Option<&'b mut Define>{
@@ -197,7 +265,7 @@ pub struct Assembler{
 //errors
 use util::token::{TokenizerError, TokenData};
 
-use super::{symbol::Symbol, preprocessor::{PreProcessedLine, PPToken, PreProcessor}};
+use super::{symbol::Symbol, preprocessor::{PreProcessedLine, PPToken, PreProcessor, PPArea}};
 
 
 impl Assembler {
@@ -220,38 +288,30 @@ impl Assembler {
 
     #[allow(dead_code)]
     #[allow(unused)]
-    pub fn assemble(&mut self, input: String, output:&mut  File) -> Result<(), Box<dyn Error>>{
+    pub fn assemble(&mut self, input: String, output:&mut  File) -> Result<AssemblerReport, AssemblerReport>{
         
         //let test = memmap::Mmap::map(output)?;
-        let pre_processor = PreProcessor::new(self, input)?;
+        let pre_processor = match PreProcessor::new(self, input){
+            Ok(pp) => pp,
+            Err(err) => {
+                return Result::Err(AssemblerReport::new(self));
+            },
+        };
 
         for line in pre_processor{
-            match line{
-                Ok(line) => {
-                    println!("{:?}", line);
-                    self.assemble_line(line);
-                },
-                Err(_) => {
-                    //the pre processor should have reported the error already
-                    //so we can continue to the next line if there is one
-                },
-            }
+            self.assemble_line(line);
         }
 
         if self.asm_state().has_encountered_error(){
-            let state = self.asm_state();
-            for error in &state.errors{
-                println!("{}", error.to_string(state.deref()));
-            }
-            Result::Err("Still havent made the assembler error report :)".into())
+            Result::Err(AssemblerReport::new(self))
         }else{
-            Result::Ok(())
+            Result::Ok(AssemblerReport::new(self))
         }
     }
 
     fn assemble_line(&mut self, line: PreProcessedLine){
         match line{
-            PreProcessedLine::Label(label, token) => {
+            PreProcessedLine::Label(label, _token) => {
                 let mut state = self.asm_state();
                 let sym = Symbol{
                     name: label.clone(),
@@ -261,48 +321,7 @@ impl Assembler {
                     ..Default::default()
                 };
                 state.symbols.insert(label, sym);
-            },
-            _ => {
-                self.asm_state().report_assembler_error("", line.get_area());
             }
         }
     }
-
-    // fn accept_preprocess_statement(&mut self, line: &mut Vec<Token>) -> Option<Vec<PPToken>>{
-    //     let first = line.remove(0);
-    //     if let TokenType::PreProcessorStatement(ident) = first.t_type{
-    //         match ident.as_str(){
-    //             "define" => {
-    //                 let second = line.remove(0);
-    //                 if let TokenType::Identifier(ident) = second.t_type{
-    //                     if line.len() > 0{
-    //                         let mut pp_line = Vec::new();
-    //                         while line.len() > 0{
-    //                             let tok = line.remove(0);
-    //                             pp_line.push(
-    //                                 PPToken{
-    //                                 tok,
-    //                                 parent: Option::None,
-    //                             });
-    //                         }
-    //                         self.put_into_scope(ident, Define::Replacement(pp_line));
-    //                     }else{
-    //                         self.put_into_scope(ident, Define::Nothing);
-    //                     }
-    //                 }else{
-    //                     self.report_preprocessor_error("Only a valid identifier can be used in define", second.t_data);
-    //                     return Option::None;
-    //                 }
-    //             },
-    //             "undefine" => {
-
-    //             },
-    //             val => {
-    //                 self.report_preprocessor_error(format!("Invalid preprocessing statement: {:?}", val), first.t_data);
-    //                 return Option::None;
-    //             }
-    //         }
-    //     }
-    //     Option::None
-    // }
 }
