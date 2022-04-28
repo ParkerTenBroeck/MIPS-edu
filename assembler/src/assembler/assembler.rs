@@ -99,11 +99,37 @@ impl Report{
     fn to_string(&self, assembler: &AssemblerState) -> String {
         if let Option::Some(area) = &self.cause_area{
 
+            fn generate_file_display(file: &FileInfo, area: &TokenData) -> String{
+                let file = file.data.as_str();
+                
+                let old_start_fake = area.get_index();
+                let mut new_start_fake = old_start_fake;
+                let mut new_end = area.get_real_index() + area.get_real_size();
+                let mut new_start = area.get_real_index();
+                for char in (&file[area.get_real_index() + area.get_real_size()..]).chars(){
+                    if char == '\n'{
+                        break;
+                    }
+                    new_end += char.len_utf8();
+                }
+                for char in (&file[..area.get_real_index()]).chars().rev(){
+                    if char == '\n'{
+                        break;
+                    }
+                    new_start -= char.len_utf8();
+                    new_start_fake -= 1;
+                }
+                format!("     |\n{: <5}|\t{}\n     |\t{space: <spaces$}{underline:^<underlines$}", 
+                area.line + 1,  //line number
+                &file[new_start..new_end], //actualy text to display
+                space = ' ',spaces=old_start_fake - new_start_fake, //spacing to actual error
+                underline='^', underlines=area.get_size()) //underline for error
+            }
             fn generate_message(assembler: &AssemblerState, area: TokenData) -> String{
                 let area_str;
                 if let Option::Some(file) = area.file{
                     let file = assembler.get_file(file as usize);
-                    area_str = format!("\n    --> {}:{}:{}\n     |\n{: <5}|\t{}\n     |", file.as_ref().file, area.line + 1, area.column + 1, area.line + 1, area.str_from_token(file.as_ref().data.as_str()));
+                    area_str = format!("\n    --> {}:{}:{}\n{}", file.as_ref().file, area.line + 1, area.column + 1, generate_file_display(file.as_ref(), &area));
                 }else{
                     area_str = format!("(line: {}, column: {})", area.line + 1, area.column);
                 }
@@ -114,7 +140,7 @@ impl Report{
                 let area_str;
                 if let Option::Some(file) = area.file{
                     let file = assembler.get_file(file as usize);
-                    area_str = format!("\n    ::: {}:{}:{}\n     |\n{: <5}|\t{}\n     |", file.as_ref().file, area.line + 1, area.column + 1, area.line + 1, area.str_from_token(file.as_ref().data.as_str()));
+                    area_str = format!("\n    ::: {}:{}:{}\n{}", file.as_ref().file, area.line + 1, area.column + 1, generate_file_display(file.as_ref(), &area));
                 }else{
                     area_str = format!("(line: {}, column: {})", area.line + 1, area.column);
                 }
@@ -167,6 +193,20 @@ pub struct FileInfo{
 }
 
 //------------------------------------------------------------------------
+
+pub struct AssemblerSettings{
+    pub max_token_iterators: usize,
+}
+
+impl Default for AssemblerSettings{
+    fn default() -> Self {
+        Self { 
+            max_token_iterators: 128
+        }
+    }
+}
+
+//------------------------------------------------------------------------
 pub struct AssemblerState{
     cur_addr: u32,
     curr_sec: u16,
@@ -174,10 +214,11 @@ pub struct AssemblerState{
     errors: LinkedList<Report>,
     files: LinkedList<Rc<FileInfo>>,
     scope: Vec<Scope>,
+    settings: AssemblerSettings
 }
 
 impl AssemblerState{
-    fn new() -> Self{
+    fn new(settings: AssemblerSettings) -> Self{
         Self{
             scope: Vec::new(),
             cur_addr: 0,
@@ -185,7 +226,12 @@ impl AssemblerState{
             errors: LinkedList::new(),
             files: LinkedList::new(),
             symbols: HashMap::new(),
+            settings,
         }
+    }
+
+    pub fn settings(&self) -> &AssemblerSettings{
+        &self.settings
     }
 
     pub fn report_tokenizer_error(&mut self, error: TokenizerError){
@@ -195,6 +241,10 @@ impl AssemblerState{
 
     pub fn report_preprocessor_error(&mut self, error: impl Into<String>, area: PPArea){
         self.errors.push_back(Report::preprocessor_error_in_area(error.into(), area));
+    }
+
+    pub fn report_preprocessor_error_no_area(&mut self, error: impl Into<String>){
+        self.errors.push_back(Report::preprocessor_error(error.into()));
     }
 
     pub fn report_assembler_error(&mut self, error: impl Into<String>, area: PPArea){
@@ -272,11 +322,9 @@ impl Assembler {
 
     pub fn new() -> Self{
         Assembler {
-            asm_state: Rc::new(RefCell::new(AssemblerState::new())),
+            asm_state: Rc::new(RefCell::new(AssemblerState::new(Default::default()))),
         }
     }
-
-
 
     pub fn clone_asm_state(&mut self) -> Rc<RefCell<AssemblerState>>{
         self.asm_state.clone()

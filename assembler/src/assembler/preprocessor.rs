@@ -2,7 +2,7 @@
 use crate::lexer::tokenizer::{Tokenizer, TokenType};
 pub type Token = util::token::Token<TokenType>;
 
-use std::{cell::RefCell, rc::Rc, error::Error, collections::LinkedList};
+use std::{cell::RefCell, rc::Rc, collections::LinkedList};
 
 use util::token::{TokenData};
 
@@ -123,8 +123,13 @@ impl PreProcessor{
                 return Result::Err(());
             },
         };
-        let mut token_strem = TokenStream::new();
-        token_strem.add_stream(FileStream::new(assembler.clone_asm_state(), file));
+        let mut token_strem = TokenStream::new(assembler.clone_asm_state());
+        match token_strem.add_stream(FileStream::new(assembler.clone_asm_state(), file)){
+            Ok(_) => {},
+            Err(err) => {
+                assembler.asm_state().report_preprocessor_error_no_area(err);
+            },
+        }
 
         let new = Self{
             asm_state: assembler.clone_asm_state(),
@@ -155,7 +160,7 @@ impl PreProcessor{
                                 match def{
                                     super::assembler::Define::Replacement(replace) => {
                                         let mut stream = TokenVecStream::new(replace);
-                                        stream.loc = Option::Some(tok.location);
+                                        stream.loc = Option::Some(tok.location.clone());
                                         new_stream = Option::Some(stream);
                                     },
                                     _ => {
@@ -164,7 +169,13 @@ impl PreProcessor{
                                 }
                             }
                             if let Option::Some(new_stream) = new_stream{
-                                self.token_strem.add_stream(new_stream);
+                                let res = self.token_strem.add_stream(new_stream);
+                                match res {
+                                    Ok(_) => {},
+                                    Err(err) => {
+                                        self.asm_state().report_preprocessor_error(err, tok.location);
+                                    },
+                                }
                             }
                         }
                         _ => return Option::Some(tok),
@@ -187,7 +198,13 @@ impl PreProcessor{
                                     Ok(file) => {
                                         let mut stream = FileStream::new(self.asm_state.clone(), file);
                                         stream.parent = Option::Some(arg1.location.clone());
-                                        self.token_strem.add_stream(stream);
+                                        let res = self.token_strem.add_stream(stream);
+                                        match res{
+                                            Ok(_) => {},
+                                            Err(err) => {
+                                                self.asm_state().report_preprocessor_error(err, area)
+                                            },
+                                        }
                                     },
                                     Err(err) => {
                                         self.asm_state().report_preprocessor_error(format!("Failed to open file: {} ({})", path, err), arg1.location);
@@ -275,7 +292,7 @@ impl Iterator for PreProcessor{
             match self.internal_next() {
                 Some(PPToken{tok, location}) => {
                     match tok{
-                        TokenType::Identifier(ident) => {
+                        TokenType::Identifier(_ident) => {
                             loop{
                                 match self.argument_next(){
                                     Option::Some(tok) => {
@@ -288,7 +305,7 @@ impl Iterator for PreProcessor{
                                             }
                                         }
                                     }
-                                    Option::None => {},
+                                    Option::None => {break;},
                                 }
                             }
                         }
@@ -331,19 +348,27 @@ impl Iterator for PreProcessor{
 //-------------------------------------------------------------------------------------------------------------
 
 struct TokenStream{
+    asm_state: Rc<RefCell<AssemblerState>>,
     internal: LinkedList<Box<dyn Iterator<Item = PPToken>>>
 }
 
 impl TokenStream{
-    pub fn new() -> Self{
+    pub fn new(state: Rc<RefCell<AssemblerState>>) -> Self{
         Self{
+            asm_state: state,
             internal: LinkedList::new(),
         }
     }
 
-    fn add_stream(&mut self, stream: impl Iterator<Item = PPToken> + 'static){
-        
-        self.internal.push_front(Box::new(stream));
+    fn add_stream(&mut self, stream: impl Iterator<Item = PPToken> + 'static) -> Result<(),&'static str>{
+        if self.asm_state.borrow().settings().max_token_iterators > self.internal.len(){
+            self.internal.push_front(Box::new(stream));
+            Result::Ok(())
+        }else{
+            self.internal.clear();
+            Result::Err("Failed to add token stream, max streams reached")
+        }
+
     }
 }
 

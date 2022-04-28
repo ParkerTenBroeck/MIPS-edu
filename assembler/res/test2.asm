@@ -3,10 +3,7 @@
 
 test_label:
 
-#define loop_1 loop_2
-#define loop_2 loop_1
 
-addi loop_1
 
 #define test2_4 1
 #define test2_3 test2_4 + 1
