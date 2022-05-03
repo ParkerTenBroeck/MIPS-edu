@@ -645,6 +645,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
+name = "elf"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "num-traits",
+]
+
+[[package]]
 name = "emath"
 version = "0.17.0"
 source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"

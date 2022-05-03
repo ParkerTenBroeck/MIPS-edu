@@ -18,7 +18,7 @@ impl BufferIndex {
 }
 
 pub fn chars_from_u8(byte: &[u8]) -> std::str::Chars {
-    std::str::from_utf8(byte).unwrap().chars()
+    core::str::from_utf8(byte).unwrap().chars()
 }
 
 

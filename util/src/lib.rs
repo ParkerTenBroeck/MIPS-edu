@@ -1,4 +1,3 @@
-
 pub mod token;
 pub mod tokenizer;
 
@@ -16,8 +15,8 @@ mod tests {
 
 pub fn black_box_1<T>(dummy: T) -> T{
     unsafe {
-        let ret = std::ptr::read_volatile(&dummy);
-        std::mem::forget(dummy);
+        let ret = core::ptr::read_volatile(&dummy);
+        core::mem::forget(dummy);
         ret
     }
 }

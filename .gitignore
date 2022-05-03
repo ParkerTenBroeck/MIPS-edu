@@ -12,6 +12,13 @@
 !/compiler/Cargo.lock
 !/compiler/Cargo.toml
 
+!/elf/
+!/elf/src**
+!/elf/tests**
+!/elf/build.rs
+!/elf/Cargo.lock
+!/elf/Cargo.toml
+
 !/clike_gui/
 !/clike_gui/Cargo.lock
 !/clike_gui/Cargo.toml
