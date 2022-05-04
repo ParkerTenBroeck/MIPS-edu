@@ -11,6 +11,20 @@ pub struct ElfHeader {
     pub(crate) flags: u32,
 }
 
+impl ElfHeader{
+    pub fn from_external_header<T: num_traits::PrimInt + num_traits::Unsigned + Into<u128>>(header: &impl crate::external::header::ExternalElfHeaderTrait<T>) -> Self{
+        Self{
+            class: ElfClass::try_from(header.class()).unwrap(),
+            endianness: ElfEndian::try_from(header.endianness()).unwrap(),
+            abi: ElfAbi::try_from(header.abi()).unwrap(),
+            elftype: ElfType::try_from(header.elftype()).unwrap(),
+            machine: ElfMachine::try_from(header.machine()).unwrap(),
+            entry: header.entry_point().into(),
+            flags: header.flags(),
+        }
+    }
+}
+
 
 //----------------------------------------------------------------------
 
@@ -105,6 +119,91 @@ impl TryFrom<u8> for ElfAbi {
     }
 }
 
+//----------------------------------------------------------------------
+
+bitflags::bitflags! {
+    pub struct MipsMachineFlags: u32 {
+        ///At least one .noreorder directive appears in the source.  
+        const EF_MIPS_NOREORDER     = 0x00000001;
+        ///File contains position independent code.  
+        const EF_MIPS_PIC           = 0x00000002;
+        ///Code in file uses the standard calling sequence for calling position independent code.  
+        const EF_MIPS_CPIC          = 0x00000004;
+        ///???  Unknown flag, set in IRIX 6's BSDdup2.o in libbsd.a.  
+        const EF_MIPS_XGOT          = 0x00000008;
+        ///Code in file uses UCODE (obsolete) 
+        const EF_MIPS_UCODE         = 0x00000010;
+        ///Code in file uses new ABI (-n32 on Irix 6).  
+        const EF_MIPS_ABI2          = 0x00000020;
+        ///Process the .MIPS.options section first by ld 
+        const EF_MIPS_OPTIONS_FIRST = 0x00000080;
+        ///Indicates code compiled for a 64-bit machine in 32-bit mode. (regs are 32-bits wide.)
+        const EF_MIPS_32BITMODE     = 0x00000100;
+
+        ///Machine variant if we know it.  This field was invented at Cygnus,
+        ///but it is hoped that other vendors will adopt it.  If some standard
+        ///is developed, this code should be changed to follow it.
+        const EF_MIPS_MACH          = 0x00FF0000;
+
+        /* Cygnus is choosing values between 80 and 9F;
+        00 - 7F should be left for a future standard;
+        the rest are open. */
+
+        const E_MIPS_MACH_3900      = 0x00810000;
+        const E_MIPS_MACH_4010      = 0x00820000;
+        const E_MIPS_MACH_4100      = 0x00830000;
+        const E_MIPS_MACH_4650      = 0x00850000;
+        const E_MIPS_MACH_4120      = 0x00870000;
+        const E_MIPS_MACH_4111      = 0x00880000;
+        const E_MIPS_MACH_SB1       = 0x008a0000;
+        const E_MIPS_MACH_OCTEON    = 0x008b0000;
+        const E_MIPS_MACH_XLR       = 0x008c0000;
+        const E_MIPS_MACH_5400      = 0x00910000;
+        const E_MIPS_MACH_5500      = 0x00980000;
+        const E_MIPS_MACH_9000      = 0x00990000;
+        const E_MIPS_MACH_LS2E      = 0x00A00000;
+        const E_MIPS_MACH_LS2F      = 0x00A10000;
+
+        ///The ABI of the file.  Also see EF_MIPS_ABI2 above.
+        const EF_MIPS_ABI           = 0x0000F000;
+        ///The original o32 abi.
+        const E_MIPS_ABI_O32        = 0x00001000;
+        ///O32 extended to work on 64 bit architectures
+        const E_MIPS_ABI_O64        = 0x00002000;
+        ///EABI in 32 bit mode
+        const E_MIPS_ABI_EABIO32    = 0x00003000;
+        ///EABI in 64 bit mode
+        const E_MIPS_ABI_EBAIO64    = 0x00004000;
+
+        ///Architectural Extensions used by this file 
+        const EF_MIPS_ARCH_ASE      = 0x0f000000;
+        ///Use MDMX multimedia extensions 
+        const EF_MIPS_ARCH_ASE_MDMX = 0x08000000;
+        ///Use MIPS-16 ISA extensions 
+        const EF_MIPS_ARCH_ASE_M16  = 0x04000000;
+
+        ///Four bit MIPS architecture field.  
+        const EF_MIPS_ARCH          = 0xf0000000;
+        ///-mips1 code.  
+        const E_MIPS_ARCH_1         = 0x00000000;
+        ///-mips2 code.  
+        const E_MIPS_ARCH_2         = 0x10000000;
+        ///-mips3 code.  
+        const E_MIPS_ARCH_3         = 0x20000000;
+        ///-mips4 code.  
+        const E_MIPS_ARCH_4         = 0x30000000;
+        ///-mips5 code.  
+        const E_MIPS_ARCH_5         = 0x40000000;
+        ///-mips32 code.  
+        const E_MIPS_ARCH_32        = 0x50000000;
+        ///-mips64 code.  
+        const E_MIPS_ARCH_32R2      = 0x70000000;
+        ///-mips32r2 code.  
+        const E_MIPS_ARCH_64        = 0x60000000;
+        ///-mips64r2 code.  
+        const E_MIPS_ARCH_64R2      = 0x80000000;
+    }
+}
 
 //----------------------------------------------------------------------
 

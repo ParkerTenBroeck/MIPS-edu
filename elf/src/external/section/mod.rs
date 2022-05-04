@@ -1,4 +1,5 @@
 use core::ptr::read_unaligned;
+use std::fmt::Display;
 
 use num_traits::{PrimInt, Unsigned};
 
@@ -20,7 +21,7 @@ pub struct ExternalSectionHeader<T: Unsigned + PrimInt> {
     sh_entsize: T,
 }
 
-impl<T: PrimInt + Unsigned> ExternalSectionHeaderTrait<T> for ExternalSectionHeader<T> {
+impl<T: PrimInt + Unsigned + Display> ExternalSectionHeaderTrait<T> for ExternalSectionHeader<T> {
     fn name_off(&self) -> u32 {
         unsafe { read_unaligned(&self.sh_name) }
     }
@@ -62,7 +63,7 @@ impl<T: PrimInt + Unsigned> ExternalSectionHeaderTrait<T> for ExternalSectionHea
     }
 }
 
-pub trait ExternalSectionHeaderTrait<T: PrimInt + Unsigned>{
+pub trait ExternalSectionHeaderTrait<T: PrimInt + Unsigned + Display>{
     fn name_off(&self) -> u32;
     fn sh_type(&self) -> u32;
     fn flags(&self) -> T;
