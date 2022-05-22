@@ -1,4 +1,4 @@
-use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, ptr::NonNull, fmt::Debug};
+use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, ptr::NonNull, fmt::Debug, marker::PhantomData};
 
 pub const SEG_SIZE:usize = 0x10000;
 
@@ -31,6 +31,28 @@ pub trait PagePoolListener{
 
 //------------------------------------------------------------------------------------------------------
 
+pub type PageGuard<'a> = ControllerGuard<'a, Page>;
+
+//------------------------------------------------------------------------------------------------------
+pub struct ControllerGuard<'a, T>{
+    guard: MutexGuard<'a, PagePoolController>,
+    pub data: &'a mut T,
+}
+impl<'a, T> std::ops::Deref for ControllerGuard<'a, T>{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+impl<'a, T> std::ops::DerefMut for ControllerGuard<'a, T>{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+//------------------------------------------------------------------------------------------------------
+
 pub struct PagePoolNotifier{
     page_pool: Arc<Mutex<PagePoolController>>,
     id: usize,
@@ -47,6 +69,14 @@ impl PagePoolNotifier{
     pub fn clone_page_pool_mutex(&self) -> Arc<Mutex<PagePoolController>>{
         self.page_pool.clone()
     }
+
+    pub fn create_controller_guard<'a, T>(&'a self, data: &'a mut T) -> ControllerGuard<'a, T> {
+        ControllerGuard{
+            guard: self.page_pool.lock().unwrap(),
+            data: data,
+        }
+    }
+
 }
 
 //------------------------------------------------------------------------------------------------------
@@ -345,7 +375,7 @@ impl PagePoolController{
 macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&mut self, address: u32) -> $fn_type{
+        fn $func_name(&'a mut self, address: u32) -> $fn_type{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
                 (*mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
@@ -361,7 +391,7 @@ macro_rules! get_mem_alligned {
 macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&mut self, address: u32) -> $fn_type{
+        fn $func_name(&'a mut self, address: u32) -> $fn_type{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
                 *mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
@@ -379,7 +409,7 @@ macro_rules! set_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
-        fn $func_name(&mut self, address: u32, data: $fn_type){
+        fn $func_name(&'a mut self, address: u32, data: $fn_type){
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
                 *mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
@@ -396,7 +426,7 @@ macro_rules! set_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
-        fn $func_name(&mut self, address: u32, data: $fn_type){
+        fn $func_name(&'a mut self, address: u32, data: $fn_type){
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
                 *mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
@@ -411,7 +441,7 @@ macro_rules! set_mem_alligned {
 macro_rules! get_mem_alligned_o {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&mut self, address: u32) -> Option<$fn_type>{
+        fn $func_name(&'a mut self, address: u32) -> Option<$fn_type>{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
                 match &mut self.get_page(address){
@@ -434,7 +464,7 @@ macro_rules! get_mem_alligned_o {
 macro_rules! get_mem_alligned_o {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&mut self, address: u32) -> Option<$fn_type>{
+        fn $func_name(&'a mut self, address: u32) -> Option<$fn_type>{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
                 match &mut self.get_page(address){
@@ -459,10 +489,10 @@ macro_rules! set_mem_alligned_o {
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
-        fn $func_name(&mut self, address: u32, data: $fn_type) -> Result<(), ()>{
+        fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()>{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             match self.get_page(address){
-                Option::Some(val) => {
+                Option::Some(mut val) => {
                     unsafe{
                         mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
                             (&mut val.page)[tmp] = data.to_be();
@@ -487,7 +517,7 @@ macro_rules! set_mem_alligned_o {
         fn $func_name(&mut self, address: u32, data: $fn_type) -> Result<(), ()>{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             match self.get_page(address){
-                Option::Some(val) => {
+                Option::Some(mut val) => {
                     unsafe{
                         mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
                             (&mut val.page)[tmp] = data;
@@ -503,26 +533,40 @@ macro_rules! set_mem_alligned_o {
 }
 
 //------------------------------------------------------------------------------------------------------
-pub trait MemoryDefault{
+pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
 
-    fn get_or_make_page(&mut self, page: u32) -> &mut Page;
-    fn get_page(&mut self, page: u32) -> Option<&mut Page>;
+    fn get_or_make_page(&'a mut self, page: u32) -> P;//&mut Page;
+    fn get_page(&'a mut self, page: u32) -> Option<P>;//Option<&mut Page>;
 
 
-    fn copy_into_raw<T>(&mut self, address: u32, data: &[T]){
+    fn copy_into_raw<T>(&'a mut self, address: u32, data: &[T]){
         let size: usize = data.len() * mem::size_of::<T>();
         unsafe { self.copy_into_unsafe(address, mem::transmute(data), 0, size); }
     }
 
-    unsafe fn copy_into_unsafe(&mut self, address: u32, data: &[u8], start: usize, end: usize){
+    unsafe fn copy_into_unsafe(&'a mut self, address: u32, data: &[u8], start: usize, end: usize){
         let mut id = start;
-        let mut page = self.get_or_make_page(address);
+
+        let mut tmp: Option<P>= Option::None;
+        let ptr = self as * mut Self;
 
         for im in address..address + (end - start) as u32{
             if im & 0xFFFF == 0 {
-                page = self.get_or_make_page(im);
+                tmp = Option::None;
             }
-            page.page[(im & 0xFFFF) as usize] = *data.get_unchecked(id);
+            match &mut tmp {
+                None => {
+                    let page = ptr.as_mut().unwrap_unchecked().get_or_make_page(address);
+                    tmp = Option::Some(page);
+                },
+                _ => {}
+            }
+            match &mut tmp {
+                Some(val) => {
+                    val.page[(im & 0xFFFF) as usize] = *data.get_unchecked(id);
+                },
+                None => panic!(),
+            }
             id += 1;
         }
     }

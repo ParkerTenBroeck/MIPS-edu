@@ -1,7 +1,7 @@
 use core::panic;
 use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
 
-use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefault}, fully_cached_memory::Memory};
+use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefault}, emulator_memory::Memory};
 
 
 
@@ -83,6 +83,7 @@ macro_rules! register_a {
 pub struct MipsCpu {
     pub pc: u32,
     pub reg: [u32; 32],
+    pub fp_reg: [f32; 32],
     pub lo: u32,
     pub hi: u32,
     i_check: bool,
@@ -269,6 +270,7 @@ impl MipsCpu {
         let mut tmp = MipsCpu {
             pc: 0,
             reg: [0; 32],
+            fp_reg: [0.0; 32],
             lo: 0,
             hi: 0,
             i_check: !false,

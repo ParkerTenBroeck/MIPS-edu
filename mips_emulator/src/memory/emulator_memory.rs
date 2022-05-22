@@ -1,18 +1,21 @@
 use std::{error::Error};
 
+//use crate::{set_mem_alligned, get_mem_alligned, set_mem_alligned_o, get_mem_alligned_o};
+
 use super::page_pool::{Page, PagePoolListener, PagePoolNotifier, SEG_SIZE, PagePool, PagePoolHolder, PagePoolRef, PagePoolController};
 
 
 //stupid workaround
 const INIT: Option<&'static mut Page> = None;
-pub struct FullyCachedMemory{
+pub struct Memory{
     pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
     pub(crate) page_pool: Option<PagePoolNotifier>,
+    pub(crate) going_to_lock: Option<&'static mut bool>,
     pub(crate) page_table: [Option<&'static mut Page>; SEG_SIZE],
 }
 
 
-impl PagePoolHolder for FullyCachedMemory{
+impl PagePoolHolder for Memory{
 
     fn init_holder(&mut self, notifier: PagePoolNotifier) {
         self.page_pool = Option::Some(notifier);   
@@ -57,13 +60,13 @@ impl PagePoolHolder for FullyCachedMemory{
     }
 }
 
-impl Default for PagePoolRef<FullyCachedMemory>{
+impl Default for PagePoolRef<Memory>{
     fn default() -> Self {
-        FullyCachedMemory::new()
+        Memory::new()
     }
 }
 
-impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory{
+impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for Memory{
     #[inline(always)]
     fn get_page(&mut self, address: u32) -> Option<&mut Page> {
         let addr = (address >> 16) as usize;
@@ -84,7 +87,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
             match p{
                 Some(val) => return val,
                 None => {
-                    
+                    set_thing(&mut self.going_to_lock);
                     match &self.page_pool{
                         Some(val) => {
                             let mut val = val.get_page_pool();
@@ -98,7 +101,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
                         },
                         None => todo!(),
                     }
-                    
+                    unset_thing(&mut self.going_to_lock);
 
                     match p {
                         Some(val) => return val,
@@ -111,14 +114,15 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
 }
 
 #[allow(dead_code)]
-impl FullyCachedMemory{
+impl Memory{
 
     pub fn new() -> PagePoolRef<Self>{
         let controller = PagePoolController::new();
         let mut lock = controller.lock();
         match lock.as_mut(){
             Ok(lock) => {
-                let mem = FullyCachedMemory{
+                let mem = Memory{
+                    going_to_lock: Option::None,
                     page_pool: Option::None,
                     page_table: [INIT; SEG_SIZE],
                     listener: Option::None,
@@ -127,6 +131,13 @@ impl FullyCachedMemory{
             }
             Err(_err) => todo!(),
         }
+    }
+
+    pub fn add_thing(&mut self, thing: &'static mut bool){
+        self.going_to_lock = Option::Some(thing);
+    }
+    pub fn remove_thing(&mut self){
+        self.going_to_lock = Option::None;
     }
 
     pub fn add_listener(&mut self, listener: &'static mut (dyn PagePoolListener + Send + Sync)) {
@@ -139,9 +150,9 @@ impl FullyCachedMemory{
     pub fn unload_page_at_address(&mut self, address: u32){
         match &self.page_pool{
             Some(val) => {
-                
+                set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_page((address >> 16) as u16);
-                
+                unset_thing(&mut self.going_to_lock);
                 self.page_table[(address >> 16) as usize] = Option::None;
             },
             None => todo!(),
@@ -150,14 +161,31 @@ impl FullyCachedMemory{
     pub fn unload_all_pages(&mut self) {
         match &self.page_pool{
             Some(val) => {
-                
+                set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_all_pages();
-                
+                unset_thing(&mut self.going_to_lock);
                 for i in 0..(1<<16 -1){
                     self.page_table[i] = Option::None;
                 }
             },
             None => todo!(),
         }
+    }
+}
+
+fn set_thing(thing: &mut Option<&'static mut bool>){
+    match thing{
+        Some(some) => {
+            **some = true;
+        },
+        None => {},
+    }
+}
+fn unset_thing(thing: &mut Option<&'static mut bool>){
+    match thing{
+        Some(some) => {
+            **some = false;
+        },
+        None => {},
     }
 }
