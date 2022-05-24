@@ -11,14 +11,6 @@ use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 #[allow(unused)]
 
-//#[macro_export]
-//#[cfg(target_arch = "wasm32")]
-//macro_rules! println {
-//    ( $( $t:tt )* ) => {
-//        log::info!("{}", ( $( $t )* ));
-//    };
-//}
-
 pub enum Theme {
     DarkMode,
     LightMode,
@@ -35,6 +27,7 @@ impl Default for ApplicationSettings {
         }
     }
 }
+
 
 #[allow(dead_code)]
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
@@ -62,6 +55,7 @@ impl ClikeGui {
             //cpu: MipsCpu::new(),
             tabbed_area: TabbedArea::default(),
             cpu: Box::pin(MipsCpu::new()),
+            
             cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
             cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())),
         };
@@ -91,6 +85,7 @@ trap 0
         let tab = Box::new(crate::tabs::image_tab::ImageTab::new("CPU screen", ret.cpu_screen.clone()));
         ret.tabbed_area.add_tab(tab);
         ret.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(unsafe{std::mem::transmute(ret.cpu.as_mut().get_mut())})));
+        ret.tabbed_area.add_tab(Box::new(crate::tabs::sound::SoundTab::new()));
         ret
     }
 }
@@ -260,7 +255,6 @@ impl epi::App for ClikeGui {
                                         i += 1;
                                     });
                                 }
-    
                                 //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
                                 if ui.button("Start CPU").clicked() {
                                     unsafe {
@@ -311,21 +305,6 @@ impl epi::App for ClikeGui {
                                         log::warn!("CPU is already resumed");
                                     }
                                 }
-                                //let sel: &mut bool = unsafe{
-                                //    static mut internal: bool = false;
-                                //    &mut internal
-                                //};
-                                // if ui.selectable_label(*sel, "asdasd").clicked(){
-                                //     *sel = !*sel;
-
-                                //     unsafe{
-                                //         if *sel{
-
-                                //         }else{
-                                            
-                                //         }
-                                //     }
-                                // }
                                 if ui.button("Reset CPU").clicked() {
                                     if !self.cpu.is_running() {
                                         //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)

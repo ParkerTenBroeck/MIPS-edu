@@ -1,7 +1,7 @@
 use core::panic;
 use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
 
-use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefault}, emulator_memory::Memory};
+use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess}, emulator_memory::Memory};
 
 
 

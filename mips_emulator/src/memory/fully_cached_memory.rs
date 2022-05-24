@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::{error::Error};
 
 use super::page_pool::{Page, PagePoolListener, PagePoolNotifier, SEG_SIZE, PagePool, PagePoolHolder, PagePoolRef, PagePoolController};
@@ -5,6 +7,8 @@ use super::page_pool::{Page, PagePoolListener, PagePoolNotifier, SEG_SIZE, PageP
 
 //stupid workaround
 const INIT: Option<&'static mut Page> = None;
+
+#[deprecated]
 pub struct FullyCachedMemory{
     pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
     pub(crate) page_pool: Option<PagePoolNotifier>,
@@ -109,6 +113,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
         }
     }
 }
+
 
 #[allow(dead_code)]
 impl FullyCachedMemory{

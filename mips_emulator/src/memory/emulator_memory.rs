@@ -113,6 +113,11 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for Memory{
     }
 }
 
+impl<'a> super::page_pool::MemoryDefaultAccess<'a, &'a mut Page> for Memory{
+
+}
+
+
 #[allow(dead_code)]
 impl Memory{
 

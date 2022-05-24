@@ -1,9 +1,9 @@
-use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, ptr::NonNull, fmt::Debug, marker::PhantomData};
+use std::{mem, sync::{Mutex, Arc, Weak, MutexGuard}, error::Error, ops::{DerefMut, Deref}, ptr::NonNull, fmt::Debug};
 
 pub const SEG_SIZE:usize = 0x10000;
 
 
-
+#[repr(align(0x10000))]
 pub struct Page{
     pub page: [u8; SEG_SIZE],
 }
@@ -35,7 +35,7 @@ pub type PageGuard<'a> = ControllerGuard<'a, Page>;
 
 //------------------------------------------------------------------------------------------------------
 pub struct ControllerGuard<'a, T>{
-    guard: MutexGuard<'a, PagePoolController>,
+    _guard: MutexGuard<'a, PagePoolController>,
     pub data: &'a mut T,
 }
 impl<'a, T> std::ops::Deref for ControllerGuard<'a, T>{
@@ -72,7 +72,7 @@ impl PagePoolNotifier{
 
     pub fn create_controller_guard<'a, T>(&'a self, data: &'a mut T) -> ControllerGuard<'a, T> {
         ControllerGuard{
-            guard: self.page_pool.lock().unwrap(),
+            _guard: self.page_pool.lock().unwrap(),
             data: data,
         }
     }
@@ -570,7 +570,9 @@ pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
             id += 1;
         }
     }
+}
 
+pub trait MemoryDefaultAccess<'a, P> where P: DerefMut + Deref<Target=Page>, Self: MemoryDefault<'a, P> {
     get_mem_alligned!(get_i64_alligned, i64);
     set_mem_alligned!(set_i64_alligned, i64);
     get_mem_alligned!(get_u64_alligned, u64);

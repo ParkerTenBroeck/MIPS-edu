@@ -1,5 +1,5 @@
 use eframe::{epaint::{Color32}, egui::{self}};
-use mips_emulator::memory::{single_cached_memory::SingleCachedMemory, page_pool::MemoryDefault};
+use mips_emulator::memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess}};
 use super::tabbed_area::Tab;
 
 pub struct HexEditor {

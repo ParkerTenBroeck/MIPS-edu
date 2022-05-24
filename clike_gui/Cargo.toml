@@ -13,7 +13,7 @@ rust-version = "1.60"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-#eframe = "0.17.0"
+#eframe = "0.18.0"
 eframe = { git = "https://github.com/ParkerTenBroeck/egui" } # Gives us egui, epi and web+native backends
 mips_emulator = { path = "../mips_emulator" }
 clike = { path = "../compiler" }
@@ -23,6 +23,8 @@ enum-map = { version = "2", features = ["serde"] }
 log = "0.4.16"
 
 serde = { version = "1", features = ["derive"], optional = true }
+rodio = "0.15.0"
+
 
 [features]
 default = []

@@ -1,13 +1,13 @@
-use std::{error::Error, mem, sync::{Mutex, MutexGuard}, ops::DerefMut};
+use std::{error::Error, mem, sync::Mutex, ops::DerefMut};
 
 
 //use crate::{set_mem_alligned, get_mem_alligned, get_mem_alligned_o, set_mem_alligned_o};
 
-use super::{page_pool::{PagePoolHolder, PagePool, PagePoolNotifier, Page, MemoryDefault, PageGuard}};
+use super::{page_pool::{PagePoolHolder, PagePool, PagePoolNotifier, Page, MemoryDefault, PageGuard, MemoryDefaultAccess}};
 
 pub struct SingleCachedMemory{
     page_pool: Option<PagePoolNotifier>,
-    cache: Option<(u16, &'static mut Page)>,
+    cache: Mutex<Option<(u16, &'static mut Page)>>,
 }
 
 //pub type Ret<'a> = PageGuard<'a, Option<(u16, &'static mut Page)>>;
@@ -25,25 +25,33 @@ macro_rules! page_pool {
 
 impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
 
-    fn get_or_make_page(&'a mut self, page: u32) -> PageGuard<'a>{
-        let page = (page >> 16) as u16;
+    fn get_or_make_page(&'a mut self, page_id: u32) -> PageGuard<'a>{
+        let page_id = (page_id >> 16) as u16;
 
-        let tmp: &'static mut Option<(u16, &'static mut Page)> = unsafe{mem::transmute(&mut self.cache)};
+        //let tmp: &'static mut Option<(u16, &'static mut Page)> = &mut self.cache;
 
         //let mut guard = self.cache.lock().unwrap();
         //let unsafe_guard = (&mut guard) as *mut MutexGuard<'_, Option<(u16, &'static mut Page)>>;
-        if let Option::Some((page, add)) = &mut self.cache{
-            if page == page{
-                return page_pool!(self).create_controller_guard(add)
+        if let Option::Some((page_id_cache, page)) = self.cache.lock().unwrap().deref_mut(){
+            if page_id == *page_id_cache{
+                let page = page.deref_mut();
+                let page: &'static mut Page = unsafe{mem::transmute(page)};
+                return page_pool!(self).create_controller_guard(page)
             }
         }
 
         match &mut self.page_pool{
             Some(val) => {
-                let page_ref = unsafe{mem::transmute(val.get_page_pool().create_page(page).unwrap())};
-                *tmp = Option::Some((page, page_ref));
+                let mut lock = self.cache.lock().unwrap();
+                let tmp = lock.deref_mut();
+                let page_ref = unsafe{mem::transmute(val.get_page_pool().create_page(page_id).unwrap())};
+                *tmp = Option::Some((page_id, page_ref));
                 match tmp{
-                    Some(val) => return page_pool!(self).create_controller_guard( val.1),
+                    Some((_page_id, page)) => {
+                        
+                        let page: &'static mut Page = unsafe{mem::transmute(page)};
+                        return page_pool!(self).create_controller_guard(page)
+                    },
                     None => unsafe{std::hint::unreachable_unchecked()},
                 }
             },
@@ -52,24 +60,31 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
     }
 
     #[inline(always)]
-    fn get_page(&'a mut self, page: u32) -> Option<PageGuard<'a>>{
-        let page = (page >> 16) as u16;
+    fn get_page(&'a mut self, page_id: u32) -> Option<PageGuard<'a>>{
+        let page_id = (page_id >> 16) as u16;
 
-        let tmp2 = &mut self.cache as *mut Option<(u16, &'static mut Page)>;
+        if let Option::Some((page_id_cache, page)) = self.cache.lock().unwrap().deref_mut(){
+            if page_id == *page_id_cache{
 
-        if let Option::Some((page, add)) = &mut self.cache{
-            if page == page{
-                return Option::Some(page_pool!(self).create_controller_guard(add))
+                let page = page.deref_mut();
+                let page: &'static mut Page = unsafe{mem::transmute(page)};
+                return Option::Some(page_pool!(self).create_controller_guard(page))
             }
         }
         match &mut self.page_pool{
             Some(val) => {
-                let page_ref: Option<&'static mut Page> = unsafe{mem::transmute(val.get_page_pool().get_page(page))};
+
+                let mut lock = self.cache.lock().unwrap();
+                let tmp = lock.deref_mut();
+                let page_ref: Option<&'static mut Page> = unsafe{mem::transmute(val.get_page_pool().get_page(page_id))};
 
                 if let Option::Some(page_ref) = page_ref{
-                    unsafe {*tmp2 = Option::Some((page, page_ref));}
-                    match unsafe{&mut *tmp2}{
-                        Some(val) => Option::Some(page_pool!(self).create_controller_guard( val.1)),
+                    *tmp = Option::Some((page_id, page_ref));
+                    match tmp{
+                        Some((_page_id, page)) => {
+                            let page: &'static mut Page = unsafe{mem::transmute(page)};
+                            Option::Some(page_pool!(self).create_controller_guard( page))
+                        },
                         None => unsafe{std::hint::unreachable_unchecked()},
                     }
                 }else{
@@ -79,6 +94,10 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
             None => panic!(),
         }
     }
+}
+
+impl<'a> MemoryDefaultAccess<'a, PageGuard<'a>> for SingleCachedMemory{
+    
 }
 
 impl SingleCachedMemory{
@@ -91,7 +110,7 @@ impl SingleCachedMemory{
     }
 
     pub fn new() -> Self{
-        SingleCachedMemory { page_pool: Option::None, cache: Option::None }
+        SingleCachedMemory { page_pool: Option::None, cache: Mutex::new(Option::None) }
     }
 }
 
@@ -103,7 +122,9 @@ impl PagePoolHolder for SingleCachedMemory{
     }
 
     fn lock(&mut self, initiator: bool, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
-        self.cache = Option::None;
+        if !initiator{
+            *self.cache.lock().unwrap().deref_mut() = Option::None;
+        }
         Result::Ok(())
     }
 
@@ -118,14 +139,16 @@ impl PagePoolHolder for SingleCachedMemory{
 
 
 mod tests{
-    use std::{sync::Arc, borrow::BorrowMut, ops::Deref};
 
-    use crate::memory::page_pool::PagePoolController;
 
 
 
     #[test]
     fn interlock_test(){
+
+        use std::{sync::{Arc, Mutex}};
+
+        use crate::memory::page_pool::PagePoolController;
 
         impl Drop for SingleCachedMemory{
             fn drop(&mut self) {
