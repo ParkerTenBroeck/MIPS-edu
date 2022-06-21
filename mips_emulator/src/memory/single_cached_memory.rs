@@ -44,12 +44,17 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
             Some(val) => {
                 let mut lock = self.cache.lock().unwrap();
                 let tmp = lock.deref_mut();
+
+                // let mut t1 = val.get_page_pool();
+                // let t2 = t1.create_page(page_id);
+                // let tmp_pg = t2.unwrap();
+
                 let page_ref = unsafe{mem::transmute(val.get_page_pool().create_page(page_id).unwrap())};
                 *tmp = Option::Some((page_id, page_ref));
                 match tmp{
                     Some((_page_id, page)) => {
                         
-                        let page: &'static mut Page = unsafe{mem::transmute(page)};
+                        let page: &'static mut Page = unsafe{mem::transmute(page.deref_mut())};
                         return page_pool!(self).create_controller_guard(page)
                     },
                     None => unsafe{std::hint::unreachable_unchecked()},

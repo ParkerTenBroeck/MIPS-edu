@@ -1,7 +1,7 @@
 use core::panic;
 use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
 
-use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess}, emulator_memory::Memory};
+use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
 
 
@@ -80,10 +80,47 @@ macro_rules! register_a {
 }
 //Macros
 
+
+
+//-------------------------------------------------------- co processors
+pub struct CP0{
+    registers: [u32; 32]
+}
+
+impl CP0{
+    pub fn new() -> Self{
+        CP0 {
+            registers: [0; 32],
+        }
+    }
+}
+
+pub union CP1Reg {
+    pub single: [f32; 32],
+    pub double: [f64; 16]
+}
+
+pub struct CP1{
+    registers: CP1Reg
+}
+
+impl CP1{
+    pub fn new() -> Self{
+        CP1 { 
+            registers: CP1Reg { 
+                single: [0.0; 32] 
+            }  
+        }
+    }
+}
+
+//-------------------------------------------------------- co processors
+
 pub struct MipsCpu {
     pub pc: u32,
     pub reg: [u32; 32],
-    pub fp_reg: [f32; 32],
+    pub cp0: CP0,
+    pub cp1: CP1,
     pub lo: u32,
     pub hi: u32,
     i_check: bool,
@@ -270,7 +307,8 @@ impl MipsCpu {
         let mut tmp = MipsCpu {
             pc: 0,
             reg: [0; 32],
-            fp_reg: [0.0; 32],
+            cp0: CP0::new(),
+            cp1: CP1::new(),
             lo: 0,
             hi: 0,
             i_check: !false,
@@ -312,11 +350,6 @@ impl MipsCpu {
         self.pc
     }
     #[allow(unused)]
-    pub fn get_mem(&mut self) -> &mut Memory{
-       &mut self.mem
-    }
-
-    #[allow(unused)]
     pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] {
         &mut self.reg
     }
@@ -332,13 +365,14 @@ impl MipsCpu {
     pub fn get_pc_mut(&mut self) -> &mut u32 {
         &mut self.pc
     }
-    // #[allow(unused)]
-    // pub fn get_mem(&mut self) -> MemoryGuard{
-    //     self.mem.create_guard()
-    // }
     #[allow(unused)]
-    pub fn get_mem_controller(&mut self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>>{
-        match &mut self.mem.page_pool{
+    pub fn get_mem(&mut self) -> PagePoolRef<SingleCachedMemory>{
+        //&mut self.mem
+        self.get_mem_controller().lock().unwrap().add_holder(SingleCachedMemory::new())
+    }
+    #[allow(unused)]
+    pub fn get_mem_controller(&self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>>{
+        match &self.mem.page_pool{
             Some(val) => {
                 val.clone_page_pool_mutex()
             },
@@ -422,30 +456,13 @@ impl MipsCpu {
         }
     }
 
-    //#[cfg(feature = "external_handlers")]
     #[inline(always)]
     fn get_handler(&mut self) -> &'static mut dyn CpuExternalHandler {
         let thing = self.external_handler.as_mut();
         unsafe{std::mem::transmute(thing)}
     }
 
-    #[inline(always)]
-    #[allow(unused)]
-    fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str) {
-        
-        self.get_handler().system_call_error(self, call_id, error_id, message);
-        
-        // log::warn!(
-        //     "System Call: {} Error: {} Message: {}",
-        //     call_id,
-        //     error_id,
-        //     message
-        // );
-        
-    }
-
     fn run_panic(&mut self){
-
         self.running = false;
         self.finished = true;
         self.i_check = !false;
@@ -455,202 +472,29 @@ impl MipsCpu {
     }
 
     #[inline(always)]
+    #[allow(unused)]
+    fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str) {
+        self.get_handler().system_call_error(self, call_id, error_id, message);
+    }
+
+    #[inline(never)]
     fn memory_error(&mut self, error_id: u32) {
-        // #[cfg(feature = "external_handlers")]
-        // {
         self.get_handler().memory_error(self, error_id);
-        // }
-        // #[cfg(not(feature = "external_handlers"))]
-        // {
-        //     log::warn!("Memory Error: {}", error_id);
-        // }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn arithmetic_error(&mut self, id: u32) {
-        //#[cfg(feature = "external_handlers")]
-        //{
         self.get_handler().arithmetic_error(self, id);
-        //}
-        // #[cfg(not(feature = "external_handlers"))]
-        // {
-        //     log::warn!("arithmetic error {}", id);
-        // }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn invalid_op_code(&mut self) {
-        //#[cfg(feature = "external_handlers")]
-        //{
         self.get_handler().invalid_opcode(self);
-        //}
-        // #[cfg(not(feature = "external_handlers"))]
-        // {
-        //     log::warn!("invalid opcode {:#08X} at {:#08X}", self.mem.get_u32_alligned(self.pc.wrapping_sub(4)), self.pc.wrapping_sub(4));
-        //     self.stop();
-        // }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn system_call(&mut self, call_id: u32) {
-        //#[cfg(feature = "external_handlers")]
-        //{
         self.get_handler().system_call(self, call_id);
-        // }
-        // #[cfg(not(feature = "external_handlers"))]
-        // {
-        //     match call_id {
-        //         0 => self.stop(),
-        //         1 => log::info!("{}", self.reg[4] as i32),
-        //         4 => {
-        //             let _address = self.reg[4];
-        //         }
-        //         5 => {
-        //             let mut string = String::new();
-        //             let _ = std::io::stdin().read_line(&mut string);
-        //             match string.parse::<i32>() {
-        //                 Ok(val) => self.reg[2] = val as u32,
-        //                 Err(_) => match string.parse::<u32>() {
-        //                     Ok(val) => self.reg[2] = val,
-        //                     Err(_) => {
-        //                         self.system_call_error(
-        //                             call_id,
-        //                             0,
-        //                             "unable to parse integer".into(),
-        //                         );
-        //                     }
-        //                 },
-        //             }
-        //         }
-        //         99 => {}
-        //         101 => match char::from_u32(self.reg[4]) {
-        //             Some(val) => log::info!("{}", val),
-        //             None => log::warn!("Invalid char{}", self.reg[4]),
-        //         },
-        //         102 => {
-        //             let mut string = String::new();
-        //             let _ = std::io::stdin().read_line(&mut string);
-        //             string = string.replace("\n", "");
-        //             string = string.replace("\r", "");
-        //             if string.len() != 1 {
-        //                 self.reg[2] = string.chars().next().unwrap() as u32;
-        //             } else {
-        //                 self.system_call_error(call_id, 0, "invalid input");
-        //             }
-        //         }
-        //         105 => {
-        //             use std::thread;
-        //             thread::sleep(Duration::from_millis(self.reg[4] as u64));
-        //         }
-        //         106 => {
-        //             static mut LAST: u128 = 0;
-        //             let time =
-        //                 std::time::SystemTime::now()
-        //                     .duration_since(std::time::UNIX_EPOCH)
-        //                     .unwrap()
-        //                     .as_millis();
-        //             let dur = unsafe{time - LAST};
-        //             self.reg[4] *= 2;
-        //             if (self.reg[4]  as u128 ) >= dur{
-        //                 std::thread::sleep(std::time::Duration::from_millis((self.reg[4] as u64) - (dur as u64)));
-        //                 unsafe{
-        //                     LAST =
-        //                     std::time::SystemTime::now()
-        //                         .duration_since(std::time::UNIX_EPOCH)
-        //                         .unwrap()
-        //                         .as_millis();
-        //                 }
-        //             }else{
-        //                 unsafe{
-        //                     LAST = time;
-        //                 }
-        //             }
-                    
-        //         }
-        //         107 => {
-        //             self.reg[2] = (std::time::SystemTime::now()
-        //                 .duration_since(std::time::UNIX_EPOCH)
-        //                 .unwrap()
-        //                 .as_millis()
-        //                 & 0xFFFFFFFFu128) as u32;
-        //         }
-        //         130 => {
-        //             self.reg[2] = (std::time::SystemTime::now()
-        //                 .duration_since(std::time::UNIX_EPOCH)
-        //                 .unwrap()
-        //                 .as_micros()
-        //                 & 0xFFFFFFFFu128) as u32;
-        //         }
-        //         111 => {
-        //             self.stop();
-        //         }
-        //         150|151|152|153|154|155|156 => {
-        //             let (x,y,vec) = unsafe{
-        //                 static mut thing: Option<(usize, usize, Vec<char>)> = Option::None;
-        //                 match &mut thing{
-        //                     Some(val) => {
-        //                         val
-        //                     },
-        //                     None => {
-        //                         thing = Option::Some((0,0, Vec::new()));
-        //                         thing.as_mut().unwrap()
-        //                     },
-        //                 }
-        //             };
-        //             fn color_to_char(color: u32) -> char{
-        //                 match color {
-        //                     0 => {
-        //                         '.'
-        //                     }
-        //                     _ => {
-        //                         'E'
-        //                     }
-        //                 }
-        //             }
-
-        //             match call_id{
-                        
-        //                 150 => {
-        //                     *x = self.reg[4] as usize;
-        //                     *y = self.reg[5] as usize;
-        //                     *vec = vec!['.'; *x**y];
-        //                 }
-        //                 151 => {
-        //                     vec[(self.reg[4] + self.reg[5] * ((*x) as u32)) as usize] = color_to_char(self.reg[6]);
-        //                 }
-        //                 152 => {
-        //                     vec[self.reg[4] as usize] = color_to_char(self.reg[5]);    
-        //                 }
-        //                 153 => {
-        //                     for i in 0..*x**y{
-        //                         if i % *x == 0{
-        //                             println!();
-        //                         }
-        //                         print!("{}", vec[i]);
-        //                     }
-        //                     println!();
-        //                 }
-        //                 154 => {
-                            
-        //                 }
-        //                 155 => {
-                            
-        //                 }
-        //                 156 => {
-        //                     for i in 0..*x**y{
-        //                         vec[i] = color_to_char(self.reg[4]);
-        //                     }
-        //                 }
-        //                 _ =>{
-
-        //                 }
-        //             }
-        //         }
-        //         _ => {
-        //             log::warn!("invalid system call: {}, {:#X}", call_id, call_id);
-        //         }
-        //     }
-        // }
     }
 
     #[allow(dead_code)]
@@ -662,16 +506,19 @@ impl MipsCpu {
         self.running = true;
         self.finished = false;
 
+        println!("{:p}", self);
 
-        let _handle = std::thread::spawn(|| {
+
+        //stack overflows occur so we need to make a custom thread with a larger stack to account for that and it fixes the problem
+        let _handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn(move || {
             // some work here
             log::info!("CPU Started");
             let start = std::time::SystemTime::now();
 
-
-            let result = std::panic::catch_unwind(AssertUnwindSafe(||{
-                self.run();
-            }));
+            self.run();
+            // let result = std::panic::catch_unwind(AssertUnwindSafe(||{
+            //     s
+            // }));
 
             let since_the_epoch = std::time::SystemTime::now()
                 .duration_since(start)
@@ -679,15 +526,15 @@ impl MipsCpu {
             log::info!("{:?}", since_the_epoch);
             log::info!("CPU stopping");
 
-            match result{
-                Ok(_) => {
-                },
-                Err(err) => {
-                    self.run_panic();
-                    log::error!("{:?}", err.type_id());
-                    std::panic::resume_unwind(err);
-                },
-            }
+            // match result{
+            //     Ok(_) => {
+            //     },
+            //     Err(err) => {
+            //         self.run_panic();
+            //         log::error!("{:?}", err.type_id());
+            //         std::panic::resume_unwind(err);
+            //     },
+            // }
         
         });
     }
@@ -701,7 +548,7 @@ impl MipsCpu {
         self.finished = false;
         self.i_check = !true;
 
-        let _handle = std::thread::spawn(|| {
+        let _handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn(|| {
             log::info!("CPU Step Started");
             let start = std::time::SystemTime::now();
             
@@ -747,13 +594,17 @@ impl MipsCpu {
     }
 
     #[allow(arithmetic_overflow)]
+    #[inline(never)]
     fn run(&mut self) {
 
         //let result = std::panic::catch_unwind(||{
         //TODO ensure that the memory isnt currently locked beforehand
+        
         let listener = unsafe{self.into_listener()};
         self.mem.add_listener(listener);
         self.mem.add_thing(unsafe{std::mem::transmute(&mut self.is_within_memory_event)});
+
+
 
         self.is_paused = false;
         'main_loop: while {
@@ -770,7 +621,7 @@ impl MipsCpu {
             while {
                 let op =
                 self.mem.get_u32_alligned(self.pc);
-                //*[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000].get_unchecked((self.pc >> 2) as usize)
+                
                 //prevent overflow
                 self.pc = self.pc.wrapping_add(4);
                 
@@ -790,6 +641,7 @@ impl MipsCpu {
 
     #[inline(always)]
     fn run_opcode(&mut self, op: u32){
+        
         macro_rules! set_reg {
             ($reg:expr, $val:expr) => {
                 unsafe {
@@ -977,6 +829,11 @@ impl MipsCpu {
                         //MTLO
                         self.lo = self.reg[register_s!(op)];
                     }
+                    0b001100 => {
+                        //syscall
+                        self.system_call((op >> 6) & 0b11111111111111111111)
+                    }
+
                     _ => self.invalid_op_code(),
                 }
             }
@@ -1022,6 +879,11 @@ impl MipsCpu {
                 //trap XORI
                 self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
                     ^ immediate_immediate_unsigned!(op) as u32
+            }
+            0b001111 => {
+                //AUI
+                self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
+                    | ((immediate_immediate_unsigned!(op) as u32) << 16u32)
             }
             // constant manupulating inctructions
             0b011001 => {

@@ -539,12 +539,19 @@ pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
     fn get_page(&'a mut self, page: u32) -> Option<P>;//Option<&mut Page>;
 
 
-    fn copy_into_raw<T>(&'a mut self, address: u32, data: &[T]){
+    fn copy_into_raw<T: Copy>(&'a mut self, address: u32, data: &[T]){
         let size: usize = data.len() * mem::size_of::<T>();
-        unsafe { self.copy_into_unsafe(address, mem::transmute(data), 0, size); }
+        unsafe {
+            let data = core::slice::from_raw_parts(std::mem::transmute(data.as_ptr()), size);
+            self.copy_into(address, data, 0, size); 
+        }
     }
 
-    unsafe fn copy_into_unsafe(&'a mut self, address: u32, data: &[u8], start: usize, end: usize){
+    unsafe fn get_or_make_mut_ptr_to_address(&'a mut self, address: u32) -> *mut u8{
+        &mut self.get_or_make_page(address).page[(address & 0xFFFF) as usize]
+    }
+
+    fn copy_into(&'a mut self, address: u32, data: &[u8], start: usize, end: usize){
         let mut id = start;
 
         let mut tmp: Option<P>= Option::None;
@@ -556,14 +563,14 @@ pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
             }
             match &mut tmp {
                 None => {
-                    let page = ptr.as_mut().unwrap_unchecked().get_or_make_page(address);
+                    let page = unsafe{(*ptr).get_or_make_page(address)};
                     tmp = Option::Some(page);
                 },
                 _ => {}
             }
             match &mut tmp {
                 Some(val) => {
-                    val.page[(im & 0xFFFF) as usize] = *data.get_unchecked(id);
+                    val.page[(im & 0xFFFF) as usize] = data[id];
                 },
                 None => panic!(),
             }

@@ -258,6 +258,10 @@ impl epi::App for ClikeGui {
                                 //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
                                 if ui.button("Start CPU").clicked() {
                                     unsafe {
+                                        // static mut CPU: Option<MipsCpu> = Option::None;
+                                        // let cpu = CPU.get_or_insert_with(||{
+                                        //     MipsCpu::new()
+                                        // });
                                         if self.cpu.is_running() {
                                             log::warn!("CPU is already running");
                                         } else {
@@ -313,7 +317,7 @@ impl epi::App for ClikeGui {
 
                                         self.cpu.clear();
 
-                                        let f = std::fs::File::open("clike_gui/res/snake.mxn").unwrap();
+                                        let f = std::fs::File::open("/home/may/Documents/Code/kill_me/mips/bin/tmp.bin").unwrap();
                                         let mut reader = std::io::BufReader::new(f);
                                         let mut buffer = Vec::new();
                                         
@@ -327,22 +331,20 @@ impl epi::App for ClikeGui {
                                             let b1 = test_prog[base];
                                             let b2 = test_prog[base + 1];
 
-                                            test_prog[base] = test_prog[base + 3];
-                                            test_prog[base + 1] = test_prog[base + 2];
-                                            test_prog[base + 3] = b1;
-                                            test_prog[base + 2] = b2;
+                                            // test_prog[base] = test_prog[base + 3];
+                                            // test_prog[base + 1] = test_prog[base + 2];
+                                            // test_prog[base + 3] = b1;
+                                            // test_prog[base + 2] = b2;
                                         }
 
-                                        
-
-                                         let test_prog = &[
-                                            0x64027FFFu32.to_be(),
-                                            0x00000820u32.to_be(),
-                                            0x20210001u32.to_be(),
-                                            0x10220001u32.to_be(),
-                                            0x0BFFFFFDu32.to_be(),
-                                            0x68000000u32.to_be(),
-                                         ];
+                                        //  let test_prog = &[
+                                        //     0x64027FFFu32.to_be(),
+                                        //     0x00000820u32.to_be(),
+                                        //     0x20210001u32.to_be(),
+                                        //     0x10220001u32.to_be(),
+                                        //     0x0BFFFFFDu32.to_be(),
+                                        //     0x68000000u32.to_be(),
+                                        //  ];
                                         self.cpu.get_mem().copy_into_raw(0, test_prog);
 
                                         log::info!("reset CPU");

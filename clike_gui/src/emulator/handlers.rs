@@ -1,7 +1,7 @@
 use std::{time::Duration, sync::{Mutex, Arc}};
 
 use eframe::epaint::{TextureHandle, ColorImage, Color32};
-use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::{MemoryDefaultAccess}};
+use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::{MemoryDefaultAccess, MemoryDefault}};
 
 use crate::util::keyboard_util::KeyboardMemory;
 
@@ -63,7 +63,41 @@ impl CpuExternalHandler for ExternalHandler {
             0 => cpu.stop(),
             1 => log::info!("{}", cpu.reg[4] as i32),
             4 => {
-                let _address = cpu.reg[4];
+                let start_address = cpu.reg[4];
+                let end_address = {
+                    let mut i = start_address;
+                    loop {
+                        if let Option::Some(val) = cpu.mem.get_u8_o(i){
+                            if val == 0{
+                                break i;
+                            }
+                        }else{
+                            break i;
+                        }
+                        if let Option::Some(val) = i.checked_add(1){
+                            i = val;
+                        }else{
+                            break i;
+                        }
+                        if i - start_address >= 500{
+                            break i
+                        }
+                    }
+                };
+                if start_address < end_address{
+                    unsafe{
+                        let ptr = cpu.mem.get_or_make_mut_ptr_to_address(start_address);
+                        let slice = core::slice::from_raw_parts(ptr, (end_address - start_address) as usize);
+                        match std::str::from_utf8(slice){
+                            Ok(str) => {
+                                log::info!("{}", str)
+                            },
+                            Err(err) => {
+                                log::info!("Malformed String")
+                            },
+                        }
+                    }
+                }
             }
             5 => {
                 let mut string = String::new();

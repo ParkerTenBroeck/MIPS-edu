@@ -1,6 +1,7 @@
 *
 
 !.gitignore
+!readme.md
 !Cargo.toml
 !Cargo.lock
 
