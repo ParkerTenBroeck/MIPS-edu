@@ -317,25 +317,25 @@ impl epi::App for ClikeGui {
 
                                         self.cpu.clear();
 
-                                        let f = std::fs::File::open("/home/may/Documents/Code/kill_me/mips/bin/tmp.bin").unwrap();
+                                        let f = std::fs::File::open("/home/may/Documents/GitHub/tmp/mips/bin/tmp.bin").unwrap();
                                         let mut reader = std::io::BufReader::new(f);
                                         let mut buffer = Vec::new();
                                         
                                         // Read file into vector.
                                         
-                                        let size = reader.read_to_end(&mut buffer).unwrap();
+                                        let _size = reader.read_to_end(&mut buffer).unwrap();
 
                                         let test_prog = buffer.as_mut_slice();
-                                        for i in 0..(size / 4){
-                                            let base = i * 4;
-                                            let b1 = test_prog[base];
-                                            let b2 = test_prog[base + 1];
+                                        // for i in 0..(size / 4){
+                                        //     let base = i * 4;
+                                        //     let b1 = test_prog[base];
+                                        //     let b2 = test_prog[base + 1];
 
-                                            // test_prog[base] = test_prog[base + 3];
-                                            // test_prog[base + 1] = test_prog[base + 2];
-                                            // test_prog[base + 3] = b1;
-                                            // test_prog[base + 2] = b2;
-                                        }
+                                        //     // test_prog[base] = test_prog[base + 3];
+                                        //     // test_prog[base + 1] = test_prog[base + 2];
+                                        //     // test_prog[base + 3] = b1;
+                                        //     // test_prog[base + 2] = b2;
+                                        // }
 
                                         //  let test_prog = &[
                                         //     0x64027FFFu32.to_be(),

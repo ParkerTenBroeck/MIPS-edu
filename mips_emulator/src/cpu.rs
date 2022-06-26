@@ -9,7 +9,7 @@ use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolControll
 //jump encoding
 macro_rules! jump_immediate_address {
     ($expr:expr) => {
-        ($expr as u32) & 0b00000011111111111111111111111111
+        ((($expr as u32) & 0b00000011111111111111111111111111) << 2)
     };
 }
 
@@ -20,20 +20,20 @@ macro_rules! jump_immediate_offset {
 }
 
 //immediate encoding
-macro_rules! immediate_immediate {
+macro_rules! immediate_immediate_signed_extended {
     ($expr:expr) => {
-        (($expr as i32) << 16) >> 16
+        ((($expr as i32) << 16) >> 16) as u32
     };
 }
-macro_rules! immediate_immediate_address {
+macro_rules! immediate_immediate_zero_extended {
     ($expr:expr) => {
-        (($expr as i32) << 16) >> 14
+        (($expr as u32) & 0xFFFF)
     };
 }
 
-macro_rules! immediate_immediate_unsigned {
+macro_rules! immediate_immediate_address {
     ($expr:expr) => {
-        (($expr as u32) & 0xFFFF)
+        (($expr as i32) << 16) >> 14
     };
 }
 
@@ -663,15 +663,18 @@ impl MipsCpu {
                     //arithmatic
                     0b100000 => {
                         //ADD
-                        set_reg!(
-                            register_d!(op),
-                            ((self.reg[register_s!(op)] as i32)
-                                .wrapping_add(self.reg[register_t!((op))] as i32))
-                                as u32
-                        );
+                        
+                        match (self.reg[register_s!(op)] as i32).checked_add(self.reg[register_t!((op))] as i32)
+                        {
+                            Some(val) => {
+                                self.reg[register_d!(op)] = val as u32;
+                            },
+                            None => {
+                                self.arithmetic_error(2);
+                            },
+                        }
                     }
-                    #[allow(unreachable_patterns)]
-                    0b100000 => {
+                    0b100001 => {
                         //ADDU
                         self.reg[register_d!(op)] = self.reg[register_s!(op)]
                             .wrapping_add(self.reg[register_t!((op))])
@@ -689,7 +692,7 @@ impl MipsCpu {
                             self.lo = (s.wrapping_div(t)) as u32;
                             self.hi = (s.wrapping_rem(t)) as u32;
                         } else {
-                            self.arithmetic_error(0);
+                            //self.arithmetic_error(0);
                         }
                     }
                     0b011011 => {
@@ -700,7 +703,7 @@ impl MipsCpu {
                             self.lo = s.wrapping_div(t);
                             self.hi = s.wrapping_rem(t);
                         } else {
-                            self.arithmetic_error(0);
+                            //self.arithmetic_error(0);
                         }
                     }
                     0b011000 => {
@@ -722,7 +725,7 @@ impl MipsCpu {
                     0b100111 => {
                         //NOR
                         self.reg[register_d!(op)] =
-                            (!(self.reg[register_s!(op)])) | self.reg[register_t!(op)];
+                            !(self.reg[register_s!(op)] | self.reg[register_t!(op)]);
                     }
                     0b100101 => {
                         //OR
@@ -742,7 +745,7 @@ impl MipsCpu {
                     0b000100 => {
                         //SLLV
                         self.reg[register_d!(op)] =
-                            self.reg[register_t!(op)] << self.reg[register_s!(op)];
+                            (self.reg[register_t!(op)]) >> ( 0b11111 & self.reg[register_s!(op)]);
                     }
                     0b000011 => {
                         //SRA
@@ -751,19 +754,19 @@ impl MipsCpu {
                     }
                     0b000111 => {
                         //SRAV
-                        self.reg[register_d!(op)] = (self.reg[register_t!(op)] as i32
-                            >> self.reg[register_s!(op)])
+                        self.reg[register_d!(op)] = 
+                            (self.reg[register_t!(op)] as i32 >>  ( 0b11111 & self.reg[register_s!(op)]))
                             as u32;
                     }
                     0b000010 => {
                         //SRL
                         self.reg[register_d!(op)] =
-                            self.reg[register_t!(op)] >> register_a!(op);
+                            (self.reg[register_t!(op)] >> register_a!(op)) as u32;
                     }
                     0b000110 => {
                         //SRLV
                         self.reg[register_d!(op)] =
-                            self.reg[register_t!(op)] >> self.reg[register_s!(op)];
+                            (self.reg[register_t!(op)] >> ( 0b11111 & self.reg[register_s!(op)])) as u32;
                     }
                     0b100010 => {
                         //SUB
@@ -774,7 +777,7 @@ impl MipsCpu {
                     0b100011 => {
                         //SUBU
                         self.reg[register_d!(op)] =
-                            self.reg[register_s!(op)] - self.reg[register_t!(op)];
+                            self.reg[register_s!(op)].wrapping_sub(self.reg[register_t!(op)]);
                     }
 
                     //comparason
@@ -790,7 +793,7 @@ impl MipsCpu {
                             }
                         }
                     }
-                    0b101001 => {
+                    0b101011 => {
                         //SLTU
                         self.reg[register_d!(op)] = {
                             if self.reg[register_s!(op)] < self.reg[register_t!(op)] {
@@ -829,82 +832,120 @@ impl MipsCpu {
                         //MTLO
                         self.lo = self.reg[register_s!(op)];
                     }
+
+                    //special
                     0b001100 => {
                         //syscall
                         self.system_call((op >> 6) & 0b11111111111111111111)
+                    }
+                    0b001101 => {
+                        //break
+                        self.system_call((op >> 6) & 0b11111111111111111111)
+                    }
+                    0b110100 => {
+                        //TEQ
+                        if self.reg[register_s!(op)] == self.reg[register_t!(op)]{
+                            self.system_call((op >> 6) & 0b1111111111)
+                        }
+                    }
+                    0b110000 => {
+                        //TGE
+                        if self.reg[register_s!(op)] as i32 >= self.reg[register_t!(op)] as i32{
+                            self.system_call((op >> 6) & 0b1111111111)
+                        }
+                    }
+                    0b110001 => {
+                        //TGEU
+                        if self.reg[register_s!(op)] >= self.reg[register_t!(op)]{
+                            self.system_call((op >> 6) & 0b1111111111)
+                        }
+                    }
+                    0b110010 => {
+                        //TIT
+                        if (self.reg[register_s!(op)] as i32) < self.reg[register_t!(op)] as i32{
+                            self.system_call((op >> 6) & 0b1111111111)
+                        }
+                    }
+                    0b110011 => {
+                        //TITU
+                        if self.reg[register_s!(op)] < self.reg[register_t!(op)]{
+                            self.system_call((op >> 6) & 0b1111111111)
+                        }
+                    }
+                    0b110110 => {
+                        //TNE
+                        if self.reg[register_s!(op)] != self.reg[register_t!(op)]{
+                            self.system_call((op >> 6) & 0b1111111111)
+                        }
                     }
 
                     _ => self.invalid_op_code(),
                 }
             }
-            //Jump formatted instruction
+            //Jump instructions
             0b000010 => {
                 //jump
-                self.pc = (self.pc as i32 + jump_immediate_offset!(op)) as u32;
+                self.pc = (self.pc & 0b11110000000000000000000000000000) | jump_immediate_address!(op);
             }
             0b000011 => {
                 //jal
                 self.reg[31] = self.pc;
-                self.pc = (self.pc as i32 + jump_immediate_offset!(op)) as u32;
-            }
-            0b011010 => {
-                //trap
-                self.system_call(jump_immediate_address!(op));
+                self.pc = (self.pc & 0b11110000000000000000000000000000) | jump_immediate_address!(op);
             }
             // IMMEDIATE formmated instructions
 
             // arthmetic
             0b001000 => {
-                //trap ADDI
+                //ADDI
                 self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)] as i32
-                    + immediate_immediate!(op) as i32)
+                    + immediate_immediate_signed_extended!(op) as i32)
                     as u32;
             }
             0b001001 => {
-                //trap ADDIU
-                self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                    + immediate_immediate_unsigned!(op) as u32;
+                //ADDIU
+                self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)] as u32).wrapping_add(immediate_immediate_signed_extended!(op) as u32);
             }
             0b001100 => {
-                //trap ANDI
+                //ANDI
                 self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                    & immediate_immediate_unsigned!(op) as u32
+                    & immediate_immediate_zero_extended!(op) as u32
             }
             0b001101 => {
-                //trap ORI
+                //ORI
                 self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                    | immediate_immediate_unsigned!(op) as u32
+                    | immediate_immediate_zero_extended!(op) as u32
             }
             0b001110 => {
-                //trap XORI
+                //XORI
                 self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                    ^ immediate_immediate_unsigned!(op) as u32
+                    ^ immediate_immediate_zero_extended!(op) as u32
             }
-            0b001111 => {
-                //AUI
-                self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                    | ((immediate_immediate_unsigned!(op) as u32) << 16u32)
-            }
+
             // constant manupulating inctructions
-            0b011001 => {
-                //LHI
-                let t = immediate_t!(op) as usize;
-                self.reg[t] =
-                    self.reg[t] & 0xFFFF | immediate_immediate_unsigned_hi!(op) as u32;
+            0b001111 => {
+                //LUI
+                self.reg[immediate_t!(op)] = immediate_immediate_zero_extended!(op) << 16; 
             }
-            0b011000 => {
-                //LLO
-                let t = immediate_t!(op) as usize;
-                self.reg[t] =
-                    self.reg[t] & 0xFFFF0000 | immediate_immediate_unsigned!(op) as u32;
-            }
+            // these were replaced
+            // 0b011001 => {
+            //     //LHI
+            //     let t = immediate_t!(op) as usize;
+            //     self.reg[t] =
+            //         self.reg[t] & 0xFFFF | immediate_immediate_unsigned_hi!(op) as u32;
+            // }
+            // 0b011000 => {
+            //     //LLO
+            //     let t = immediate_t!(op) as usize;
+            //     self.reg[t] =
+            //         self.reg[t] & 0xFFFF0000 | immediate_immediate_zero_extended!(op) as u32;
+            // }
 
             // comparison Instructions
             0b001010 => {
                 //SLTI
                 self.reg[immediate_t!(op)] = {
                     if (self.reg[immediate_s!(op)] as i32)
-                        < (immediate_immediate!(op) as i32)
+                        < (immediate_immediate_signed_extended!(op) as i32)
                     {
                         1
                     } else {
@@ -912,12 +953,11 @@ impl MipsCpu {
                     }
                 }
             }
-            #[allow(unreachable_patterns)]
-            0b001001 => {
+            0b001011 => {
                 //SLTIU
                 self.reg[immediate_t!(op)] = {
                     if (self.reg[immediate_s!(op) as usize] as u32)
-                        < (immediate_immediate_unsigned!(op) as u32)
+                        < (immediate_immediate_zero_extended!(op) as u32)
                     {
                         1
                     } else {
@@ -933,12 +973,19 @@ impl MipsCpu {
                     self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                 }
             }
+            0b000001 => {
+                //BGEZ
+                if self.reg[immediate_s!(op)] as i32 >= 0 {
+                    self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                }
+            }
             0b000111 => {
                 //BGTZ
                 if self.reg[immediate_s!(op)] as i32 > 0 {
                     self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                 }
             }
+
             0b000110 => {
                 //BLEZ
                 if self.reg[immediate_s!(op)] as i32 <= 0 {
@@ -956,22 +1003,21 @@ impl MipsCpu {
             0b100000 => {
                 //LB
                 self.reg[immediate_t!(op)] = self.mem.get_i8(
-                    (self.reg[immediate_s!(op)] as i32 + immediate_immediate!(op))
+                    (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
                         as u32,
                 ) as u32
             }
             0b100100 => {
                 //LBU
-
                 self.reg[immediate_t!(op)] = self.mem.get_u8(
-                    (self.reg[immediate_s!(op)] as i32 + immediate_immediate!(op))
+                    (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
                         as u32,
                 ) as u32
             }
             0b100001 => {
                 //LH
                 let address = (self.reg[immediate_s!(op)] as i32
-                    + immediate_immediate!(op))
+                    + immediate_immediate_signed_extended!(op) as i32)
                     as u32;
 
                 #[cfg(feature = "memory_allignment_check")]
@@ -988,7 +1034,7 @@ impl MipsCpu {
             0b100101 => {
                 //LHU
                 let address = (self.reg[immediate_s!(op)] as i32
-                    + immediate_immediate!(op))
+                    + immediate_immediate_signed_extended!(op) as i32)
                     as u32;
 
                 #[cfg(feature = "memory_allignment_check")]
@@ -1005,7 +1051,7 @@ impl MipsCpu {
             0b100011 => {
                 //LW
                 let address = (self.reg[immediate_s!(op)] as i32
-                    + immediate_immediate!(op))
+                    + immediate_immediate_signed_extended!(op) as i32)
                     as u32;
 
                 #[cfg(feature = "memory_allignment_check")]
@@ -1024,7 +1070,7 @@ impl MipsCpu {
             0b101000 => {
                 //SB
                 self.mem.set_u8(
-                    (self.reg[immediate_s!(op)] as i32 + immediate_immediate!(op))
+                    (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
                         as u32,
                     (self.reg[immediate_t!(op)] & 0xFF) as u8,
                 );
@@ -1032,10 +1078,10 @@ impl MipsCpu {
             0b101001 => {
                 //SH
                 let address = (self.reg[immediate_s!(op)] as i32
-                    + immediate_immediate!(op))
+                    + immediate_immediate_signed_extended!(op) as i32)
                     as u32;
 
-                if address & 0b11 == 0 {
+                if address & 0b1 == 0 {
                     self.mem.set_u16_alligned(
                         address,
                         (self.reg[immediate_t!(op)] & 0xFFFF) as u16,
@@ -1054,13 +1100,13 @@ impl MipsCpu {
             0b101011 => {
                 //SW
                 let address = (self.reg[immediate_s!(op)] as i32
-                    + immediate_immediate!(op))
+                    + immediate_immediate_signed_extended!(op) as i32)
                     as u32;
                 if address & 0b11 == 0 {
                     self.mem
                         .set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
                 } else {
-                    self.memory_error(3);
+                    self.memory_error(4);
                 }
                 #[cfg(not(feature = "memory_allignment_check"))]
                 {

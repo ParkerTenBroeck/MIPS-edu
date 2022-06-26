@@ -563,7 +563,7 @@ pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
             }
             match &mut tmp {
                 None => {
-                    let page = unsafe{(*ptr).get_or_make_page(address)};
+                    let page = unsafe{(*ptr).get_or_make_page(im)};
                     tmp = Option::Some(page);
                 },
                 _ => {}

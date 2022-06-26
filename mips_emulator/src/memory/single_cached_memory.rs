@@ -42,6 +42,10 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
 
         match &mut self.page_pool{
             Some(val) => {
+                
+                let page_ref = unsafe{mem::transmute(val.get_page_pool().create_page(page_id).unwrap())};
+                
+
                 let mut lock = self.cache.lock().unwrap();
                 let tmp = lock.deref_mut();
 
@@ -49,7 +53,6 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
                 // let t2 = t1.create_page(page_id);
                 // let tmp_pg = t2.unwrap();
 
-                let page_ref = unsafe{mem::transmute(val.get_page_pool().create_page(page_id).unwrap())};
                 *tmp = Option::Some((page_id, page_ref));
                 match tmp{
                     Some((_page_id, page)) => {
@@ -79,9 +82,9 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
         match &mut self.page_pool{
             Some(val) => {
 
+                let page_ref: Option<&'static mut Page> = unsafe{mem::transmute(val.get_page_pool().get_page(page_id))};
                 let mut lock = self.cache.lock().unwrap();
                 let tmp = lock.deref_mut();
-                let page_ref: Option<&'static mut Page> = unsafe{mem::transmute(val.get_page_pool().get_page(page_id))};
 
                 if let Option::Some(page_ref) = page_ref{
                     *tmp = Option::Some((page_id, page_ref));

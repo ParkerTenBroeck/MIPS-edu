@@ -92,8 +92,9 @@ impl CpuExternalHandler for ExternalHandler {
                             Ok(str) => {
                                 log::info!("{}", str)
                             },
-                            Err(err) => {
-                                log::info!("Malformed String")
+                            Err(_err) => {
+                                log::info!("Malformed String");
+                                cpu.stop();
                             },
                         }
                     }
@@ -122,10 +123,14 @@ impl CpuExternalHandler for ExternalHandler {
                 x = ((x >> 16) ^ x).wrapping_mul(0x45d9f3bu32);
                 x = (x >> 16) ^ x;
                 let x = (x >> 1) as i32;
+                
 
                 let dif = (cpu.reg[5] as i32).wrapping_sub(cpu.reg[4] as i32);
-                cpu.reg[2] = ((x % dif) + (cpu.reg[4] as i32)) as u32;
-
+                if dif > 0{
+                    cpu.reg[2] = ((x % dif).wrapping_add(cpu.reg[4] as i32)) as u32;
+                }else{
+                    cpu.reg[2] = 0;
+                }
                 self.rand_seed = self.rand_seed.wrapping_add(1);
             }
             101 => match char::from_u32(cpu.reg[4]) {
@@ -194,8 +199,8 @@ impl CpuExternalHandler for ExternalHandler {
             }
                  
             150 => {                
-                self.screen_x = cpu.reg[4] as usize + 1;
-                self.screen_y = cpu.reg[5] as usize + 1;
+                self.screen_x = cpu.reg[4] as usize;
+                self.screen_y = cpu.reg[5] as usize;
                 self.image = ColorImage::new([self.screen_x, self.screen_y], Color32::BLACK)
             }
             151 => {
