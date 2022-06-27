@@ -187,6 +187,14 @@ impl CpuExternalHandler for ExternalHandler {
                     .as_millis()
                     & 0xFFFFFFFFu128) as u32;
             }
+            108 => {
+                let time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros();
+                cpu.reg[3] = (time >> 32) as u32;
+                cpu.reg[2] = time as u32;
+            }
             130 => {
                 cpu.reg[2] = (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

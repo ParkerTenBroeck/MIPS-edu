@@ -317,7 +317,7 @@ impl epi::App for ClikeGui {
 
                                         self.cpu.clear();
 
-                                        let f = std::fs::File::open("/home/may/Documents/GitHub/tmp/mips/bin/tmp.bin").unwrap();
+                                        let f = std::fs::File::open("/home/may/Documents/Code/OxidizedMips/mips/bin/tmp.bin").unwrap();
                                         let mut reader = std::io::BufReader::new(f);
                                         let mut buffer = Vec::new();
                                         

@@ -745,7 +745,7 @@ impl MipsCpu {
                     0b000100 => {
                         //SLLV
                         self.reg[register_d!(op)] =
-                            (self.reg[register_t!(op)]) >> ( 0b11111 & self.reg[register_s!(op)]);
+                            (self.reg[register_t!(op)]) << ( 0b11111 & self.reg[register_s!(op)]);
                     }
                     0b000011 => {
                         //SRA
@@ -997,6 +997,45 @@ impl MipsCpu {
                 if self.reg[immediate_s!(op)] != self.reg[immediate_t!(op) as usize] {
                     self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
                 }
+            }
+
+            //load unsinged instructions
+            0b100010 => {
+                //LWL
+                let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                let reg_num = immediate_t!(op);
+                let mut thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                thing[3] = self.mem.get_u8(address);
+                thing[2] = self.mem.get_u8(address + 1);
+                self.reg[reg_num] = unsafe{core::mem::transmute(thing)};
+            }
+            0b100110 => {
+                //LWR
+                let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                let reg_num = immediate_t!(op);
+                let mut thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                thing[0] = self.mem.get_u8(address);
+                thing[1] = self.mem.get_u8(address.wrapping_sub(1));
+                self.reg[reg_num] = unsafe{core::mem::transmute(thing)};
+            }
+
+
+            //save unaliged instructions
+            0b101010 => {
+                //SWL
+                let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                let reg_num = immediate_t!(op);
+                let thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                self.mem.set_u8(address, thing[3]);
+                self.mem.set_u8(address + 1, thing[2]);
+            }
+            0b101110 => {
+                //SWR
+                let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                let reg_num = immediate_t!(op);
+                let thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                self.mem.set_u8(address, thing[0]);
+                self.mem.set_u8(address.wrapping_sub(1), thing[1]);
             }
 
             // load instrictions
