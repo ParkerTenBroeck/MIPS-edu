@@ -1,9 +1,9 @@
-var cacheName = 'clike_gui';
+var cacheName = 'app';
 var filesToCache = [
   './',
   './index.html',
-  './clike_gui.js',
-  './clike_gui_bg.wasm',
+  './app.js',
+  './app_bg.wasm',
 ];
 
 /* Start the service worker and cache all of the app's content */

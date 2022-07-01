@@ -14,7 +14,7 @@ fn main() {
         std::process::exit(0);
     }
 
-    let icon = match image::open("./mips-edu/docs/icon-256.png"){
+    let icon = match image::open("./app/docs/icon-256.png"){
         Result::Ok(val) => {
             let icon = val.to_rgba8();
             let (icon_width, icon_height) = icon.dimensions();

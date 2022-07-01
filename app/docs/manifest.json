@@ -1,6 +1,6 @@
 {
     "name": "Mips Edu",
-    "short_name": "mips-edu",
+    "short_name": "app",
     "icons": [{
       "src": "./icon-256.png",
         "sizes": "256x256",

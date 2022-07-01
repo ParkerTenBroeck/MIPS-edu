@@ -20,24 +20,6 @@
 !/elf/Cargo.lock
 !/elf/Cargo.toml
 
-!/clike_gui/
-!/clike_gui/Cargo.lock
-!/clike_gui/Cargo.toml
-!/clike_gui/build.rs
-!/clike_gui/src**
-!/clike_gui/res**
-!/clike_gui/docs**
-!/clike_gui/build_web.bat
-!/clike_gui/build_web.sh
-!/clike_gui/check.sh
-!/clike_gui/setup_web.bat
-!/clike_gui/setup_web.sh
-!/clike_gui/start_server.bat
-!/clike_gui/start_server.sh
-/clike_gui/docs/clike_gui.js
-/clike_gui/docs/clike_gui_bg.wasm
-
-
 !/app/
 !/app/Cargo.lock
 !/app/Cargo.toml

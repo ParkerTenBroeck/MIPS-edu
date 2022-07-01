@@ -28,7 +28,7 @@ jobs:
       - name: Install 
         run: sudo apt-get install -y binaryen
       - name: Build/Test Web
-        working-directory: ./clike_gui
+        working-directory: ./app
         run: |
          chmod +x build_web.sh
          ./build_web.sh
@@ -37,7 +37,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: production-files
-          path: ./clike_gui/docs
+          path: ./app/docs
   
   deploy:
     name: Deploy
@@ -50,10 +50,10 @@ jobs:
       uses: actions/download-artifact@v2
       with:
         name: production-files
-        path: ./clike_gui/docs
+        path: ./app/docs
     
     - name: Deploy to gh-pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./clike_gui/docs
+        publish_dir: ./app/docs
