@@ -408,6 +408,15 @@ impl MipsCpu {
         self.i_check = !true;
     }
 
+    pub fn stop_and_wait(&mut self) {
+        self.stop();
+        while {
+            self.is_running()
+        }{
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     #[allow(unused)]
     pub fn reset(&mut self) {
         self.pc = 0;

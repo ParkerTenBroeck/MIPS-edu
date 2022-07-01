@@ -1,9 +1,9 @@
-use std::{io::Read, pin::Pin, sync::{Arc, Mutex}};
+use std::{pin::Pin, sync::{Arc, Mutex}};
 
 use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
-use mips_emulator::{cpu::MipsCpu, memory::page_pool::MemoryDefault};
+use mips_emulator::{cpu::MipsCpu};
 
-use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler, util::keyboard_util::KeyboardMemory};
+use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler, util::keyboard_util::KeyboardMemory, side_panel::{side_tabbed_panel::SideTabbedPanel}};
 
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -32,32 +32,34 @@ impl Default for ApplicationSettings {
 #[allow(dead_code)]
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
-pub struct ClikeGui {
+pub struct Application {
     // Example stuff:
     settings: ApplicationSettings,
 
 
     #[cfg_attr(feature = "persistence", serde(skip))]
-    cpu: Pin<Box<MipsCpu>>,
+    pub cpu: Pin<Box<MipsCpu>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    cpu_screen: TextureHandle,
+    pub cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    cpu_virtual_keyboard: Arc<Mutex<KeyboardMemory>>,
+    pub cpu_virtual_keyboard: Arc<Mutex<KeyboardMemory>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    tabbed_area: TabbedArea,
+    pub tabbed_area: TabbedArea,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    pub side_panel: Arc<Mutex<SideTabbedPanel>>,
 }
 
-impl ClikeGui {
+impl Application {
     pub fn new(ctx: &egui::Context) -> Self {
 
         let mut ret = Self {
             settings: ApplicationSettings::default(),
-            //cpu: MipsCpu::new(),
             tabbed_area: TabbedArea::default(),
+            side_panel: Default::default(),
+
             cpu: Box::pin(MipsCpu::new()),
-            
             cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
-            cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())),
+            cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())), 
         };
 
         ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
@@ -90,13 +92,13 @@ trap 0
     }
 }
 
-impl ClikeGui{
+impl Application{
     pub fn settings(&self) -> &ApplicationSettings{
         &self.settings
     } 
 }
 
-impl epi::App for ClikeGui {
+impl epi::App for Application {
 
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
@@ -104,6 +106,11 @@ impl epi::App for ClikeGui {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
+
+
+        if self.cpu.is_running() && !self.cpu.paused_or_stopped() {
+            ctx.request_repaint();
+        }
 
         self.cpu_virtual_keyboard.lock().unwrap().update(ctx);
 
@@ -118,7 +125,7 @@ impl epi::App for ClikeGui {
                 
                 ui.with_layout(egui::Layout::right_to_left(), |ui|{
                     ui.add(
-                        egui::Hyperlink::from_label_and_url("HomePage", "https://github.com/ParkerTenBroeck/CLike")
+                        egui::Hyperlink::from_label_and_url("HomePage", "https://github.com/ParkerTenBroeck/Mips-Edu")
                     );
                     ui.separator();
                     ui.add(
@@ -131,16 +138,7 @@ impl epi::App for ClikeGui {
             });
         });
 
-
-        //TEMP
-        static mut SEL: u32 = 1;
-        static mut VIS: bool = true;
-        let select = unsafe { &mut SEL };
-        let vis = unsafe { &mut VIS };
-        //TEMP
-
         let frame_no_marg = egui::Frame {
-            //margin: egui::style::Margin::symmetric(2.0, 2.0),
             rounding: eframe::epaint::Rounding::none(),
             fill: ctx.style().visuals.window_fill(),
             stroke: ctx.style().visuals.window_stroke(),
@@ -148,282 +146,23 @@ impl epi::App for ClikeGui {
             outer_margin: egui::style::Margin::symmetric(0.0, 0.0),
             ..Default::default()
         };
-        egui::SidePanel::left("side_panel")
-            .min_width(0.0)
-            .frame(frame_no_marg.clone())
-            .resizable(*select != 0)
-            .show(ctx, |ui| {
-            //let min_height = ui.min_rect().top();
-            let max_height = ui.max_rect().bottom();
 
-            //ui.set_max_width(ui.max_rect().right());
-            //println!("{}", ui.max_rect().right());
-            //ui.spacing_mut().item_spacing.x = 0.0;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                //egui::SidePanel::left("left_icon_panel").show(ui.ctx(), |ui|{
-                    
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    if ui.selectable_label(*vis && *select == 1, "💻").clicked() {
-                        if *select == 1{
-                            *vis = false;
-                            *select = 0;
-                        }else{
-                            *vis = true;
-                            *select = 1;
-                        }
-                    }
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    if ui.selectable_label(*vis && *select == 2, "🖹").clicked() {
-                        if *select == 2{
-                            *vis = false;
-                            *select = 0;
-                        }else{
-                            *vis = true;
-                            *select = 2;
-                        }
-                    }
-                    //println!("{}, {}, {}", max_height, min_height, ui.max_rect().bottom());
-                    ui.add_space(max_height - ui.max_rect().bottom() - 3.0);
-                    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                        ui.set_max_height(max_height);
-                        if ui.selectable_label(false, "⚙").clicked() {}
-                        if ui
-                            .selectable_label(ctx.debug_on_hover(), "🐛")
-                            .on_hover_text("debug on hover")
-                            .clicked()
-                        {
-                            ctx.set_debug_on_hover(!ctx.debug_on_hover());
-                        }
-                    });
-                    //    ui.horizontal(|ui| {
-                    //ui.spacing_mut().item_spacing.y = 500.0;
-                    //ui.add_space(500.0);
-                    //ui.separator();
-
-                    //    });
-                    //});
-                });
-
-                if *select != 0 {
-
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.separator();
-
-                    ui.vertical(|ui| {
-                        egui::ScrollArea::both().show(ui, |ui| {
-                            if *select == 1 {
-                                ui.heading("CPU control");
-    
-                                //ui.horizontal(|ui| {
-                                //    ui.label("Write something: ");
-                                //    ui.text_edit_singleline(label);
-                                //});
-    
-                                let (pc, hi, lo, reg) = {
-                                    (
-                                        self.cpu.get_pc(),
-                                        self.cpu.get_hi_register(),
-                                        self.cpu.get_lo_register(),
-                                        self.cpu.get_general_registers(),
-                                    )
-                                };
-                                if self.cpu.is_running() && !self.cpu.paused_or_stopped() {
-                                    ui.ctx().request_repaint();
-                                }
-    
-                                ui.horizontal(|ui| {
-                                    ui.label("PC: ");
-                                    ui.label(pc.to_string());
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label("Hi: ");
-                                    ui.label(hi.to_string());
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label("Lo: ");
-                                    ui.label(lo.to_string());
-                                });
-                                ui.label("Reg: ");
-                                let mut i = 0usize;
-                                while i < 32 {
-                                    ui.horizontal(|ui| {
-                                        ui.label(format!(" {}: {}", i, reg[i]));
-                                        i += 1;
-                                        ui.label(format!(" {}: {}", i, reg[i]));
-                                        i += 1;
-                                    });
-                                }
-                                //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-                                if ui.button("Start CPU").clicked() {
-                                    unsafe {
-                                        // static mut CPU: Option<MipsCpu> = Option::None;
-                                        // let cpu = CPU.get_or_insert_with(||{
-                                        //     MipsCpu::new()
-                                        // });
-                                        if self.cpu.is_running() {
-                                            log::warn!("CPU is already running");
-                                        } else {
-                                            log::info!("CPU Starting");
-                                            let cpu: &'static mut MipsCpu =
-                                                std::mem::transmute(self.cpu.as_mut());
-                                                
-                                            cpu.start_new_thread();
-                                        }
-                                    }
-                                }
-                                if ui.button("Step CPU").clicked() {
-                                    unsafe {
-                                        if self.cpu.is_running() {
-                                            log::warn!("CPU is already running");
-                                        } else {
-                                            let cpu: &'static mut MipsCpu =
-                                                std::mem::transmute(self.cpu.as_mut());
-                                            cpu.step_new_thread();
-                                        }
-                                    }
-                                }
-    
-                                if ui.button("Stop CPU").clicked() {
-                                    if self.cpu.is_running() {
-                                        self.cpu.stop();
-                                        log::info!("Stopping CPU");
-                                    } else {
-                                        log::warn!("CPU is already stopped");
-                                    }
-                                }
-                                if ui.button("Pause CPU").clicked() {
-                                    if self.cpu.paused_or_stopped(){
-                                        log::warn!("CPU is already paused");
-                                    }else{
-                                        self.cpu.pause();
-                                        log::info!("CPU is paused");
-                                    }
-                                }
-                                if ui.button("Resume CPU").clicked() {
-                                    if self.cpu.paused_or_stopped(){
-                                        self.cpu.resume();
-                                        log::info!("CPU resumed");
-                                    }else{
-                                        log::warn!("CPU is already resumed");
-                                    }
-                                }
-                                if ui.button("Reset CPU").clicked() {
-                                    if !self.cpu.is_running() {
-                                        //runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
-                                        //the version written in c++ seems to be around 17% faster
-                                        //[0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000][(self.pc >> 2) as usize];//
-
-                                        self.cpu.clear();
-
-                                        let f = std::fs::File::open("/home/may/Documents/Code/OxidizedMips/mips/bin/tmp.bin").unwrap();
-                                        let mut reader = std::io::BufReader::new(f);
-                                        let mut buffer = Vec::new();
-                                        
-                                        // Read file into vector.
-                                        
-                                        let _size = reader.read_to_end(&mut buffer).unwrap();
-
-                                        let test_prog = buffer.as_mut_slice();
-                                        // for i in 0..(size / 4){
-                                        //     let base = i * 4;
-                                        //     let b1 = test_prog[base];
-                                        //     let b2 = test_prog[base + 1];
-
-                                        //     // test_prog[base] = test_prog[base + 3];
-                                        //     // test_prog[base + 1] = test_prog[base + 2];
-                                        //     // test_prog[base + 3] = b1;
-                                        //     // test_prog[base + 2] = b2;
-                                        // }
-
-                                        //  let test_prog = &[
-                                        //     0x64027FFFu32.to_be(),
-                                        //     0x00000820u32.to_be(),
-                                        //     0x20210001u32.to_be(),
-                                        //     0x10220001u32.to_be(),
-                                        //     0x0BFFFFFDu32.to_be(),
-                                        //     0x68000000u32.to_be(),
-                                        //  ];
-                                        self.cpu.get_mem().copy_into_raw(0, test_prog);
-
-                                        log::info!("reset CPU");
-                                    } else {
-                                        log::warn!("Cannot reset CPU while running");
-                                    }
-                                }
-                            } else if *select == 2{
-                                ui.add(
-                                    egui::Label::new(egui::RichText::new("Workspace").heading()).wrap(false)
-                                );
-                                ui.collapsing("info", |ui|{
-                                    ui.label("current workspace files ext(just the current directory of the exe for now)");
-                                    ui.label("note opening files will only read them and never save to them currently");    
-                                });
-                                ui.separator();
-
-                                generate_tree(".".into(),self, ui);
-
-                                fn generate_tree(path: std::path::PathBuf, t: &mut ClikeGui,  ui: &mut egui::Ui){
-                                    match std::fs::read_dir(path) {
-                                        Ok(val) => {
-                                            
-                                            let mut test: Vec<Result<std::fs::DirEntry, std::io::Error>> = val.collect();
-                                            test.sort_by(|t1, t2| {
-                                                if let Result::Ok(t1) = t1{
-                                                    if let Result::Ok(t2) = t2{
-                                                        //let t1 = t1.unwrap();
-                                                        //let t2 = t2.unwrap();
-                                                        let t1d = t1.metadata().unwrap().is_dir();
-                                                        let t2d = t2.metadata().unwrap().is_dir();
-                                                        if t1d && t2d {
-                                                            return t1.file_name().to_ascii_lowercase().to_str().unwrap()
-                                                            .cmp(t2.file_name().to_ascii_lowercase().to_str().unwrap())
-                                                        }else if t1d{
-                                                            return std::cmp::Ordering::Less
-                                                        }else if t2d{
-                                                            return std::cmp::Ordering::Greater
-                                                        }else{
-                                                            return t1.file_name().to_ascii_lowercase().to_str().unwrap()
-                                                            .cmp(t2.file_name().to_ascii_lowercase().to_str().unwrap())
-                                                        }
-                                                    }  
-                                                }
-                                                std::cmp::Ordering::Equal
-                                            });
-                                            for d in test{
-                                                if let Result::Ok(val) = d{
-                                                    
-                                                    if val.metadata().unwrap().is_dir(){
-                                                        ui.collapsing(val.file_name().into_string().unwrap(), |ui|{
-                                                            generate_tree(val.path(),t, ui);
-                                                        });
-                                                    }else{
-                                                        if ui.selectable_label(false, val.file_name().into_string().unwrap()).clicked(){
-                                                            
-                                                            if let Result::Ok(str) = std::fs::read_to_string(val.path()){
-                                                                
-                                                                t.tabbed_area.add_tab(Box::new(CodeEditor::new(val.file_name().into_string().unwrap(), str)));
-                                                            }
-                                                            log::info!("loaded file: {}", val.path().display());
-                                                        }
-                                                       
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        Err(_) => {
-    
-                                        },
-                                    }
-                                }
-                            }
-                        });
-                        ui.allocate_space(ui.available_size());
-                    });
-                }
+        
+        match self.side_panel.clone().lock(){
+            Ok(mut side_panel) => {
+                egui::SidePanel::left("side_panel")
+                .min_width(0.0)
+                .frame(frame_no_marg.clone())
+                .resizable(side_panel.is_visible())
+                .show(ctx, |ui| {
+                    side_panel.ui(ui, self);
             });
-        });
+            },
+            Err(_) => panic!(),
+        }
+        //let mut asd = self.side_panel.lock();
+        //let mut side_panel = asd.unwrap();
+
 
         egui::TopBottomPanel::bottom("bottom_panel").resizable(true).show(ctx, |ui| {
             
@@ -476,13 +215,13 @@ impl epi::App for ClikeGui {
             self.tabbed_area.ui(ui);
         });
 
-        if false {
-            egui::Window::new("Window").show(ctx, |ui| {
-                ui.label("Windows can be moved by dragging them.");
-                ui.label("They are automatically sized based on contents.");
-                ui.label("You can turn on resizing and scrolling if you like.");
-                ui.label("You would normally chose either panels OR windows.");
-            });
-        }
+        // if false {
+        //     egui::Window::new("Window").show(ctx, |ui| {
+        //         ui.label("Windows can be moved by dragging them.");
+        //         ui.label("They are automatically sized based on contents.");
+        //         ui.label("You can turn on resizing and scrolling if you like.");
+        //         ui.label("You would normally chose either panels OR windows.");
+        //     });
+        // }
     }
 }

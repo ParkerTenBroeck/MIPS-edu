@@ -37,6 +37,24 @@
 /clike_gui/docs/clike_gui.js
 /clike_gui/docs/clike_gui_bg.wasm
 
+
+!/app/
+!/app/Cargo.lock
+!/app/Cargo.toml
+!/app/build.rs
+!/app/src**
+!/app/res**
+!/app/docs**
+!/app/build_web.bat
+!/app/build_web.sh
+!/app/check.sh
+!/app/setup_web.bat
+!/app/setup_web.sh
+!/app/start_server.bat
+!/app/start_server.sh
+/app/docs/app.js
+/app/docs/app_bg.wasm
+
 !/mips_emulator/
 !/mips_emulator/Cargo.lock
 !/mips_emulator/Cargo.toml

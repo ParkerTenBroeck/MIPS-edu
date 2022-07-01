@@ -6,11 +6,12 @@ pub mod app;
 pub mod syntax_highlighter;
 pub mod loggers;
 pub mod tabs;
+pub mod side_panel;
 pub mod resource_manager;
 pub mod emulator;
 pub mod util;
 
-pub use app::ClikeGui;
+pub use app::Application;
 
 // ----------------------------------------------------------------------------
 // When compiling for web:
@@ -33,6 +34,6 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     // Redirect tracing to console.log and friends:
     tracing_wasm::set_as_global_default();
 
-    let app = ClikeGui::default();
+    let app = Application::default();
     eframe::start_web(canvas_id, Box::new(app))
 }

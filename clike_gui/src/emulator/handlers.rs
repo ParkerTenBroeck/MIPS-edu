@@ -221,7 +221,8 @@ impl CpuExternalHandler for ExternalHandler {
                 self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
             }
             154 => {
-
+                self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
+                //self.v_sync.wait()    
             }
             155 => {
                 let (h,s,v) = (cpu.reg[4] as f32, cpu.reg[5] as f32, cpu.reg[6] as f32);

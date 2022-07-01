@@ -10,11 +10,11 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    if !clike_gui::loggers::init(){
+    if !app::loggers::init(){
         std::process::exit(0);
     }
 
-    let icon = match image::open("./clike_gui/docs/icon-256.png"){
+    let icon = match image::open("./mips-edu/docs/icon-256.png"){
         Result::Ok(val) => {
             let icon = val.to_rgba8();
             let (icon_width, icon_height) = icon.dimensions();
@@ -44,15 +44,15 @@ fn main() {
         },
     }
 
-    eframe::run_native("CLike", native_options, Box::new(|cc|{
+    eframe::run_native("Mips Edu", native_options, Box::new(|cc|{
         
-        let app = clike_gui::ClikeGui::new(&cc.egui_ctx);
+        let app = app::Application::new(&cc.egui_ctx);
         
         match app.settings().theme {
-            clike_gui::app::Theme::DarkMode => {
+            app::app::Theme::DarkMode => {
                 cc.egui_ctx.set_visuals(eframe::egui::Visuals::dark());
             }
-            clike_gui::app::Theme::LightMode => {
+            app::app::Theme::LightMode => {
                 cc.egui_ctx.set_visuals(eframe::egui::Visuals::light());
             }   
         }     
@@ -63,7 +63,7 @@ fn main() {
 #[cfg(target_os= "linux")]    
 fn create_linux_app() -> Result<(), Box<dyn std::error::Error>>{
     let home = std::env::var("HOME")?;
-    let path = format!("{}/.local/share/applications/clike_gui.desktop", home);
+    let path = format!("{}/.local/share/applications/mips-edu.desktop", home);
     let app = std::fs::File::create(path.clone());
     match app {
         Ok(mut val) => {
@@ -89,7 +89,7 @@ fn create_linux_app() -> Result<(), Box<dyn std::error::Error>>{
                             std::io::ErrorKind::InvalidInput,
                             format!("Failed to get path {:?}", tmp))))
             } 
-            tmp.push("clike_gui/docs/icon-256.png");
+            tmp.push("app/docs/icon-256.png");
             
             //log::info!("{}", std::fs::canonicalize(std::path::Path::new(".")).unwrap().as_os_str().to_str().unwrap());
             let ic:String = match tmp.as_os_str().to_str(){
@@ -104,7 +104,7 @@ fn create_linux_app() -> Result<(), Box<dyn std::error::Error>>{
                 },
             }.into();
 
-            let data = format!("[Desktop Entry]\nName=CLike\nExec={}\nIcon={}\nTerminal=false\nType=Application",ec, ic);
+            let data = format!("[Desktop Entry]\nName=MIPS\nExec={}\nIcon={}\nTerminal=false\nType=Application",ec, ic);
              
             use std::io::Write;
             let _ = val.write(data.as_bytes())?;
