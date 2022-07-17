@@ -370,7 +370,6 @@ impl Tab for HexEditor {
                                 response.request_focus();
                             }
                             if response.lost_focus() {
-                                println!("{:?}", response);
                                 self.cursor_offset = Option::None;
                                 self.selection_offset = Option::None;
                             }

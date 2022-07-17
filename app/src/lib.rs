@@ -10,6 +10,7 @@ pub mod side_panel;
 pub mod resource_manager;
 pub mod emulator;
 pub mod util;
+pub mod platform;
 
 pub use app::Application;
 
@@ -29,12 +30,15 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     // Make sure panics are logged using `console.error`.
     console_error_panic_hook::set_once();
 
-    crate::loggers::init();
+    if !crate::loggers::init(){
+        panic!("Failed to init logging");
+    }
 
     // Redirect tracing to console.log and friends:
     tracing_wasm::set_as_global_default();
+    let canvas_id = canvas_id.to_string();
 
-    eframe::start_web(canvas_id, Box::new(|cc|{
-        Box::new(Application::new(&cc.egui_ctx))
+    eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
+            Box::new(Application::new(&cc.egui_ctx))
     }))
 }

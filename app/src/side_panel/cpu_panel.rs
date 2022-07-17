@@ -1,4 +1,5 @@
-use mips_emulator::memory::page_pool::MemoryDefault;
+use mips_emulator::{memory::page_pool::MemoryDefault, cpu::MipsCpu};
+
 
 use super::side_tabbed_panel::SideTab;
 
@@ -21,6 +22,7 @@ pub struct CPUSidePanel {
     int_format: IntegerFormat,
     float_foramt: FloatFormat,
     use_reg_names: bool,
+    thing: Vec<(u128, u64)>
 }
 
 impl CPUSidePanel {
@@ -29,6 +31,7 @@ impl CPUSidePanel {
             int_format: IntegerFormat::SignedBase10,
             float_foramt: FloatFormat::Base10,
             use_reg_names: true,
+            thing: Default::default(),
         }
     }
 }
@@ -42,16 +45,16 @@ impl From<CPUSidePanel> for Box<dyn SideTab> {
 impl CPUSidePanel{
     pub fn u32_to_str(&self, val: u32) -> String{
         match self.int_format{
-            IntegerFormat::SignedBase10 => format!("{}", val),
-            IntegerFormat::UnsignedBase10 => format!("{}", val as i32),
+            IntegerFormat::SignedBase10 => format!("{}", val as i32),
+            IntegerFormat::UnsignedBase10 => format!("{}", val),
             IntegerFormat::Base16 => format!("0x{:08X}", val),
             IntegerFormat::Base2 => format!("0b{:032b}", val),
         }
     }
     pub fn u64_to_str(&self, val: u64) -> String{
         match self.int_format{
-            IntegerFormat::SignedBase10 => format!("{}", val),
-            IntegerFormat::UnsignedBase10 => format!("{}", val as i64),
+            IntegerFormat::SignedBase10 => format!("{}", val as i64),
+            IntegerFormat::UnsignedBase10 => format!("{}", val),
             IntegerFormat::Base16 => format!("0x{:016X}", val),
             IntegerFormat::Base2 => format!("0b{:064b}", val),
         }
@@ -59,15 +62,15 @@ impl CPUSidePanel{
     pub fn f32_to_str(&self, val: f32) -> String{
         match self.float_foramt{
             FloatFormat::Base10 => format!("{}", val),
-            FloatFormat::Base16 => format!("0x{:08X}", val as u32),
-            FloatFormat::Base2 => format!("0b{:032b}", val as u32),
+            FloatFormat::Base16 => format!("0x{:08X}", unsafe{ core::mem::transmute::<[u8; 4], u32>(val.to_ne_bytes())}),
+            FloatFormat::Base2 => format!("0b{:032b}", unsafe{ core::mem::transmute::<[u8; 4], u32>(val.to_ne_bytes())}),
         }
     }
     pub fn f64_to_str(&self, val: f64) -> String{
         match self.float_foramt{
             FloatFormat::Base10 => format!("{}", val),
-            FloatFormat::Base16 => format!("0x{:016X}", val as u64),
-            FloatFormat::Base2 => format!("0b{:064b}", val as u64),
+            FloatFormat::Base16 => format!("0x{:016X}", unsafe{ core::mem::transmute::<[u8; 8], u64>(val.to_ne_bytes())}),
+            FloatFormat::Base2 => format!("0b{:064b}", unsafe{ core::mem::transmute::<[u8; 8], u64>(val.to_ne_bytes())}),
         }
     }
     pub fn fmt_reg(&self, reg: usize) -> &'static str{
@@ -139,6 +142,30 @@ impl SideTab for CPUSidePanel {
                 $ui.label(format!("{}: {}", self.fmt_reg($reg), self.u32_to_str(reg[$reg])));
             };
         }
+
+        let ins = app.cpu.get_instructions_ran();
+        ui.label(format!("instructions ran: {}", ins));
+        
+        let ins_p_s;
+
+        if app.cpu.is_running(){
+            self.thing.push((crate::platform::time::duration_since_epoch().as_nanos(), ins));
+            if self.thing.len() > 60{
+                self.thing.remove(0);
+            }
+            let start = self.thing[0];
+            let end = *self.thing.last().unwrap();
+            if let Option::Some(val) = ((end.1 - start.1) * 1000000000).checked_div((end.0 - start.0) as u64){
+                ins_p_s = val;
+            }else{
+                ins_p_s = 0;
+            }
+        }else{
+            self.thing.clear();
+            ins_p_s = 0;
+        }
+        ui.label(format!("Instructions/Second: {}", ins_p_s));
+        
 
         //ui.horizontal(|ui| {
             ui.collapsing("GP Registers", |ui|{
@@ -229,10 +256,23 @@ impl SideTab for CPUSidePanel {
                     log::warn!("CPU is already running");
                 } else {
                     log::info!("CPU Starting");
-                    let cpu: &'static mut mips_emulator::cpu::MipsCpu =
-                        std::mem::transmute(app.cpu.as_mut());
+                    let cpu =
+                        &mut (*app.cpu.as_mut()) as *mut MipsCpu;
+                        
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let cpu = cpu.as_mut().unwrap();
 
-                    cpu.start_new_thread();
+                        let _ = crate::platform::thread::start_thread(||{
+                            cpu.start_local();
+                        });
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let cpu = cpu.as_mut().unwrap();
+                        cpu.start_new_thread();
+                    }
                 }
             }
         }
@@ -241,9 +281,23 @@ impl SideTab for CPUSidePanel {
                 if app.cpu.is_running() {
                     log::warn!("CPU is already running");
                 } else {
-                    let cpu: &'static mut mips_emulator::cpu::MipsCpu =
-                        std::mem::transmute(app.cpu.as_mut());
-                    cpu.step_new_thread();
+                    let cpu =
+                    &mut (*app.cpu.as_mut()) as *mut MipsCpu;
+                        
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let cpu = cpu.as_mut().unwrap();
+
+                        let _ = crate::platform::thread::start_thread(||{
+                            cpu.step_local();
+                        });
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let cpu = cpu.as_mut().unwrap();
+                        cpu.step_new_thread();
+                    }
                 }
             }
         }
@@ -277,18 +331,7 @@ impl SideTab for CPUSidePanel {
             if !app.cpu.is_running() {
                 app.cpu.clear();
 
-                let f =
-                    std::fs::File::open("/home/may/Documents/GitHub/OxidizedMips/mips/bin/tmp.bin")
-                        .unwrap();
-
-                let mut reader = std::io::BufReader::new(f);
-                let mut buffer = Vec::new();
-
-                // Read file into vector.
-
-                let _size = std::io::Read::read_to_end(&mut reader, &mut buffer).unwrap();
-
-                let test_prog = buffer.as_mut_slice();
+                let test_prog = include_bytes!("../../res/tmp.bin");
 
                 app.cpu.get_mem().copy_into_raw(0, test_prog);
 

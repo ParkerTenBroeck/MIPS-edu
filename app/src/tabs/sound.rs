@@ -104,6 +104,92 @@ impl Tab for SoundTab {
     }
 }
 
+pub fn temp(reg: u16, _data: u8){
+    //t = 1000000.0*1.789773/(16*fpulse) - 1
+    //let freq = 1000000.0*1.789773/(16*(t+1))
+    match reg{
+        0x4000 => {
+            //DDLCNNNN
+            //D = duity cycle
+            //L = loop enbelope / disable length counter
+            //C = constant volume
+            //N = envelope pediod/volume
+        }
+        0x4001 => {
+            //EPPPNSSS
+            //S = control how much 0x4002 is shifted by to get the new frequency
+            //N = controlls wheather to iuncrease or decrease frequency for sweep (1=increase, 0=decrease)
+            //P = control how fast the sweep runs(0-7)
+            //E = enables sweep
+        }
+        0x4002 => {
+            //first 8 bits of the frequency
+        }
+        0x4003 => {
+            //bits 0-2 wavelength stuff
+            //bits 3-7 load the down-counter
+        }
+
+        0x4004 => {
+            
+        }
+        0x4005 => {
+            
+        }
+        0x4006 => {
+            
+        }
+        0x4007 => {
+            
+        }
+
+        0x4008 => {
+            
+        }
+        0x4009 => {
+            
+        }
+        0x400A => {
+            
+        }
+        0x400B => {
+            
+        }
+
+        0x400C => {
+            
+        }
+        0x400D => {
+            
+        }
+        0x400E => {
+            
+        }
+        0x400F => {
+            
+        }
+
+        0x4010 => {
+            
+        }
+        0x4012 => {
+            
+        }
+        0x4013 => {
+            
+        }
+        0x4015 => {
+            //bit 0 = square wave channel 1 enable
+            //bit 1 = square wave channel 2 enable
+            //bit 2 = triangle wave channel 3 enable
+            //bit 3 = noise wave channel 4 enable
+            //bit 4 =  DMC/PCM playback channel
+            //Bits 5-7 = unused
+        }
+        _ => {panic!()}
+    }
+}
+
 const WAVE_FORM_SIZE: usize = 2048;
 struct WaveTest{
     wave_form: [f32; WAVE_FORM_SIZE],

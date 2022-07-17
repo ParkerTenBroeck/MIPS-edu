@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, Modifiers};
 
 // -------------------------------------------------------------------
 
@@ -60,14 +60,16 @@ impl KeyboardMemory{
 
     pub fn update(&mut self, context: &egui::Context){
         let input = context.input();
+
+        
         for event in input.events.iter(){
             match event{
                 egui::Event::Key { key, pressed, modifiers } => {
                     let key = match key{
-                        egui::Key::ArrowDown => 38u8 as char,
                         egui::Key::ArrowLeft => 37u8 as char,
-                        egui::Key::ArrowRight => 39u8 as char,
                         egui::Key::ArrowUp => 38u8 as char,
+                        egui::Key::ArrowRight => 39u8 as char,
+                        egui::Key::ArrowDown => 40u8 as char,
                         egui::Key::Escape => 8u8 as char,
                         egui::Key::Tab => '\t',
                         egui::Key::Backspace => '\x08',
@@ -124,6 +126,19 @@ impl KeyboardMemory{
                     }
                 },
                 _ => {}
+            }
+            self.pressed.retain(|x| {x.key_code != '\x11'}); 
+            
+            if input.raw.modifiers.command{
+                self.pressed.push(Key::new('\x11', &Modifiers::new()));    
+            }
+            self.pressed.retain(|x| {x.key_code != '\x10'});
+            if input.raw.modifiers.shift{
+                self.pressed.push(Key::new('\x10', &Modifiers::new()));
+            }
+            self.pressed.retain(|x| {x.key_code != '\x12'});
+            if input.raw.modifiers.alt{
+                self.pressed.push(Key::new('\x12', &Modifiers::new()));
             }
         }
     }

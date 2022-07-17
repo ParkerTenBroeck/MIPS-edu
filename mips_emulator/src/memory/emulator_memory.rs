@@ -136,6 +136,7 @@ impl Memory{
             }
             Err(_err) => todo!(),
         }
+
     }
 
     pub fn add_thing(&mut self, thing: &'static mut bool){

@@ -48,7 +48,16 @@ pub fn get_last_record(level: log::Level, num: u32) -> LinkedList<Record>{
     list
 }
 
-
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    // Use `js_namespace` here to bind `console.log(..)` instead of just
+    // `log(..)`
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
 struct Logger;
 
 static LOGGER: Logger = Logger;
@@ -59,20 +68,20 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &log::Record<'_>) {
-        if self.enabled(record.metadata()) {
 
-            let start = std::time::SystemTime::now();
-            let since_the_epoch = start
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("Time went backwards");
-            
+
+        if self.enabled(record.metadata()) {
             //logging to console
+            #[cfg(target_arch = "wasm32")]
+            log(format!("{} - {}", record.level(), record.args()).as_str());
+            #[cfg(not(target_arch = "wasm32"))]
             println!("{} - {}", record.level(), record.args());
 
             let mut data = get_logger_data().lock().unwrap();
                 
             //logging to file
             {
+                let time_since_epoch = crate::platform::time::duration_since_epoch();
                 use std::io::*;
                 let mut file = Option::None::<std::fs::File>;
                 std::mem::swap(&mut file, &mut data.log_file);
@@ -89,8 +98,8 @@ impl log::Log for Logger {
     message: {:?},
     target: {},
 ",
-since_the_epoch.as_millis(),
-since_the_epoch.as_micros(),
+time_since_epoch.as_millis(),
+time_since_epoch.as_micros(),
 record.level(),
 data.sequence,
 record.args(),
@@ -167,16 +176,21 @@ pub fn init_logger() -> Result<(), log::SetLoggerError> {
 }
 
 pub fn init() -> bool{
+    #[allow(unused_mut)]
     let mut data = get_logger_data().lock().unwrap();
     
-    let _ = std::fs::create_dir("./log/");
-    data.log_file = match std::fs::File::create("./log/log.txt"){
-        Ok(val) => Option::Some(val),
-        Err(err) => {
-            eprintln!("failed to create log file: {}", err);  
-            return false;
-        },
-    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = std::fs::create_dir("./log/");
+        data.log_file = match std::fs::File::create("./log/log.txt"){
+            Ok(val) => Option::Some(val),
+            Err(err) => {
+                eprintln!("failed to create log file: {}", err);  
+                return false;
+            },
+        };
+    }
+
     match init_logger(){
         Ok(_) => {},
         Err(err) => {

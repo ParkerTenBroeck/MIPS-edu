@@ -1,6 +1,6 @@
 use std::{time::Duration, sync::{Mutex, Arc}};
 
-use eframe::epaint::{TextureHandle, ColorImage, Color32};
+use eframe::epaint::{ColorImage, Color32};
 use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::{MemoryDefaultAccess, MemoryDefault}};
 
 use crate::util::keyboard_util::KeyboardMemory;
@@ -9,8 +9,8 @@ use crate::util::keyboard_util::KeyboardMemory;
 pub struct ExternalHandler{
     last_106: u128,
     rand_seed: u128,
-    screen_texture: TextureHandle,
     keyboard: Arc<Mutex<KeyboardMemory>>,
+    image_sender: Arc<Mutex<Option<ColorImage>>>,
     image: ColorImage,
     screen_x: usize,
     screen_y: usize,
@@ -25,19 +25,18 @@ impl ExternalHandler{
         cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
     }
 
-    pub fn new(screen_texture: TextureHandle, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
-        let time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+    pub fn new(image_sender: Arc<Mutex<Option<ColorImage>>>, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
+
+        let time = crate::platform::time::duration_since_epoch().as_millis();
+
         Self {
-            screen_texture,
             image: ColorImage::new([0,0], Color32::BLACK), 
             keyboard,
             screen_x: 0,
             screen_y: 0, 
             last_106: time,
             rand_seed: time,
+            image_sender
         }
     }
 }
@@ -160,20 +159,12 @@ impl CpuExternalHandler for ExternalHandler {
                 thread::sleep(Duration::from_millis(cpu.reg[4] as u64));
             }
             106 => {
-                let time =
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis();
+                let time = crate::platform::time::duration_since_epoch().as_millis();
                 let dur = time - self.last_106;
                 
                 if (cpu.reg[4]  as u128 ) >= dur{
                     std::thread::sleep(std::time::Duration::from_millis((cpu.reg[4] as u64) - (dur as u64)));
-                    self.last_106 =
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis();
+                    self.last_106 = crate::platform::time::duration_since_epoch().as_millis();
                     
                 }else{
                     self.last_106 = time;
@@ -181,25 +172,15 @@ impl CpuExternalHandler for ExternalHandler {
                 
             }
             107 => {
-                cpu.reg[2] = (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis()
-                    & 0xFFFFFFFFu128) as u32;
+                cpu.reg[2] = (crate::platform::time::duration_since_epoch().as_millis() & 0xFFFFFFFFu128) as u32;
             }
             108 => {
-                let time = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_micros();
+                let time = crate::platform::time::duration_since_epoch().as_micros();
                 cpu.reg[3] = (time >> 32) as u32;
                 cpu.reg[2] = time as u32;
             }
             130 => {
-                cpu.reg[2] = (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_micros()
+                cpu.reg[2] = (crate::platform::time::duration_since_epoch().as_micros()
                     & 0xFFFFFFFFu128) as u32;
             }
             111 => {
@@ -217,20 +198,24 @@ impl CpuExternalHandler for ExternalHandler {
             152 => {
                 self.image.pixels[cpu.reg[4] as usize] = u32_to_color32(cpu.reg[5]);
             }
-            153 => {                
-                self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
+            153 => {       
+                *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());         
+                //self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
             }
             154 => {
-                self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
+                *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());
+                //self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
                 //self.v_sync.wait()    
             }
-            155 => {
-                let (h,s,v) = (cpu.reg[4] as f32, cpu.reg[5] as f32, cpu.reg[6] as f32);
+            155 => {//hsv to rgb
+                let color = u32_to_color32(cpu.reg[4]);
+                let (h,s,v) = (color.r() as f32, color.g() as f32, color.b() as f32);
                 let (h ,s, v) = (h / 255.0, s / 255.0, v / 255.0);
-                let (r,g,b) = eframe::egui::color::hsv_from_rgb([h, s, v]);
+                let arr = eframe::egui::color::rgb_from_hsv((h, s, v));
+                let (r,g,b) = (arr[0], arr[1], arr[2]);
                 let (r,g,b) = (r * 255.0, g * 255.0, b * 255.0);
-                let (r,g,b) = (r as u32, g as u32, b as u32);
-                let color = r | g << 8 | b << 16;
+                let (r,g,b) = (r.round() as u32, g.round() as u32, b.round() as u32);
+                let color = r | (g << 8) | (b << 16);
                 cpu.reg[2] = color;
             }
             156 => {

@@ -220,6 +220,7 @@ impl PagePoolController{
     pub fn add_holder<T: PagePoolHolder + Send + Sync + 'static>(&mut self, holder: T) -> PagePoolRef<T>{
         let mut id: usize = 0;
 
+        
         for holder in & self.holders{
             if holder.0 >= id{
                 id = holder.0 + 1;

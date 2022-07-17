@@ -13,6 +13,7 @@ macro_rules! jump_immediate_address {
     };
 }
 
+#[allow(unused)]
 macro_rules! jump_immediate_offset {
     ($expr:expr) => {
         (($expr as i32) << 6) >> 4
@@ -37,6 +38,7 @@ macro_rules! immediate_immediate_address {
     };
 }
 
+#[allow(unused)]
 macro_rules! immediate_immediate_unsigned_hi {
     ($expr:expr) => {
         (($expr as u32) << 16)
@@ -78,8 +80,38 @@ macro_rules! register_a {
         (($expr as u32) >> 6) & 0b11111
     };
 }
-//Macros
 
+
+//Co processor macros
+macro_rules! cop1_function {
+    ($expr:expr) => {
+        (($expr as u32)) & 0b111111
+    };
+}
+
+macro_rules! cop1_fd {
+    ($expr:expr) => {
+        (($expr as u32) >> 6) & 0b11111
+    };
+}
+macro_rules! cop1_fs {
+    ($expr:expr) => {
+        (($expr as u32) >> 11) & 0b11111
+    };
+}
+macro_rules! cop1_ft {
+    ($expr:expr) => {
+        (($expr as u32) >> 16) & 0b11111
+    };
+}
+macro_rules! cop1_fmt {
+    ($expr:expr) => {
+        (($expr as u32) >> 21) & 0b11111
+    };
+}
+
+
+//Macros
 
 
 //-------------------------------------------------------- co processors
@@ -94,7 +126,7 @@ impl CP0{
         }
     }
 }
-
+#[repr(C)]
 pub union CP1Reg {
     pub single: [f32; 32],
     pub double: [f64; 16]
@@ -115,7 +147,7 @@ impl CP1{
 }
 
 //-------------------------------------------------------- co processors
-
+#[repr(align(4096))]
 pub struct MipsCpu {
     pub pc: u32,
     pub reg: [u32; 32],
@@ -126,9 +158,11 @@ pub struct MipsCpu {
     i_check: bool,
     running: bool,
     finished: bool,
-    paused: AtomicUsize,
     is_paused: bool,
     is_within_memory_event: bool,
+    instructions_ran: u64,
+    paused: AtomicUsize,
+    inturupts: Vec<()>,
     pub mem: PagePoolRef<Memory>,
     external_handler: Box<dyn CpuExternalHandler>,
 }
@@ -305,6 +339,7 @@ impl MipsCpu {
     #[allow(unused)]
     pub fn new() -> Self {
         let mut tmp = MipsCpu {
+            instructions_ran: 0,
             pc: 0,
             reg: [0; 32],
             cp0: CP0::new(),
@@ -319,6 +354,7 @@ impl MipsCpu {
             is_within_memory_event: false,
             mem: Memory::new(),
             external_handler: Box::new(DefaultExternalHandler::default()),
+            inturupts: Vec::new(),
         };
 
         tmp
@@ -348,6 +384,10 @@ impl MipsCpu {
     #[allow(unused)]
     pub fn get_pc(&self) -> u32 {
         self.pc
+    }
+    #[allow(unused)]
+    pub fn get_instructions_ran(&self) -> u64 {
+        self.instructions_ran
     }
     #[allow(unused)]
     pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] {
@@ -413,7 +453,7 @@ impl MipsCpu {
         while {
             self.is_running()
         }{
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            //std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 
@@ -423,6 +463,7 @@ impl MipsCpu {
         self.reg = [0; 32];
         self.lo = 0;
         self.hi = 0;
+        self.instructions_ran = 0;
     }
 
     #[allow(unused)]
@@ -440,7 +481,7 @@ impl MipsCpu {
             self.i_check = !true;
             !self.is_paused()
         }{
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            //std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 
@@ -453,7 +494,7 @@ impl MipsCpu {
             self.i_check = !true;
             !(self.is_paused() || self.is_within_memory_event())
         }{
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            //std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 
@@ -476,7 +517,7 @@ impl MipsCpu {
         self.finished = true;
         self.i_check = !false;
         self.paused.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.is_paused = false;
+        self.is_paused = true;
         self.clear();
     }
 
@@ -524,10 +565,9 @@ impl MipsCpu {
             log::info!("CPU Started");
             let start = std::time::SystemTime::now();
 
-            self.run();
-            // let result = std::panic::catch_unwind(AssertUnwindSafe(||{
-            //     s
-            // }));
+            let result = std::panic::catch_unwind(AssertUnwindSafe(||{
+                self.run();
+            }));
 
             let since_the_epoch = std::time::SystemTime::now()
                 .duration_since(start)
@@ -535,15 +575,15 @@ impl MipsCpu {
             log::info!("{:?}", since_the_epoch);
             log::info!("CPU stopping");
 
-            // match result{
-            //     Ok(_) => {
-            //     },
-            //     Err(err) => {
-            //         self.run_panic();
-            //         log::error!("{:?}", err.type_id());
-            //         std::panic::resume_unwind(err);
-            //     },
-            // }
+            match result{
+                Ok(_) => {
+                },
+                Err(err) => {
+                    self.run_panic();
+                    log::error!("{:?}", err);
+                    //std::panic::resume_unwind(err);
+                },
+            }
         
         });
     }
@@ -576,7 +616,7 @@ impl MipsCpu {
                 Ok(_) => {},
                 Err(err) => {
                     self.run_panic();
-                    std::panic::resume_unwind(err);
+                    //std::panic::resume_unwind(err);
                 },
             }
         });
@@ -592,17 +632,32 @@ impl MipsCpu {
         self.finished = false;
         self.i_check = !true;
 
-        log::info!("CPU Step Started");
-        let start = std::time::SystemTime::now();
+        log::info!("CPU Started");
+        //let start = std::time::SystemTime::now();
         self.run();
-        let since_the_epoch = std::time::SystemTime::now()
-            .duration_since(start)
-            .expect("Time went backwards");
-        log::info!("{:?}", since_the_epoch);
+        //let since_the_epoch = std::time::SystemTime::now()
+        //    .duration_since(start)
+        //    .expect("Time went backwards");
+        //log::info!("{:?}", since_the_epoch);
         log::info!("CPU Step Stopping");
     }
 
-    #[allow(arithmetic_overflow)]
+    #[allow(dead_code)]
+    pub fn step_local(&'static mut self) {
+        if self.running || !self.finished {
+            return;
+        }
+        self.running = false;
+        self.finished = false;
+        self.i_check = !true;
+        
+        log::info!("CPU Step Started");
+        
+        self.run();
+
+        log::info!("CPU Step Stopped");
+    }
+
     #[inline(never)]
     fn run(&mut self) {
 
@@ -630,6 +685,7 @@ impl MipsCpu {
             while {
                 let op =
                 self.mem.get_u32_alligned(self.pc);
+                self.instructions_ran += 1;
                 
                 //prevent overflow
                 self.pc = self.pc.wrapping_add(4);
@@ -759,7 +815,7 @@ impl MipsCpu {
                     0b000011 => {
                         //SRA
                         self.reg[register_d!(op)] =
-                            (self.reg[register_t!(op)] as i32 >> register_a!(op)) as u32;
+                            ((self.reg[register_t!(op)] as i32 >> register_a!(op))) as u32;
                     }
                     0b000111 => {
                         //SRAV
@@ -916,8 +972,8 @@ impl MipsCpu {
             }
             0b001100 => {
                 //ANDI
-                self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                    & immediate_immediate_zero_extended!(op) as u32
+                self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)]
+                    & immediate_immediate_zero_extended!(op)
             }
             0b001101 => {
                 //ORI
@@ -965,8 +1021,8 @@ impl MipsCpu {
             0b001011 => {
                 //SLTIU
                 self.reg[immediate_t!(op)] = {
-                    if (self.reg[immediate_s!(op) as usize] as u32)
-                        < (immediate_immediate_zero_extended!(op) as u32)
+                    if (self.reg[immediate_s!(op)] as u32)
+                        < (immediate_immediate_signed_extended!(op) as u32)
                     {
                         1
                     } else {
@@ -983,9 +1039,22 @@ impl MipsCpu {
                 }
             }
             0b000001 => {
-                //BGEZ
-                if self.reg[immediate_s!(op)] as i32 >= 0 {
-                    self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                match immediate_t!(op){
+                    0b00001 => {
+                        //BGEZ
+                        if (self.reg[immediate_s!(op)] as i32) >= 0 {
+                            self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                        }
+                    }
+                    0b00000 => {
+                        //BLTZ
+                        if (self.reg[immediate_s!(op)] as i32) < 0 {
+                            self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                        }
+                    }
+                    _ => {
+                        self.invalid_op_code();
+                    }
                 }
             }
             0b000111 => {

@@ -42,6 +42,8 @@ pub struct Application {
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
+    cpu_screen_texture: Arc<Mutex<Option<ColorImage>>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_virtual_keyboard: Arc<Mutex<KeyboardMemory>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub tabbed_area: TabbedArea,
@@ -58,9 +60,14 @@ impl Application {
             side_panel: Default::default(),
 
             cpu: Box::pin(MipsCpu::new()),
+
+
+            cpu_screen_texture: Arc::new(Mutex::new(Option::None)),
             cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
+            
             cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())), 
         };
+
 
         ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
 r#"//runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
@@ -82,11 +89,14 @@ trap 0
 "#.into()
      )));
      
-        ret.cpu.set_external_handlers(ExternalHandler::new(ret.cpu_screen.clone(), ret.cpu_virtual_keyboard.clone()));
+        ret.cpu.set_external_handlers(ExternalHandler::new(ret.cpu_screen_texture.clone(), ret.cpu_virtual_keyboard.clone()));
         ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
         let tab = Box::new(crate::tabs::image_tab::ImageTab::new("CPU screen", ret.cpu_screen.clone()));
         ret.tabbed_area.add_tab(tab);
         ret.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(unsafe{std::mem::transmute(ret.cpu.as_mut().get_mut())})));
+        
+
+        #[cfg(not(target_arch = "wasm32"))]
         ret.tabbed_area.add_tab(Box::new(crate::tabs::sound::SoundTab::new()));
         ret
     }
@@ -107,11 +117,13 @@ impl epi::App for Application {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
 
-
         if self.cpu.is_running() && !self.cpu.paused_or_stopped() {
             ctx.request_repaint();
         }
-
+        
+        if let Option::Some(image) = self.cpu_screen_texture.lock().unwrap().to_owned(){
+            self.cpu_screen.set(image, eframe::epaint::textures::TextureFilter::Nearest);
+        }
         self.cpu_virtual_keyboard.lock().unwrap().update(ctx);
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -121,6 +133,7 @@ impl epi::App for Application {
                     if ui.button("Quit").clicked() {
                         frame.quit();
                     }
+                    
                 });
                 
                 ui.with_layout(egui::Layout::right_to_left(), |ui|{
