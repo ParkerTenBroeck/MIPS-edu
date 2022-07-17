@@ -1,10 +1,29 @@
-var cacheName = 'clike_gui';
+var cacheName = 'app';
 var filesToCache = [
   './',
   './index.html',
-  './clike_gui.js',
-  './clike_gui_bg.wasm',
+  './app.js',
+  './app_bg.wasm',
 ];
+
+importScripts('./app.js');
+
+self.onmessage = event => {
+  let initialised = wasm_bindgen(...event.data).catch(err => {
+    // Propagate to main `onerror`:
+    setTimeout(() => {
+      throw err;
+    });
+    // Rethrow to keep promise rejected and prevent execution of further commands:
+    throw err;
+  });
+
+  self.onmessage = async event => {
+    // This will queue further commands up until the module is fully initialised:
+    await initialised;
+    wasm_bindgen.child_entry_point(event.data);
+  };
+};
 
 /* Start the service worker and cache all of the app's content */
 self.addEventListener('install', function (e) {
