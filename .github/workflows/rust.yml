@@ -30,6 +30,7 @@ jobs:
       - name: Build/Test Web
         working-directory: ./app
         run: |
+        rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
          chmod +x build_web.sh
          ./build_web.sh
       
