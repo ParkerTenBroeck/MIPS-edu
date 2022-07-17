@@ -4,8 +4,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "clike_gui",
+    "app",
     "assembler",
     "compiler",
     "mips_emulator",
+    "elf",
 ]
+rust-version = "1.60"

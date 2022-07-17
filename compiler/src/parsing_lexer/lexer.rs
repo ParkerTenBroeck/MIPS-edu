@@ -1,11 +1,10 @@
-use parsing_lexer::tokenizer::{Token, Tokenizer, TokenType};
+use crate::parsing_lexer::tokenizer::{Token, Tokenizer, TokenType};
 
 pub struct Lexer<'input>{
     tokenizer: Tokenizer<'input>,
 }
 
 impl<'input> Lexer<'input>{
-    #[allow(unused)]
     pub fn new(tokenizer: Tokenizer<'input>) -> Self{
         Lexer{
             tokenizer

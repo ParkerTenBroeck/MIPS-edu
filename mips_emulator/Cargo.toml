@@ -2,7 +2,17 @@
 name = "mips_emulator"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.62"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["memory_allignment_check", "big_endian"]
+big_endian = []
+memory_allignment_check = []
+
 [dependencies]
+log = "0.4.16"
+
+[profile.release]
+debug = true

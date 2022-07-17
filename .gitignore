@@ -1,6 +1,7 @@
 *
 
 !.gitignore
+!readme.md
 !Cargo.toml
 !Cargo.lock
 
@@ -12,20 +13,29 @@
 !/compiler/Cargo.lock
 !/compiler/Cargo.toml
 
-!/clike_gui/
-!/clike_gui/Cargo.lock
-!/clike_gui/Cargo.toml
-!/clike_gui/src**
-!/clike_gui/docs**
-!/clike_gui/build_web.bat
-!/clike_gui/build_web.sh
-!/clike_gui/check.sh
-!/clike_gui/setup_web.bat
-!/clike_gui/setup_web.sh
-!/clike_gui/start_server.bat
-!/clike_gui/start_server.sh
-/clike_gui/docs/clike_gui.js
-/clike_gui/docs/clike_gui_bg.wasm
+!/elf/
+!/elf/src**
+!/elf/tests**
+!/elf/build.rs
+!/elf/Cargo.lock
+!/elf/Cargo.toml
+
+!/app/
+!/app/Cargo.lock
+!/app/Cargo.toml
+!/app/build.rs
+!/app/src**
+!/app/res**
+!/app/docs**
+!/app/build_web.bat
+!/app/build_web.sh
+!/app/check.sh
+!/app/setup_web.bat
+!/app/setup_web.sh
+!/app/start_server.bat
+!/app/start_server.sh
+/app/docs/app.js
+/app/docs/app_bg.wasm
 
 !/mips_emulator/
 !/mips_emulator/Cargo.lock
@@ -36,6 +46,7 @@
 !/assembler/Cargo.lock
 !/assembler/Cargo.toml
 !/assembler/src**
+!/assembler/res**
 
 !util/
 !util/Cargo.lock

@@ -7,3 +7,5 @@ authors = ["Parker TenBroeck"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+util = { path = "../util" }
+unicode-xid = "0.2.2"
