@@ -477,7 +477,6 @@ impl MipsCpu {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         while {
-            //println!("CPU {:p}", self);
             self.i_check = !true;
             !self.is_paused()
         }{
@@ -490,7 +489,6 @@ impl MipsCpu {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         while {
-            //println!("CPU {:p}", self);
             self.i_check = !true;
             !(self.is_paused() || self.is_within_memory_event())
         }{
@@ -555,8 +553,6 @@ impl MipsCpu {
 
         self.running = true;
         self.finished = false;
-
-        println!("{:p}", self);
 
 
         //stack overflows occur so we need to make a custom thread with a larger stack to account for that and it fixes the problem

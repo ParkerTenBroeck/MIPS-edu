@@ -281,7 +281,6 @@ impl Tab for HexEditor {
                                             }
         
                                             let response = ui.label(label);
-                                            //println!("{:?}", response);
         
                                             let response = ui.interact(
                                                 response.rect.expand(2.0),
