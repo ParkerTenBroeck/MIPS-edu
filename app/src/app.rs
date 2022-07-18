@@ -1,4 +1,7 @@
-use std::{pin::Pin, sync::{Arc, Mutex}};
+use std::{pin::Pin, sync::{Arc}};
+use std::sync::Mutex;
+use crate::platform::sync::PlatSpecificLocking;
+//use crate::platform::sync::Mutex;
 
 use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
 use mips_emulator::{cpu::MipsCpu};
@@ -121,10 +124,15 @@ impl epi::App for Application {
             ctx.request_repaint();
         }
         
-        if let Option::Some(image) = self.cpu_screen_texture.lock().unwrap().to_owned(){
-            self.cpu_screen.set(image, eframe::epaint::textures::TextureFilter::Nearest);
+        if let Result::Ok(lock) = self.cpu_screen_texture.plat_lock(){
+            if let Option::Some(image) = lock.to_owned(){
+                self.cpu_screen.set(image, eframe::epaint::textures::TextureFilter::Nearest);
+            }
         }
-        self.cpu_virtual_keyboard.lock().unwrap().update(ctx);
+
+        if let Result::Ok(mut lock) = self.cpu_virtual_keyboard.plat_lock(){
+            lock.update(ctx);
+        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             
@@ -161,7 +169,7 @@ impl epi::App for Application {
         };
 
         
-        match self.side_panel.clone().lock(){
+        match self.side_panel.clone().plat_lock(){
             Ok(mut side_panel) => {
                 egui::SidePanel::left("side_panel")
                 .min_width(0.0)

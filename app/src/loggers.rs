@@ -1,5 +1,5 @@
 use std::{collections::LinkedList, sync::Mutex, io::{Write}};
-
+use crate::platform::sync::PlatSpecificLocking;
 
 
 pub type Record = (log::Level, String);
@@ -33,7 +33,7 @@ fn get_logger_data() -> &'static Mutex<LogData> {
 pub fn get_last_record(level: log::Level, num: u32) -> LinkedList<Record>{
     let mut list = LinkedList::new();
     let mut i = 0;
-    let test = get_logger_data().lock().unwrap();
+    let test = get_logger_data().plat_lock().unwrap();
     for record in test.records.iter()
     .filter(|t1| {
         t1.0.lt(&level)
@@ -62,6 +62,103 @@ struct Logger;
 
 static LOGGER: Logger = Logger;
 
+fn full_msg(record: &log::Record<'_>, data: &LogData) -> String{
+    let time_since_epoch = crate::platform::time::duration_since_epoch();
+                
+    //record.file()
+    let mut buf = format!(
+"{{
+millis: {},
+nanos: {},
+level: {},
+sequence: {},
+message: {:?},
+target: {},
+",
+time_since_epoch.as_millis(),
+time_since_epoch.as_micros(),
+record.level(),
+data.sequence,
+record.args(),
+record.target());
+    if let Option::Some(file) = record.file()
+    {
+        buf.push_str("\tfile: ");
+        buf.push_str(file);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(file_static) = record.file_static()
+    {
+        buf.push_str("\tfile_static: ");
+        buf.push_str(file_static);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(module_path) = record.module_path()
+    {
+        buf.push_str("\tmodule_path: ");
+        buf.push_str(module_path);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(module_path_static) = record.module_path_static()
+    {
+        buf.push_str("\tmodule_path_static: ");
+        buf.push_str(module_path_static);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(line) = record.line()
+    {
+        buf.push_str(format!("\tline: {},\n", line).as_str());
+    }
+    buf.push_str("}\n");
+    buf.to_string()
+}
+
+fn full_msg_no_time(record: &log::Record<'_>, data: &LogData) -> String{
+                
+    //record.file()
+    let mut buf = format!(
+"{{
+level: {},
+sequence: {},
+message: {:?},
+target: {},
+",
+record.level(),
+data.sequence,
+record.args(),
+record.target());
+    if let Option::Some(file) = record.file()
+    {
+        buf.push_str("\tfile: ");
+        buf.push_str(file);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(file_static) = record.file_static()
+    {
+        buf.push_str("\tfile_static: ");
+        buf.push_str(file_static);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(module_path) = record.module_path()
+    {
+        buf.push_str("\tmodule_path: ");
+        buf.push_str(module_path);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(module_path_static) = record.module_path_static()
+    {
+        buf.push_str("\tmodule_path_static: ");
+        buf.push_str(module_path_static);
+        buf.push_str(",\n");
+    }
+    if let Option::Some(line) = record.line()
+    {
+        buf.push_str(format!("\tline: {},\n", line).as_str());
+    }
+    buf.push_str("}\n");
+    buf.to_string()
+}
+
 impl log::Log for Logger {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
         metadata.level() <= log::Level::Debug
@@ -71,69 +168,23 @@ impl log::Log for Logger {
 
 
         if self.enabled(record.metadata()) {
+            let mut data = get_logger_data().plat_lock().unwrap();
             //logging to console
             #[cfg(target_arch = "wasm32")]
-            log(format!("{} - {}", record.level(), record.args()).as_str());
+            log(full_msg_no_time(record, &*data).as_str());
             #[cfg(not(target_arch = "wasm32"))]
             println!("{} - {}", record.level(), record.args());
 
-            let mut data = get_logger_data().lock().unwrap();
                 
             //logging to file
             {
-                let time_since_epoch = crate::platform::time::duration_since_epoch();
                 use std::io::*;
                 let mut file = Option::None::<std::fs::File>;
                 std::mem::swap(&mut file, &mut data.log_file);
                 match &mut file{
                     Some(file) => {
 
-                        //record.file()
-                        let mut buf = format!(
-"{{
-    millis: {},
-    nanos: {},
-    level: {},
-    sequence: {},
-    message: {:?},
-    target: {},
-",
-time_since_epoch.as_millis(),
-time_since_epoch.as_micros(),
-record.level(),
-data.sequence,
-record.args(),
-record.target());
-                        if let Option::Some(file) = record.file()
-                        {
-                            buf.push_str("\tfile: ");
-                            buf.push_str(file);
-                            buf.push_str(",\n");
-                        }
-                        if let Option::Some(file_static) = record.file_static()
-                        {
-                            buf.push_str("\tfile_static: ");
-                            buf.push_str(file_static);
-                            buf.push_str(",\n");
-                        }
-                        if let Option::Some(module_path) = record.module_path()
-                        {
-                            buf.push_str("\tmodule_path: ");
-                            buf.push_str(module_path);
-                            buf.push_str(",\n");
-                        }
-                        if let Option::Some(module_path_static) = record.module_path_static()
-                        {
-                            buf.push_str("\tmodule_path_static: ");
-                            buf.push_str(module_path_static);
-                            buf.push_str(",\n");
-                        }
-                        if let Option::Some(line) = record.line()
-                        {
-                            buf.push_str(format!("\tline: {},\n", line).as_str());
-                        }
-                        buf.push_str("}\n");
-                        let res = file.write_all(buf.as_bytes());
+                        let res = file.write_all(full_msg(record, &*data).as_bytes());
                         match res{
                             Ok(_) => {}
                             Err(_err) => {
@@ -159,7 +210,7 @@ record.target());
 
     fn flush(&self) {
 
-        let mut data = get_logger_data().lock().unwrap();
+        let mut data = get_logger_data().plat_lock().unwrap();
         match &mut data.log_file{
             Some(file) => {
                 let _ = file.flush();
@@ -177,7 +228,7 @@ pub fn init_logger() -> Result<(), log::SetLoggerError> {
 
 pub fn init() -> bool{
     #[allow(unused_mut)]
-    let mut data = get_logger_data().lock().unwrap();
+    let mut data = get_logger_data().plat_lock().unwrap();
     
     #[cfg(not(target_arch = "wasm32"))]
     {
