@@ -53,10 +53,15 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {
-    // Use `js_namespace` here to bind `console.log(..)` instead of just
-    // `log(..)`
     #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
+    fn error(s: &str);
+    #[wasm_bindgen(js_namespace = console)]
+    fn warn(s: &str);
+    #[wasm_bindgen(js_namespace = console)]
+    fn info(s: &str);
+    #[wasm_bindgen(js_namespace = console)]
+    fn debug(s: &str);    #[wasm_bindgen(js_namespace = console)]
+    fn trace(s: &str);
 }
 struct Logger;
 
@@ -113,6 +118,7 @@ record.target());
     buf.to_string()
 }
 
+#[cfg(target_arch = "wasm32")]
 fn full_msg_no_time(record: &log::Record<'_>, data: &LogData) -> String{
                 
     //record.file()
@@ -165,15 +171,25 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &log::Record<'_>) {
-
-
         if self.enabled(record.metadata()) {
             let mut data = get_logger_data().plat_lock().unwrap();
             //logging to console
             #[cfg(target_arch = "wasm32")]
-            log(full_msg_no_time(record, &*data).as_str());
-            #[cfg(not(target_arch = "wasm32"))]
-            println!("{} - {}", record.level(), record.args());
+            match record.level(){
+                log::Level::Error => error(full_msg_no_time(record, &*data).as_str()),
+                log::Level::Warn => warn(full_msg_no_time(record, &*data).as_str()),
+                log::Level::Info => info(format!("{} - {}", record.level(), record.args()).as_str()),
+                log::Level::Debug => debug(full_msg_no_time(record, &*data).as_str()),
+                log::Level::Trace => trace(full_msg_no_time(record, &*data).as_str()),
+            }#[cfg(not(target_arch = "wasm32"))]
+            match record.level(){
+                log::Level::Error => {
+                    eprintln!("{} - {}", record.level(), record.args());
+                },
+                _ => {
+                    println!("{} - {}", record.level(), record.args());
+                }
+            }
 
                 
             //logging to file
