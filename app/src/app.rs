@@ -1,6 +1,6 @@
 use std::{pin::Pin, sync::{Arc}};
 use std::sync::Mutex;
-use crate::platform::sync::PlatSpecificLocking;
+use crate::{platform::sync::PlatSpecificLocking, emulator::handlers::CPUAccessInfo};
 //use crate::platform::sync::Mutex;
 
 use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
@@ -52,6 +52,8 @@ pub struct Application {
     pub tabbed_area: TabbedArea,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub side_panel: Arc<Mutex<SideTabbedPanel>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    pub access_info: CPUAccessInfo,
 }
 
 impl Application {
@@ -62,45 +64,45 @@ impl Application {
             tabbed_area: TabbedArea::default(),
             side_panel: Default::default(),
 
+            access_info: Default::default(), 
             cpu: Box::pin(MipsCpu::new()),
-
 
             cpu_screen_texture: Arc::new(Mutex::new(Option::None)),
             cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
             
-            cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())), 
+            cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())),
         };
 
 
-        ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
-r#"//runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
-//0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000
-//to run this you must reset processor then start it or program will not be loaded
-//NOTE this assembly is not actually being compiled it is just to show what is being run in the demo :)
-//also node that the highlighting is FAR from being done(using the highlighting from a clike language for now)
-//this version usally takes around ~16.9 seconds while the java version takes ~228.7 seconds (on my machine)
-//thats a cool 1250% speed increase
 
-lhi $2, 32767
-add $1, $0, $0
-loop:
-addi $1, $1, 1
-beq $2, $1, end
-j loop
-end:
-trap 0
-"#.into()
-     )));
-     
-        ret.cpu.set_external_handlers(ExternalHandler::new(ret.cpu_screen_texture.clone(), ret.cpu_virtual_keyboard.clone()));
-        ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
-        let tab = Box::new(crate::tabs::image_tab::ImageTab::new("CPU screen", ret.cpu_screen.clone()));
-        ret.tabbed_area.add_tab(tab);
-        ret.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(unsafe{std::mem::transmute(ret.cpu.as_mut().get_mut())})));
+    
+        ret.cpu.set_external_handlers(ExternalHandler::new(ret.access_info.clone(), ret.cpu_screen_texture.clone(), ret.cpu_virtual_keyboard.clone()));
+        ret.add_cpu_memory_tab();
+        ret.add_cpu_screen_tab(); 
+        ret.add_cpu_sound_tab();    
         
+        ret.tabbed_area.add_tab(Box::new(CodeEditor::new("Assembly".into(),
+        r#"//runs 2^16 * (2^15-1)*3+2 instructions (6442254338)
+        //0x64027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x0BFFFFFD, 0x68000000
+        //to run this you must reset processor then start it or program will not be loaded
+        //NOTE this assembly is not actually being compiled it is just to show what is being run in the demo :)
+        //also node that the highlighting is FAR from being done(using the highlighting from a clike language for now)
+        //this version usally takes around ~16.9 seconds while the java version takes ~228.7 seconds (on my machine)
+        //thats a cool 1250% speed increase
+        
+        lhi $2, 32767
+        add $1, $0, $0
+        loop:
+        addi $1, $1, 1
+        beq $2, $1, end
+        j loop
+        end:
+        trap 0
+        "#.into()
+             )));
 
-        #[cfg(not(target_arch = "wasm32"))]
-        ret.tabbed_area.add_tab(Box::new(crate::tabs::sound::SoundTab::new()));
+        ret.tabbed_area.add_tab(Box::new(CodeEditor::default()));
+ 
         ret
     }
 }
@@ -111,11 +113,38 @@ impl Application{
     } 
 }
 
+impl Application{
+
+    pub fn add_cpu_terminal_tab(&mut self){
+
+    }
+
+    pub fn add_cpu_memory_tab(&mut self){
+        self.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(unsafe{std::mem::transmute(self.cpu.as_mut().get_mut())})));
+    }
+
+    pub fn add_cpu_screen_tab(&mut self){
+        let tab = Box::new(crate::tabs::image_tab::ImageTab::new("MIPS Display", self.cpu_screen.clone()));
+        self.tabbed_area.add_tab(tab);
+    }
+
+    pub fn add_cpu_sound_tab(&mut self){
+        #[cfg(not(target_arch = "wasm32"))]
+        self.tabbed_area.add_tab(Box::new(crate::tabs::sound::SoundTab::new()));
+    }
+}
+
+
 impl epi::App for Application {
 
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
         epi::set_value(storage, epi::APP_KEY, self);
+    }
+    fn on_exit(&mut self, _gl: &eframe::glow::Context) {
+        if let Result::Ok(mut lock) = self.cpu_screen_texture.plat_lock(){
+            *lock = Option::None;
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
@@ -124,9 +153,10 @@ impl epi::App for Application {
             ctx.request_repaint();
         }
         
-        if let Result::Ok(lock) = self.cpu_screen_texture.plat_lock(){
-            if let Option::Some(image) = lock.to_owned(){
+        if let Result::Ok(mut lock) = self.cpu_screen_texture.plat_lock(){
+            if let Option::Some(image) = (*lock).to_owned(){
                 self.cpu_screen.set(image, eframe::epaint::textures::TextureFilter::Nearest);
+                *lock = Option::None;
             }
         }
 
@@ -181,16 +211,13 @@ impl epi::App for Application {
             },
             Err(_) => panic!(),
         }
-        //let mut asd = self.side_panel.lock();
-        //let mut side_panel = asd.unwrap();
-
 
         egui::TopBottomPanel::bottom("bottom_panel").resizable(true).show(ctx, |ui| {
             
             egui::ScrollArea::both().stick_to_bottom().show(ui, |ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                     for record in crate::loggers::get_last_record(log::Level::Trace, 30).iter().rev(){
-
+                        
                         match record.0{
                             log::Level::Error => {
                                 ui.add(

@@ -163,6 +163,7 @@ pub struct MipsCpu {
     instructions_ran: u64,
     paused: AtomicUsize,
     inturupts: Vec<()>,
+    dropped: bool,
     pub mem: PagePoolRef<Memory>,
     external_handler: Box<dyn CpuExternalHandler>,
 }
@@ -328,10 +329,8 @@ impl PagePoolListener for MipsCpu{
 
 impl Drop for MipsCpu{
     fn drop(&mut self) {
-        self.stop();
-        while self.is_running(){
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        self.dropped = true;
+        self.stop_and_wait();
     }
 }
 
@@ -355,6 +354,7 @@ impl MipsCpu {
             mem: Memory::new(),
             external_handler: Box::new(DefaultExternalHandler::default()),
             inturupts: Vec::new(),
+            dropped: false,
         };
 
         tmp
@@ -438,6 +438,11 @@ impl MipsCpu {
         *crate::black_box(&self.is_paused)
     }
 
+    pub fn is_being_dropped(&self) -> bool {
+        //this is a hack(dont come for me :))
+        *crate::black_box(&self.dropped)
+    }
+
     fn is_within_memory_event(&self) -> bool {
         *crate::black_box(&self.is_within_memory_event)
     }
@@ -510,7 +515,7 @@ impl MipsCpu {
         unsafe{std::mem::transmute(thing)}
     }
 
-    fn run_panic(&mut self){
+    pub fn run_panic(&mut self){
         self.running = false;
         self.finished = true;
         self.i_check = !false;
@@ -574,10 +579,8 @@ impl MipsCpu {
             match result{
                 Ok(_) => {
                 },
-                Err(err) => {
+                Err(_) => {
                     self.run_panic();
-                    log::error!("{:?}", err);
-                    //std::panic::resume_unwind(err);
                 },
             }
         
@@ -610,7 +613,7 @@ impl MipsCpu {
             
             match result{
                 Ok(_) => {},
-                Err(err) => {
+                Err(_err) => {
                     self.run_panic();
                     //std::panic::resume_unwind(err);
                 },
@@ -664,8 +667,6 @@ impl MipsCpu {
         self.mem.add_listener(listener);
         self.mem.add_thing(unsafe{std::mem::transmute(&mut self.is_within_memory_event)});
 
-
-
         self.is_paused = false;
         'main_loop: while {
             while *self.paused.get_mut() > 0 {
@@ -703,13 +704,7 @@ impl MipsCpu {
     #[inline(always)]
     fn run_opcode(&mut self, op: u32){
         
-        macro_rules! set_reg {
-            ($reg:expr, $val:expr) => {
-                unsafe {
-                    *self.reg.get_unchecked_mut($reg) = $val;
-                }
-            };
-        }
+
         macro_rules! get_reg {
             ($reg:expr) => {
                 unsafe { *self.reg.get_unchecked($reg) }

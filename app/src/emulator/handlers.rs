@@ -6,11 +6,29 @@ use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::{Memo
 use crate::util::keyboard_util::KeyboardMemory;
 
 
+#[derive(Default, Clone, Copy, Debug)]
+pub enum AccessKind{
+    SinglFrame,
+    MultiFrame,
+    #[default]
+    Nothing,
+}
+
+#[derive(Default, Clone, Copy, Debug)]
+pub struct AccessInfo{
+    pub terminal: AccessKind,
+    pub display: AccessKind,
+    pub sound: AccessKind,
+}
+
+pub type CPUAccessInfo = Arc<Mutex<AccessInfo>>;
+
 pub struct ExternalHandler{
     last_106: u128,
     rand_seed: u128,
     keyboard: Arc<Mutex<KeyboardMemory>>,
     image_sender: Arc<Mutex<Option<ColorImage>>>,
+    access_info: CPUAccessInfo,
     image: ColorImage,
     screen_x: usize,
     screen_y: usize,
@@ -25,7 +43,7 @@ impl ExternalHandler{
         cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
     }
 
-    pub fn new(image_sender: Arc<Mutex<Option<ColorImage>>>, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
+    pub fn new(access_info: CPUAccessInfo, image_sender: Arc<Mutex<Option<ColorImage>>>, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
 
         let time = crate::platform::time::duration_since_epoch().as_millis();
 
@@ -36,7 +54,8 @@ impl ExternalHandler{
             screen_y: 0, 
             last_106: time,
             rand_seed: time,
-            image_sender
+            image_sender,
+            access_info: access_info,
         }
     }
 }
@@ -199,13 +218,24 @@ impl CpuExternalHandler for ExternalHandler {
                 self.image.pixels[cpu.reg[4] as usize] = u32_to_color32(cpu.reg[5]);
             }
             153 => {       
-                *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());         
-                //self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
+                *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());    
+                self.access_info.lock().unwrap().display = AccessKind::SinglFrame;     
             }
             154 => {
                 *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());
-                //self.screen_texture.set(self.image.clone(), eframe::epaint::textures::TextureFilter::Nearest);
-                //self.v_sync.wait()    
+                self.access_info.lock().unwrap().display = AccessKind::SinglFrame;
+                //cpu.pause_exclude_memory_event()
+                while !cpu.is_being_dropped(){
+                    if let Ok(val) = self.image_sender.lock(){
+                        if let Option::Some(_) = *val{
+                        }else{
+                            break;
+                        }
+                    }else{
+                        break;
+                    }
+                    //std::thread::sleep(std::time::Duration::from_millis(1));
+                }      
             }
             155 => {//hsv to rgb
                 let color = u32_to_color32(cpu.reg[4]);

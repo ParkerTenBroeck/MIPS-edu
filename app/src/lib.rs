@@ -1,4 +1,4 @@
-//#![forbid(unsafe_code)]
+#![feature(backtrace)]
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
@@ -30,7 +30,7 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     // Make sure panics are logged using `console.error`.
     console_error_panic_hook::set_once();
 
-    if !crate::loggers::init(){
+    if !app_init(){
         panic!("Failed to init logging");
     }
 
@@ -38,11 +38,20 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     tracing_wasm::set_as_global_default();
     let canvas_id = canvas_id.to_string();
 
-    //let _ = crate::platform::thread::start_thread(move ||{
+    eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
+        Box::new(Application::new(&cc.egui_ctx))
+    }))
+}
 
-        eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
-            Box::new(Application::new(&cc.egui_ctx))
-        }))
-    //});
-    //Ok(())
+fn panic_hook(info: &std::panic::PanicInfo<'_>) {
+    log::error!("{}\n{}", info, std::backtrace::Backtrace::force_capture().to_string());
+}
+
+pub fn app_init() -> bool{
+    if !crate::loggers::init(){
+        return false;
+    }
+    std::panic::set_hook(Box::new(panic_hook));
+    log::debug!("panic_hook set");
+    true
 }

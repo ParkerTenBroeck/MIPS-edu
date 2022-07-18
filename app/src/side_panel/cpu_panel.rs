@@ -1,5 +1,8 @@
+use eframe::{egui::{WidgetText}};
 use mips_emulator::{memory::page_pool::MemoryDefault, cpu::MipsCpu};
 
+
+use crate::platform::sync::PlatSpecificLocking;
 
 use super::side_tabbed_panel::SideTab;
 
@@ -340,6 +343,41 @@ impl SideTab for CPUSidePanel {
                 log::warn!("Cannot reset CPU while running");
             }
         }
+
+        fn create_text(access_kind: &mut crate::emulator::handlers::AccessKind, text: &str) -> WidgetText{
+            let mut text = eframe::egui::WidgetText::RichText(text.into());
+            match access_kind{
+                crate::emulator::handlers::AccessKind::SinglFrame => {
+                    text = text.underline();
+                    text = text.strong();
+                    *access_kind = crate::emulator::handlers::AccessKind::Nothing;
+                },
+                crate::emulator::handlers::AccessKind::MultiFrame => {
+                    text = text.underline();
+                    text = text.strong();
+                },
+                crate::emulator::handlers::AccessKind::Nothing => {},
+            }
+            text
+        }
+        ui.horizontal(|ui|{
+            ui.add_space(10.0);
+            ui.vertical(|ui|{
+                let clone = app.access_info.clone();
+                let mut access =  clone.plat_lock().unwrap();
+                if ui.button(create_text(&mut access.terminal, "Terminal")).clicked(){
+                    app.add_cpu_terminal_tab();
+                }
+                if ui.button(create_text(&mut access.display, "Display")).clicked(){
+                    app.add_cpu_screen_tab();
+                }
+                if ui.button(create_text(&mut access.sound, "Sound")).clicked(){
+                    app.add_cpu_sound_tab();
+                }
+            });
+        });
+
+
     }
 
     fn get_icon(&mut self) {

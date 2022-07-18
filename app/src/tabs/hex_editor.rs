@@ -383,6 +383,6 @@ impl Tab for HexEditor {
     }
 
     fn get_name(&self) -> egui::WidgetText {
-        "CPU memory".into()
+        "MIPS memory".into()
     }
 }

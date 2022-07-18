@@ -1,7 +1,3 @@
-//#![forbid(unsafe_code)]
-
-
-
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
@@ -10,7 +6,7 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    if !app::loggers::init(){
+    if !app::app_init(){
         std::process::exit(0);
     }
 

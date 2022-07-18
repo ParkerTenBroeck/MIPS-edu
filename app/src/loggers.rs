@@ -60,7 +60,8 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn info(s: &str);
     #[wasm_bindgen(js_namespace = console)]
-    fn debug(s: &str);    #[wasm_bindgen(js_namespace = console)]
+    fn debug(s: &str);    
+    #[wasm_bindgen(js_namespace = console)]
     fn trace(s: &str);
 }
 struct Logger;
@@ -70,7 +71,6 @@ static LOGGER: Logger = Logger;
 fn full_msg(record: &log::Record<'_>, data: &LogData) -> String{
     let time_since_epoch = crate::platform::time::duration_since_epoch();
                 
-    //record.file()
     let mut buf = format!(
 "{{
 millis: {},
@@ -86,6 +86,7 @@ record.level(),
 data.sequence,
 record.args(),
 record.target());
+
     if let Option::Some(file) = record.file()
     {
         buf.push_str("\tfile: ");
@@ -266,6 +267,6 @@ pub fn init() -> bool{
         },
     }
     drop(data);
-    log::info!("Initialized log");
+    log::debug!("Initialized log");
     true
 }
