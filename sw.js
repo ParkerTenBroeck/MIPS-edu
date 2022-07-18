@@ -2,11 +2,14 @@ var cacheName = 'app';
 var filesToCache = [
   './',
   './index.html',
+  './index.js',
   './app.js',
   './app_bg.wasm',
 ];
 
 importScripts('./app.js');
+importScripts('./index.js');
+
 
 self.onmessage = event => {
   let initialised = wasm_bindgen(...event.data).catch(err => {
