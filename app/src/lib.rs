@@ -38,7 +38,11 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     tracing_wasm::set_as_global_default();
     let canvas_id = canvas_id.to_string();
 
-    eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
+    //let _ = crate::platform::thread::start_thread(move ||{
+
+        eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
             Box::new(Application::new(&cc.egui_ctx))
-    }))
+        }))
+    //});
+    //Ok(())
 }

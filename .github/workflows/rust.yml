@@ -21,6 +21,11 @@ jobs:
           toolchain: nightly
           override: true
           target: wasm32-unknown-unknown
+      # - uses: actions-rs/toolchain@v1
+      #   with:
+      #     toolchain: nightly
+      #     override: true
+      #     target: x86_64-unknown-linux-gnu
       - uses: jetli/wasm-pack-action@v0.3.0
       - uses: jetli/wasm-bindgen-action@v0.1.0
       
