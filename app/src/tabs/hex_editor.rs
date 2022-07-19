@@ -1,9 +1,9 @@
 use eframe::{epaint::{Color32}, egui::{self}};
-use mips_emulator::memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess}};
+use mips_emulator::memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess, PagePoolRef}};
 use super::tabbed_area::Tab;
 
 pub struct HexEditor {
-    mem: mips_emulator::memory::page_pool::PagePoolRef<SingleCachedMemory>,
+    mem: PagePoolRef<SingleCachedMemory>,
     cpu: &'static mut mips_emulator::cpu::MipsCpu,
     starting_offset: u32,
     cursor_offset: Option<(u32, bool)>,
@@ -16,6 +16,7 @@ pub struct HexEditor {
     highlight_frame: bool,
     highlight_stack: bool,
     highlight_global: bool,
+    last_height: u32,
 }
 
 impl HexEditor {
@@ -35,6 +36,7 @@ impl HexEditor {
             highlight_stack: false,
             highlight_global: false,
             starting_offset: 0,
+            last_height: 0,
         }
     }
 
@@ -46,6 +48,10 @@ impl HexEditor {
         match input{
             _ => '.'
         }
+    }
+
+    fn align_address_to_row(&self, val: u32) -> u32{
+        val / self.bytes_per_line as u32 * self.bytes_per_line as u32
     }
 
     fn calculate_highlight(&self, address: u32) -> Option<Color32>{
@@ -157,6 +163,8 @@ impl Tab for HexEditor {
                 ui.separator();
 
                 // -------------------------------------------------------------------------------------------------
+                
+                let mut moved = false;
                 if let Option::Some((offset, middle)) = &mut self.cursor_offset {
                     if ui.ctx().input().key_pressed(egui::Key::ArrowDown) {
                         if let Option::Some(new) =
@@ -164,18 +172,22 @@ impl Tab for HexEditor {
                         {
                             *offset = new;
                             *middle = false;
+                            moved = true;
                         }
+                        
                     }
                     if ui.ctx().input().key_pressed(egui::Key::ArrowLeft) {
                         if let Option::Some(new) = offset.checked_sub(1) {
                             *offset = new;
                             *middle = false;
+                            moved = true;
                         }
                     }
                     if ui.ctx().input().key_pressed(egui::Key::ArrowRight) {
                         if let Option::Some(new) = offset.checked_add(1) {
                             *offset = new;
                             *middle = false;
+                            moved = true;
                         }
                     }
                     if ui.ctx().input().key_pressed(egui::Key::ArrowUp) {
@@ -184,6 +196,7 @@ impl Tab for HexEditor {
                         {
                             *offset = new;
                             *middle = false;
+                            moved = true;
                         }
                     }
                     if ui.ctx().input().key_pressed(egui::Key::Backspace) {
@@ -199,9 +212,12 @@ impl Tab for HexEditor {
                                 let val = self.mem.get_u8(*offset);
                                 let val = val & 0b11110000u8;
                                 self.mem.set_u8(*offset, val);
+                                moved = true;
                             }
                         }
                     }
+
+                    
                     use egui::Key::*;
                     let keys = [Num0,Num1,Num2,Num3,Num4,Num5,Num6,Num7,Num8,Num9,A,B,C,D,E,F];
                     for i in 0u8..16{
@@ -213,12 +229,27 @@ impl Tab for HexEditor {
                                     self.mem.set_u8(*pos, val);
                                     *pos = pos.wrapping_add(1);
                                     *middle = false;
+                                    moved = true;
                                 }else{
                                     let val = self.mem.get_u8(*pos);
                                     let val = (val & 0b1111u8) + (i << 4);
                                     self.mem.set_u8(*pos, val);
                                     *middle = true;
                                 }
+                            }
+                        }
+                    }
+                }
+                if moved{
+                    if let Option::Some((offset, _)) = self.cursor_offset{
+                        if offset < self.starting_offset{
+                            self.starting_offset = self.align_address_to_row(offset);
+                        }
+                        let tmp = self.bytes_per_line as u32 * self.last_height;
+                        if let Option::Some(val) = self.starting_offset.checked_add(tmp){
+                            if offset > val{
+                                self.starting_offset = self.align_address_to_row(offset - tmp);
+                            
                             }
                         }
                     }
@@ -233,22 +264,45 @@ impl Tab for HexEditor {
     
                     //let response = ui.allocate_exact_size(ui.max_rect().size(), egui::Sense{click: true, drag: false, focusable: true});
                     
-                    //ui.painter().rect_stroke(response.0, 0.0, Stroke{
+                    // ui.painter().rect_stroke(ui.max_rect(), 0.0, eframe::epaint::Stroke{
                     //    width: 2.0,
                     //    color: Color32::GREEN,
-                    //});
+                    // });
                     //ui.label(label);
                     //-------------------------------------------------------
-                    //#[cfg(asd)]
-                    ui.set_clip_rect(ui.available_rect_before_wrap());
+                    
+                    if self.scroll_to_pc{
+                        let tmp = self.align_address_to_row((self.last_height * self.bytes_per_line as u32) / 2);
+                        let tmp2 = self.align_address_to_row(self.cpu.get_pc());
+                        self.starting_offset = match tmp2.checked_sub(tmp){
+                            Some(val) => val,
+                            None => {
+                                if tmp2 > u32::MAX / 2{
+                                    u32::MAX - tmp
+                                }else{
+                                    0
+                                }
+                            },
+                        };
+                    }
+                    let clip = ui.max_rect();
+                    ui.set_clip_rect(clip);
                     ui.vertical(|ui|{
+                        
                         ui.horizontal(|ui| {
                             let response =  ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = 0.0;
+                                let mut partial = false;
                                 for h in 0..=128 {
                                     let mut exit = false;
                                     ui.horizontal(|ui| {
-                                        let address = h * self.bytes_per_line as u32 + self.starting_offset;
+                                        let address = match (h * self.bytes_per_line as u32).checked_add(self.starting_offset){
+                                            Some(val) => val,
+                                            None => {
+                                                exit = true;
+                                                return;
+                                            },
+                                        };
                                         let mut string = format!("{:08X}", address);
                                         string.insert(4, ':');
         
@@ -259,15 +313,20 @@ impl Tab for HexEditor {
                                         );
                                         if !ui.is_rect_visible(res.rect) {
                                             exit = true;
+                                        }else{
+                                            partial = !clip.contains_rect(res.rect);
                                         }
-        
                                         for i in 0u32..self.bytes_per_line as u32 {
                                             ui.spacing_mut().item_spacing.x = 3.0;
         
                                             if i % 4 == 0 && i > 0 {
                                                 ui.allocate_space(egui::vec2(3.0, 0.0));
                                             }
-                                            let mut label = match self.mem.get_u8_o(address + i){
+                                            let add = match address.checked_add(i){
+                                                Some(val) => val,
+                                                None => return,
+                                            };
+                                            let mut label = match self.mem.get_u8_o(add){
                                                 Some(val) => {
                                                     egui::RichText::new(format!("{:02X}", val))
                                                 },
@@ -276,7 +335,7 @@ impl Tab for HexEditor {
                                                 },
                                             }.monospace();
 
-                                            if let Option::Some(color) = self.calculate_highlight(address + i){
+                                            if let Option::Some(color) = self.calculate_highlight(add){
                                                 label = label.background_color(color);
                                             }
         
@@ -290,11 +349,11 @@ impl Tab for HexEditor {
         
                                             if response.clicked() {
                                                 self.cursor_offset =
-                                                    Option::Some((h * self.bytes_per_line as u32 + i, false));
+                                                    Option::Some((self.starting_offset + h * self.bytes_per_line as u32 + i, false));
                                             }
         
                                             if let Option::Some((offset, typing)) = self.cursor_offset {
-                                                if offset == self.bytes_per_line as u32 * h + i {
+                                                if offset == self.bytes_per_line as u32 * h + i + self.starting_offset{
                                                     let mut rect = response.rect;
                                                     if typing{
                                                         let test = (rect.left() + rect.right()) / 2.0;
@@ -351,6 +410,11 @@ impl Tab for HexEditor {
                                     });
                                     //ui.horizontal(add_contents)
                                     if exit {
+                                        if partial{
+                                            self.last_height = h.checked_sub(2).unwrap_or(0);
+                                        }else{
+                                            self.last_height = h.checked_sub(1).unwrap_or(0);
+                                        }
                                         break;
                                     }
                                 }
@@ -375,9 +439,6 @@ impl Tab for HexEditor {
                         });
                     });
                 });
-                    //});
-                //});
-
             });
         });
     }
