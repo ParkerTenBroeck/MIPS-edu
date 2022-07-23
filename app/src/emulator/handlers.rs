@@ -27,7 +27,7 @@ pub struct ExternalHandler{
     last_106: u128,
     rand_seed: u128,
     keyboard: Arc<Mutex<KeyboardMemory>>,
-    image_sender: Arc<Mutex<Option<ColorImage>>>,
+    image_sender: Arc<Mutex<(u32 ,Option<ColorImage>)>>,
     access_info: CPUAccessInfo,
     image: ColorImage,
     screen_x: usize,
@@ -43,7 +43,7 @@ impl ExternalHandler{
         cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
     }
 
-    pub fn new(access_info: CPUAccessInfo, image_sender: Arc<Mutex<Option<ColorImage>>>, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
+    pub fn new(access_info: CPUAccessInfo, image_sender: Arc<Mutex<(u32, Option<ColorImage>)>>, keyboard: Arc<Mutex<KeyboardMemory>>) -> Self {
 
         let time = crate::platform::time::duration_since_epoch().as_millis();
 
@@ -218,24 +218,25 @@ impl CpuExternalHandler for ExternalHandler {
                 self.image.pixels[cpu.reg[4] as usize] = u32_to_color32(cpu.reg[5]);
             }
             153 => {       
-                *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());    
+                (*self.image_sender.lock().unwrap()).1 = Option::Some(self.image.clone());    
                 self.access_info.lock().unwrap().display = AccessKind::SinglFrame;     
             }
             154 => {
-                *self.image_sender.lock().unwrap() = Option::Some(self.image.clone());
-                self.access_info.lock().unwrap().display = AccessKind::SinglFrame;
+                let mut lock = self.image_sender.lock().unwrap();
+                lock.1 = Option::Some(self.image.clone());
+                let frame = lock.0;
+                drop(lock);
+                self.access_info.lock().unwrap().display = AccessKind::MultiFrame;
                 //cpu.pause_exclude_memory_event()
                 while !cpu.is_being_dropped(){
                     if let Ok(val) = self.image_sender.lock(){
-                        if let Option::Some(_) = *val{
-                        }else{
+                        if val.0 > frame{
                             break;
                         }
                     }else{
                         break;
                     }
-                    //std::thread::sleep(std::time::Duration::from_millis(1));
-                }      
+                }   
             }
             155 => {//hsv to rgb
                 let color = u32_to_color32(cpu.reg[4]);

@@ -41,11 +41,13 @@ pub struct Application {
 
 
     #[cfg_attr(feature = "persistence", serde(skip))]
+    frame: u32,
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu: Pin<Box<MipsCpu>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    cpu_screen_texture: Arc<Mutex<Option<ColorImage>>>,
+    cpu_screen_texture: Arc<Mutex<(u32, Option<ColorImage>)>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_virtual_keyboard: Arc<Mutex<KeyboardMemory>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -67,10 +69,11 @@ impl Application {
             access_info: Default::default(), 
             cpu: Box::pin(MipsCpu::new()),
 
-            cpu_screen_texture: Arc::new(Mutex::new(Option::None)),
+            cpu_screen_texture: Arc::new(Mutex::new((0, Option::None))),
             cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
             
             cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())),
+            frame: 0,
         };
 
 
@@ -142,10 +145,9 @@ impl epi::App for Application {
         epi::set_value(storage, epi::APP_KEY, self);
     }
     fn on_exit(&mut self, _gl: &eframe::glow::Context) {
-        if let Result::Ok(mut lock) = self.cpu_screen_texture.plat_lock(){
-            *lock = Option::None;
-        }
+        
     }
+    
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
 
@@ -154,9 +156,10 @@ impl epi::App for Application {
         }
         
         if let Result::Ok(mut lock) = self.cpu_screen_texture.plat_lock(){
-            if let Option::Some(image) = (*lock).to_owned(){
+            let (frame, texture) = &mut *lock;
+            *frame = self.frame;
+            if let Option::Some(image) = texture.take(){
                 self.cpu_screen.set(image, eframe::epaint::textures::TextureFilter::Nearest);
-                *lock = Option::None;
             }
         }
 
@@ -271,5 +274,7 @@ impl epi::App for Application {
         //         ui.label("You would normally chose either panels OR windows.");
         //     });
         // }
+
+        self.frame += 1;
     }
 }

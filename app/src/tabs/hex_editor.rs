@@ -285,6 +285,16 @@ impl Tab for HexEditor {
                             },
                         };
                     }
+                    //let layout = LayoutJob::default();
+                    // layout.append(text, leading_space, TextFormat{ 
+                    //     font_id: todo!(), 
+                    //     color: todo!(), 
+                    //     background: todo!(), 
+                    //     italics: todo!(), 
+                    //     underline: todo!(), 
+                    //     strikethrough: todo!(), 
+                    //     valign: todo!() 
+                    // });
                     let clip = ui.max_rect();
                     ui.set_clip_rect(clip);
                     ui.vertical(|ui|{
