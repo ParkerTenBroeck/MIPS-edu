@@ -1,14 +1,14 @@
 use std::{io::Read};
 
-use mips_emulator::{cpu::MipsCpu, memory::page_pool::MemoryDefault};
+use mips_emulator::{cpu::{MipsCpu, DefaultExternalHandler}, memory::page_pool::MemoryDefault};
 
 
-static mut CPU_TEST: Option<MipsCpu> = Option::None;
+static mut CPU_TEST: Option<MipsCpu<DefaultExternalHandler>> = Option::None;
 
 fn main(){
 
     unsafe{
-        CPU_TEST = Option::Some(MipsCpu::new());
+        CPU_TEST = Option::Some(MipsCpu::new(DefaultExternalHandler {  }));
     }
 
     println!("s to start CPU, r to reset CPU, h to halt CPU and e to exit");

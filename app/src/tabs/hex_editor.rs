@@ -1,10 +1,12 @@
 use eframe::{epaint::{Color32}, egui::{self}};
 use mips_emulator::memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess, PagePoolRef}};
+use crate::emulator::handlers::ExternalHandler;
+
 use super::tabbed_area::Tab;
 
 pub struct HexEditor {
     mem: PagePoolRef<SingleCachedMemory>,
-    cpu: &'static mut mips_emulator::cpu::MipsCpu,
+    cpu: &'static mut mips_emulator::cpu::MipsCpu<ExternalHandler>,
     starting_offset: u32,
     cursor_offset: Option<(u32, bool)>,
     selection_offset: Option<u32>,
@@ -20,7 +22,7 @@ pub struct HexEditor {
 }
 
 impl HexEditor {
-    pub fn new(cpu: &'static mut mips_emulator::cpu::MipsCpu) -> Self {
+    pub fn new(cpu: &'static mut mips_emulator::cpu::MipsCpu<ExternalHandler>) -> Self {
 
         HexEditor {
             mem: cpu.get_mem_controller().lock().unwrap().add_holder(SingleCachedMemory::new()),

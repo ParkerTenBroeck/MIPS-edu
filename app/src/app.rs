@@ -43,7 +43,7 @@ pub struct Application {
     #[cfg_attr(feature = "persistence", serde(skip))]
     frame: u32,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    pub cpu: Pin<Box<MipsCpu>>,
+    pub cpu: Pin<Box<MipsCpu<ExternalHandler>>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -61,25 +61,26 @@ pub struct Application {
 impl Application {
     pub fn new(ctx: &egui::Context) -> Self {
 
+
+        let access_info: Arc<Mutex<crate::emulator::handlers::AccessInfo>> = Default::default();
+        let cpu_screen_texture = Arc::new(Mutex::new((0, Option::None)));
+        let cpu_screen = ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest);        
+        let cpu_virtual_keyboard = Arc::new(Mutex::new(KeyboardMemory::new()));
+        let cpu = Box::pin(MipsCpu::new(ExternalHandler::new(access_info.clone(), cpu_screen_texture.clone(), cpu_virtual_keyboard.clone())));
+
         let mut ret = Self {
             settings: ApplicationSettings::default(),
             tabbed_area: TabbedArea::default(),
             side_panel: Default::default(),
 
-            access_info: Default::default(), 
-            cpu: Box::pin(MipsCpu::new()),
-
-            cpu_screen_texture: Arc::new(Mutex::new((0, Option::None))),
-            cpu_screen:  ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest),
-            
-            cpu_virtual_keyboard: Arc::new(Mutex::new(KeyboardMemory::new())),
+            access_info, 
+            cpu,
             frame: 0,
+            cpu_screen,
+            cpu_screen_texture,
+            cpu_virtual_keyboard,
         };
 
-
-
-    
-        ret.cpu.set_external_handlers(ExternalHandler::new(ret.access_info.clone(), ret.cpu_screen_texture.clone(), ret.cpu_virtual_keyboard.clone()));
         ret.add_cpu_memory_tab();
         ret.add_cpu_screen_tab(); 
         ret.add_cpu_sound_tab();    

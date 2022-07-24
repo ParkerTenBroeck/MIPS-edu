@@ -148,7 +148,7 @@ impl CP1{
 
 //-------------------------------------------------------- co processors
 #[repr(align(4096))]
-pub struct MipsCpu {
+pub struct MipsCpu<T: CpuExternalHandler> {
     pub pc: u32,
     pub reg: [u32; 32],
     pub cp0: CP0,
@@ -165,28 +165,28 @@ pub struct MipsCpu {
     inturupts: Vec<()>,
     dropped: bool,
     pub mem: PagePoolRef<Memory>,
-    external_handler: Box<dyn CpuExternalHandler>,
+    external_handler: T,
 }
 
-pub trait CpuExternalHandler: Sync + Send {
-    fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32);
-    fn memory_error(&mut self, cpu: &mut MipsCpu, error_id: u32);
-    fn invalid_opcode(&mut self, cpu: &mut MipsCpu);
-    fn system_call(&mut self, cpu: &mut MipsCpu, call_id: u32);
-    fn system_call_error(&mut self, cpu: &mut MipsCpu, call_id: u32, error_id: u32, message:  &str);
+pub trait CpuExternalHandler: Sync + Send + Sized {
+    fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32);
+    fn memory_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32);
+    fn invalid_opcode(&mut self, cpu: &mut MipsCpu<Self>);
+    fn system_call(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32);
+    fn system_call_error(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32, error_id: u32, message:  &str);
 }
 
 
-struct DefaultExternalHandler{
+pub struct DefaultExternalHandler{
 
 }
 
 impl DefaultExternalHandler{
-    fn opcode_address(cpu: &mut MipsCpu) -> u32{
+    fn opcode_address(cpu: &mut MipsCpu<Self>) -> u32{
         cpu.pc.wrapping_sub(4)
     }
 
-    fn opcode(cpu: &mut MipsCpu) -> u32{
+    fn opcode(cpu: &mut MipsCpu<Self>) -> u32{
         cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
     }
 }
@@ -198,22 +198,23 @@ impl Default for DefaultExternalHandler{
 }
 
 impl CpuExternalHandler for DefaultExternalHandler {
-    fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32) {
+
+    fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32) {
         log::warn!("arithmetic error {}", error_id);
         cpu.stop();
     }
 
-    fn memory_error(&mut self, cpu: &mut MipsCpu, error_id: u32) {
+    fn memory_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32) {
         log::warn!("Memory Error: {}", error_id);
         cpu.stop();
     }
 
-    fn invalid_opcode(&mut self, cpu: &mut MipsCpu) {            
+    fn invalid_opcode(&mut self, cpu: &mut MipsCpu<Self>) {            
         log::warn!("invalid opcode {:#08X} at {:#08X}", Self::opcode(cpu), Self::opcode_address(cpu));
         cpu.stop();
     }
 
-    fn system_call(&mut self, cpu: &mut MipsCpu, call_id: u32) {
+    fn system_call(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32) {
         match call_id {
             0 => cpu.stop(),
             1 => log::info!("{}", cpu.reg[4] as i32),
@@ -305,7 +306,7 @@ impl CpuExternalHandler for DefaultExternalHandler {
         }
     }
 
-    fn system_call_error(&mut self, _cpu: &mut MipsCpu, call_id: u32, error_id: u32, message:  &str) {
+    fn system_call_error(&mut self, _cpu: &mut MipsCpu<Self>, call_id: u32, error_id: u32, message:  &str) {
         log::warn!(
             "System Call: {} Error: {} Message: {}",
             call_id,
@@ -315,7 +316,7 @@ impl CpuExternalHandler for DefaultExternalHandler {
     }
 }
 
-impl PagePoolListener for MipsCpu{
+impl<T: CpuExternalHandler> PagePoolListener for MipsCpu<T>{
     fn lock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
         self.pause_exclude_memory_event();
         Result::Ok(())
@@ -327,16 +328,16 @@ impl PagePoolListener for MipsCpu{
     }
 }
 
-impl Drop for MipsCpu{
+impl<T: CpuExternalHandler> Drop for MipsCpu<T>{
     fn drop(&mut self) {
         self.dropped = true;
         self.stop_and_wait();
     }
 }
 
-impl MipsCpu {
+impl<T: CpuExternalHandler> MipsCpu<T> {
     #[allow(unused)]
-    pub fn new() -> Self {
+    pub fn new(handler: T) -> Self {
         let mut tmp = MipsCpu {
             instructions_ran: 0,
             pc: 0,
@@ -352,7 +353,7 @@ impl MipsCpu {
             is_paused: true,
             is_within_memory_event: false,
             mem: Memory::new(),
-            external_handler: Box::new(DefaultExternalHandler::default()),
+            external_handler: handler,
             inturupts: Vec::new(),
             dropped: false,
         };
@@ -418,9 +419,6 @@ impl MipsCpu {
             },
             None => panic!(),
         }
-    }
-    pub fn set_external_handlers(&mut self, handlers: impl CpuExternalHandler + 'static){
-        self.external_handler = Box::new(handlers);
     }
 
     #[allow(unused)]
@@ -509,12 +507,6 @@ impl MipsCpu {
         }
     }
 
-    #[inline(always)]
-    fn get_handler(&mut self) -> &'static mut dyn CpuExternalHandler {
-        let thing = self.external_handler.as_mut();
-        unsafe{std::mem::transmute(thing)}
-    }
-
     pub fn run_panic(&mut self){
         self.running = false;
         self.finished = true;
@@ -524,30 +516,29 @@ impl MipsCpu {
         self.clear();
     }
 
-    #[inline(always)]
-    #[allow(unused)]
     fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str) {
-        self.get_handler().system_call_error(self, call_id, error_id, message);
+        unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
+        .system_call_error(self, call_id, error_id, message);
     }
 
-    #[inline(never)]
     fn memory_error(&mut self, error_id: u32) {
-        self.get_handler().memory_error(self, error_id);
+        unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
+        .memory_error(self, error_id);
     }
 
-    #[inline(never)]
     fn arithmetic_error(&mut self, id: u32) {
-        self.get_handler().arithmetic_error(self, id);
+        unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
+        .arithmetic_error(self, id);
     }
 
-    #[inline(never)]
     fn invalid_op_code(&mut self) {
-        self.get_handler().invalid_opcode(self);
+        unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
+        .invalid_opcode(self);
     }
 
-    #[inline(never)]
     fn system_call(&mut self, call_id: u32) {
-        self.get_handler().system_call(self, call_id);
+        unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
+        .system_call(self, call_id);
     }
 
     #[allow(dead_code)]

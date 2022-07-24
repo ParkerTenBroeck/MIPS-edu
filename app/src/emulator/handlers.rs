@@ -35,11 +35,11 @@ pub struct ExternalHandler{
 }
 
 impl ExternalHandler{
-    fn opcode_address(cpu: &mut MipsCpu) -> u32{
+    fn opcode_address(cpu: &mut MipsCpu<Self>) -> u32{
         cpu.pc.wrapping_sub(4)
     }
 
-    fn opcode(cpu: &mut MipsCpu) -> u32{
+    fn opcode(cpu: &mut MipsCpu<Self>) -> u32{
         cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4))
     }
 
@@ -61,22 +61,22 @@ impl ExternalHandler{
 }
 
 impl CpuExternalHandler for ExternalHandler {
-    fn arithmetic_error(&mut self, cpu: &mut MipsCpu, error_id:  u32) {
+    fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32) {
         log::warn!("arithmetic error {}", error_id);
         cpu.stop();
     }
 
-    fn memory_error(&mut self, cpu: &mut MipsCpu, error_id: u32) {
+    fn memory_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32) {
         log::warn!("Memory Error: {}", error_id);
         cpu.stop();
     }
 
-    fn invalid_opcode(&mut self, cpu: &mut MipsCpu) {            
+    fn invalid_opcode(&mut self, cpu: &mut MipsCpu<Self>) {            
         log::warn!("invalid opcode {:#08X} at {:#08X}", Self::opcode(cpu), Self::opcode_address(cpu));
         cpu.stop();
     }
 
-    fn system_call(&mut self, cpu: &mut MipsCpu, call_id: u32) {
+    fn system_call(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32) {
         match call_id {
             0 => cpu.stop(),
             1 => log::info!("{}", cpu.reg[4] as i32),
@@ -261,7 +261,7 @@ impl CpuExternalHandler for ExternalHandler {
         }
     }
 
-    fn system_call_error(&mut self, cpu: &mut MipsCpu, call_id: u32, error_id: u32, message:  &str) {
+    fn system_call_error(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32, error_id: u32, message:  &str) {
         log::warn!(
             "System Call: {} Error: {} Message: {}",
             call_id,

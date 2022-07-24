@@ -2,7 +2,7 @@ use eframe::{egui::{WidgetText}};
 use mips_emulator::{memory::page_pool::MemoryDefault, cpu::MipsCpu};
 
 
-use crate::platform::sync::PlatSpecificLocking;
+use crate::{platform::sync::PlatSpecificLocking, emulator::handlers::ExternalHandler};
 
 use super::side_tabbed_panel::SideTab;
 
@@ -260,7 +260,7 @@ impl SideTab for CPUSidePanel {
                 } else {
                     log::info!("CPU Starting");
                     let cpu =
-                        &mut (*app.cpu.as_mut()) as *mut MipsCpu;
+                        &mut (*app.cpu.as_mut()) as *mut MipsCpu<ExternalHandler>;
                         
                     #[cfg(target_arch = "wasm32")]
                     {
@@ -285,7 +285,7 @@ impl SideTab for CPUSidePanel {
                     log::warn!("CPU is already running");
                 } else {
                     let cpu =
-                    &mut (*app.cpu.as_mut()) as *mut MipsCpu;
+                    &mut (*app.cpu.as_mut()) as *mut MipsCpu<ExternalHandler>;
                         
                     #[cfg(target_arch = "wasm32")]
                     {
