@@ -149,12 +149,12 @@ impl CP1{
 //-------------------------------------------------------- co processors
 #[repr(align(4096))]
 pub struct MipsCpu<T: CpuExternalHandler> {
-    pub pc: u32,
-    pub reg: [u32; 32],
-    pub cp0: CP0,
-    pub cp1: CP1,
-    pub lo: u32,
-    pub hi: u32,
+    pc: u32,
+    reg: [u32; 32],
+    cp0: CP0,
+    cp1: CP1,
+    lo: u32,
+    hi: u32,
     i_check: bool,
     running: bool,
     finished: bool,
@@ -164,8 +164,35 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     paused: AtomicUsize,
     inturupts: Vec<()>,
     dropped: bool,
-    pub mem: PagePoolRef<Memory>,
+    mem: PagePoolRef<Memory>,
     external_handler: T,
+}
+
+impl<T: CpuExternalHandler> MipsCpu<T>{
+    #[inline(always)]
+    pub unsafe fn mem(&mut self) -> &mut PagePoolRef<Memory>{
+        &mut self.mem
+    }
+    #[inline(always)]
+    pub unsafe fn pc(&self) -> u32{
+        self.pc
+    }
+    #[inline(always)]
+    pub unsafe fn reg(&mut self) -> &mut [u32; 32]{
+        &mut self.reg
+    }
+    #[inline(always)]
+    pub unsafe fn reg_num(&self, reg: usize) -> &u32{
+        self.reg.get_unchecked(reg)
+    }
+    #[inline(always)]
+    pub unsafe fn lo(&self) -> u32{
+        self.lo
+    }
+    #[inline(always)]
+    pub unsafe fn hi(&self) -> u32{
+        self.hi
+    }
 }
 
 pub trait CpuExternalHandler: Sync + Send + Sized {
@@ -367,46 +394,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     }
 
     #[allow(unused)]
-    pub fn get_general_registers(&self) -> &[u32; 32] {
-        &self.reg
-    }
-    #[allow(unused)]
-    pub fn get_reg(&self, reg: usize) -> u32 {
-        self.reg[reg]
-    }
-    #[allow(unused)]
-    pub fn get_hi_register(&self) -> u32 {
-        self.hi
-    }
-    #[allow(unused)]
-    pub fn get_lo_register(&self) -> u32 {
-        self.lo
-    }
-    #[allow(unused)]
-    pub fn get_pc(&self) -> u32 {
-        self.pc
-    }
-    #[allow(unused)]
-    pub fn get_instructions_ran(&self) -> u64 {
-        self.instructions_ran
-    }
-    #[allow(unused)]
-    pub fn get_general_registers_mut(&mut self) -> &mut [u32; 32] {
-        &mut self.reg
-    }
-    #[allow(unused)]
-    pub fn get_hi_register_mut(&mut self) -> &mut u32 {
-        &mut self.hi
-    }
-    #[allow(unused)]
-    pub fn get_lo_register_mut(&mut self) -> &mut u32 {
-        &mut self.lo
-    }
-    #[allow(unused)]
-    pub fn get_pc_mut(&mut self) -> &mut u32 {
-        &mut self.pc
-    }
-    #[allow(unused)]
     pub fn get_mem(&mut self) -> PagePoolRef<SingleCachedMemory>{
         //&mut self.mem
         self.get_mem_controller().lock().unwrap().add_holder(SingleCachedMemory::new())
@@ -420,44 +407,46 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             None => panic!(),
         }
     }
+    #[allow(unused)]
+    pub fn get_instructions_ran(&self) -> u64 {
+        self.instructions_ran
+    }
 
     #[allow(unused)]
     pub fn is_running(&self) -> bool {
-        //this is a hack(dont come for me :))
-        *crate::black_box(&self.running) || !*crate::black_box(&self.finished)
+        unsafe{
+            *core::ptr::read_volatile(&&self.running) || !*core::ptr::read_volatile(&&self.finished)
+        }
     }
 
     pub fn paused_or_stopped(&self) -> bool{
         self.is_paused() || !self.is_running()
     }
 
+    #[inline(always)]
     pub fn is_paused(&self) -> bool {
-        //this is a hack(dont come for me :))
-        *crate::black_box(&self.is_paused)
+        unsafe{*core::ptr::read_volatile(&&self.is_paused)}
     }
 
     pub fn is_being_dropped(&self) -> bool {
-        //this is a hack(dont come for me :))
-        *crate::black_box(&self.dropped)
+        unsafe{*core::ptr::read_volatile(&&self.dropped)}
     }
 
     fn is_within_memory_event(&self) -> bool {
-        *crate::black_box(&self.is_within_memory_event)
+        unsafe{*core::ptr::read_volatile(&&self.is_within_memory_event)}
     }
 
     #[allow(unused)]
     pub fn stop(&mut self) {
-        self.running = false;
-        self.i_check = !true;
+        unsafe{
+            core::ptr::write_volatile(&mut self.running, false);
+            core::ptr::write_volatile(&mut self.i_check, !true);
+        }
     }
 
     pub fn stop_and_wait(&mut self) {
         self.stop();
-        while {
-            self.is_running()
-        }{
-            //std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        while self.is_running() {}
     }
 
     #[allow(unused)]
@@ -479,24 +468,20 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     pub fn pause(&mut self) {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        while {
-            self.i_check = !true;
+        while unsafe{
+            core::ptr::write_volatile(&mut self.i_check, !true);
             !self.is_paused()
-        }{
-            //std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        }{}
     }
 
     #[allow(unused)]
     pub fn pause_exclude_memory_event(&mut self) {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        while {
-            self.i_check = !true;
+        while unsafe{
+            core::ptr::write_volatile(&mut self.i_check, !true);
             !(self.is_paused() || self.is_within_memory_event())
-        }{
-            //std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        }{}
     }
 
     #[allow(unused)]
@@ -606,7 +591,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 Ok(_) => {},
                 Err(_err) => {
                     self.run_panic();
-                    //std::panic::resume_unwind(err);
                 },
             }
         });

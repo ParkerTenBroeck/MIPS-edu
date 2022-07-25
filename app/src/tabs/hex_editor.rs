@@ -58,31 +58,31 @@ impl HexEditor {
 
     fn calculate_highlight(&self, address: u32) -> Option<Color32>{
         if self.highlight_pc{
-            let val = self.cpu.get_pc();
+            let val = unsafe{self.cpu.pc()};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::DARK_BLUE);
             }
         }
         if self.highlight_return{
-            let val = self.cpu.get_reg(31);
+            let val = unsafe{*self.cpu.reg_num(31)};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::DARK_RED);
             }
         }
         if self.highlight_stack{
-            let val = self.cpu.get_reg(29);
+            let val = unsafe{*self.cpu.reg_num(29)};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::DARK_GREEN);
             }
         }
         if self.highlight_frame{
-            let val = self.cpu.get_reg(30);
+            let val = unsafe{*self.cpu.reg_num(30)};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::GOLD);
             }
         }
         if self.highlight_global{
-            let val = self.cpu.get_reg(28);
+            let val = unsafe{*self.cpu.reg_num(28)};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::KHAKI);
             }
@@ -275,7 +275,7 @@ impl Tab for HexEditor {
                     
                     if self.scroll_to_pc{
                         let tmp = self.align_address_to_row((self.last_height * self.bytes_per_line as u32) / 2);
-                        let tmp2 = self.align_address_to_row(self.cpu.get_pc());
+                        let tmp2 = self.align_address_to_row(unsafe{self.cpu.pc()});
                         self.starting_offset = match tmp2.checked_sub(tmp){
                             Some(val) => val,
                             None => {

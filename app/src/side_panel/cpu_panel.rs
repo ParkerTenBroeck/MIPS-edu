@@ -129,12 +129,12 @@ impl SideTab for CPUSidePanel {
 
 
 
-        let (pc, hi, lo, reg) = {
+        let (pc, hi, lo, reg) = unsafe{
             (
-                app.cpu.get_pc(),
-                app.cpu.get_hi_register(),
-                app.cpu.get_lo_register(),
-                *app.cpu.get_general_registers(),
+                app.cpu.pc(),
+                app.cpu.hi(),
+                app.cpu.lo(),
+                *app.cpu.reg(),
             )
         };
 

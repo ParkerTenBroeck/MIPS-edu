@@ -20,7 +20,7 @@ clike = { path = "../compiler" }
 assembler = { path = "../assembler" }
 util = { path = "../util" }
 enum-map = { version = "2", features = ["serde"] }
-log = "0.4.16"
+log = { version = "0.4" }
 
 serde = { version = "1", features = ["derive"], optional = false }
 

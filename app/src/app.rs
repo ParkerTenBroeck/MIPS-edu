@@ -120,7 +120,7 @@ impl Application{
 impl Application{
 
     pub fn add_cpu_terminal_tab(&mut self){
-
+        self.tabbed_area.add_tab(Box::new(crate::tabs::terminal::TerminalTab::new()));
     }
 
     pub fn add_cpu_memory_tab(&mut self){

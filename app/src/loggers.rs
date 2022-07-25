@@ -167,8 +167,8 @@ record.target());
 }
 
 impl log::Log for Logger {
-    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-        metadata.level() <= log::Level::Debug
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
+        true//metadata.level() <= log::Level::Debug
     }
 
     fn log(&self, record: &log::Record<'_>) {
@@ -240,7 +240,7 @@ impl log::Log for Logger {
 
 pub fn init_logger() -> Result<(), log::SetLoggerError> {
     log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(log::LevelFilter::Info))
+        .map(|()| log::set_max_level(log::LevelFilter::Trace))
 }
 
 pub fn init() -> bool{
