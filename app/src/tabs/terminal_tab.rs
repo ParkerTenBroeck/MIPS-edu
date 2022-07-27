@@ -1,6 +1,6 @@
-use std::{cell::UnsafeCell, pin::Pin, str::Chars};
+use std::{str::Chars};
 
-use eframe::{epaint::{text::{LayoutJob, TextWrapping}, FontId, Color32, Rounding, Stroke, self}, egui::{TextFormat, ScrollArea, Sense, TextEdit, WidgetInfo, WidgetType}};
+use eframe::{epaint::{text::{LayoutJob}, FontId, Color32, Rounding, Stroke, self}, egui::{TextFormat, Sense, WidgetInfo, WidgetType}};
 
 use super::tabbed_area::Tab;
 
@@ -10,14 +10,16 @@ pub enum TerminalMode{
 }
 pub struct TerminalTab{
     data: String,
+    #[allow(unused)]
     mode: TerminalMode,
+    #[allow(unused)]
     cursor: Option<usize>
 }
 
 impl TerminalTab{
     pub fn new() -> Self{
         Self { 
-            data: "hello\nthis is a test\n01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567895\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24".into(),
+            data: "hello \x1b[4;33mYellow underlined text\x1b[0m tt\nthis is a test\n01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567895\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24".into(),
             mode: TerminalMode::Basic,
             cursor: None,
         }
@@ -44,52 +46,98 @@ impl Tab for TerminalTab{
         let size = size as f32;
         //font size calculation
 
+
+
         let mut background: Option<Color32> = Option::None;
         let mut forground: Option<Color32> = Option::None;
+        
         let mut bold = false;
         let mut underline = false;
         let mut italics = false;
         let mut strike = false;
-        
 
+        let iter = TerminalParser::new(self.data.as_str());
+        for (str, mut num_codes) in iter{
+            while !num_codes.is_empty(){
+                match num_codes.remove(0){
+                    0 => {
+                        forground = None;
+                        background = None;
+                        bold = false;
+                        italics = false;
+                        strike = false;
+                        underline = false;
+                    }
+                    1 => bold = true,
+                    2 => bold = false,
+                    3 => italics = true,
+                    4 => underline = true,
+                    9 => strike = false,
+                    21 => bold = false,
+                    22 => italics = false,
+                    24 => underline = false,
+                    29 => strike = false,
+                    _color @ 30..=37 => {
+                        
+                    }
+                    _ => {
 
-        let mut iter = self.data.chars();
-        
-        for i in 0..24{
-            let mut line = String::new();
-            while let Option::Some(char) = iter.next(){
-                if char == '\n'{
-                    break;
-                }
-                line.push(char);
-                if line.chars().count() >= 80 {
-                    break;
+                    }
                 }
             }
-            if !line.is_empty(){
-                layout.append(line.as_str(), 0.0, TextFormat{
-                    font_id: FontId::monospace(size),
-                    color: Color32::from_rgb(255,0,0),
-                    background: Color32::from_rgb(255,255,0),
-                    ..Default::default()
-                });
+                // fn generate_text_format(&self) -> TextFormat{
+            let format = TextFormat { 
+                font_id: FontId::monospace(size), 
+                color: forground.unwrap_or(Color32::GRAY), 
+                background: background.unwrap_or(Color32::TRANSPARENT), 
+                italics: italics, 
+                underline: if underline {Stroke::default()} else{Stroke::none()}, 
+                strikethrough:  if strike {Stroke::default()} else{Stroke::none()}, 
+                ..Default::default()
+            };
+            if bold{
+                //lpol
             }
-            if i == 23{
-                let mut string = String::new();
-                for _ in 0..(80 - line.chars().count()){
-                    string.push(' ');
-                }
-                layout.append(string.as_str(), 0.0, TextFormat{
-                    font_id: FontId::monospace(size),
-                    ..Default::default()
-                });
-            }else{
-                layout.append("\n", 0.0, TextFormat{
-                    font_id: FontId::monospace(size),
-                    ..Default::default()
-                });
-            }
+            layout.append(str.as_str(), 0.0, format);
         }
+
+        // let mut iter = self.data.chars();
+        
+        // for i in 0..24{
+        //     let mut line = String::new();
+        //     while let Option::Some(char) = iter.next(){
+        //         if char == '\n'{
+        //             break;
+        //         }
+        //         line.push(char);
+        //         if line.chars().count() >= 80 {
+        //             break;
+        //         }
+        //     }
+        //     if !line.is_empty(){
+        //         layout.append(line.as_str(), 0.0, TextFormat{
+        //             font_id: FontId::monospace(size),
+        //             color: Color32::from_rgb(255,0,0),
+        //             background: Color32::from_rgb(255,255,0),
+        //             ..Default::default()
+        //         });
+        //     }
+        //     if i == 23{
+        //         let mut string = String::new();
+        //         for _ in 0..(80 - line.chars().count()){
+        //             string.push(' ');
+        //         }
+        //         layout.append(string.as_str(), 0.0, TextFormat{
+        //             font_id: FontId::monospace(size),
+        //             ..Default::default()
+        //         });
+        //     }else{
+        //         layout.append("\n", 0.0, TextFormat{
+        //             font_id: FontId::monospace(size),
+        //             ..Default::default()
+        //         });
+        //     }
+        // }
         
         let gallery = ui.fonts().layout_job(layout);
         
@@ -161,51 +209,40 @@ struct TerminalParser<'a>{
     iter: Chars<'a>,
     string: String,
     row_count: usize,
-    background: Option<Color32>,
-    forground: Option<Color32>,
-    bold: bool,
-    underline: bool,
-    italics: bool,
-    strike: bool,
+    // background: Option<Color32>,
+    // forground: Option<Color32>,
+    // bold: bool,
+    // underline: bool,
+    // italics: bool,
+    // strike: bool,
     state: usize, 
-    font_size: f32,
+    // font_size: f32,
 }
 
 impl<'a> TerminalParser<'a>{
-    pub fn new(str: &'a str, font_size: f32) -> Self{
+    pub fn new(str: &'a str) -> Self{
         Self{
             iter: str.chars(),
-            background: Option::None,
-            forground: Option::None,
-            bold: false,
-            underline: false,
-            italics: false,
-            strike: false,
+            // background: Option::None,
+            // forground: Option::None,
+            // bold: false,
+            // underline: false,
+            // italics: false,
+            // strike: false,
             row_count: 0,
             state: 0,
             string: String::new(),
-            font_size,
-        }
-    }
-
-    fn generate_text_format(&self) -> TextFormat{
-        TextFormat { 
-            font_id: FontId::monospace(self.font_size), 
-            color: self.forground.unwrap_or(Color32::GRAY), 
-            background: self.background.unwrap_or(Color32::TRANSPARENT), 
-            italics: self.italics, 
-            underline: if self.underline {Stroke::default()} else{Stroke::none()}, 
-            strikethrough:  if self.underline {Stroke::default()} else{Stroke::none()}, 
-            ..Default::default()
+            //font_size,
         }
     }
 }
 
 impl<'a> Iterator for TerminalParser<'a>{
-    type Item = (String, TextFormat);
+    type Item = (String, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut send: bool = false;
+        let mut num_codes:Vec<u8> = Vec::new();
         loop{
             match self.iter.next(){
                 Some(char) => {
@@ -239,46 +276,18 @@ impl<'a> Iterator for TerminalParser<'a>{
                                         code.push(char);
                                     }
                                     let codes = code.split(';');
-                                    let mut num_codes:Vec<u8> = Vec::new();
+                                    num_codes.clear();
                                     for code in codes{
                                         let res = code.parse();
                                         match res {
                                             Ok(val) => num_codes.push(val),
                                             Err(_) => {
                                                 self.state = 0;
+                                                num_codes.clear();
                                                 continue;
                                             },
                                         }
                                     }
-                                    
-                                    while !num_codes.is_empty(){
-                                        match num_codes.remove(0){
-                                            0 => {
-                                                self.forground = None;
-                                                self.background = None;
-                                                self.bold = false;
-                                                self.italics = false;
-                                                self.strike = false;
-                                                self.underline = false;
-                                            }
-                                            1 => self.bold = true,
-                                            2 => self.bold = false,
-                                            3 => self.italics = true,
-                                            4 => self.underline = true,
-                                            9 => self.strike = false,
-                                            21 => self.bold = false,
-                                            22 => self.italics = false,
-                                            24 => self.underline = false,
-                                            29 => self.strike = false,
-                                            color @ 30..=37 => {
-                                                
-                                            }
-                                            _ => {
-    
-                                            }
-                                        }
-                                    }
-
                                 }
                                 _ => {
                                     //this is an error but we just ignore it
@@ -302,7 +311,7 @@ impl<'a> Iterator for TerminalParser<'a>{
                 if !self.string.is_empty(){
                     let mut string = String::new();
                     std::mem::swap(&mut string, &mut self.string);
-                    return Option::Some((string, self.generate_text_format()))
+                    return Option::Some((string, num_codes))
                 }
             }
         }
