@@ -1,3 +1,5 @@
+#![feature(box_syntax)]
+
 use std::{io::Read};
 
 use mips_emulator::{cpu::{MipsCpu, DefaultExternalHandler}, memory::page_pool::MemoryDefault};

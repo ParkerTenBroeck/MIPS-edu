@@ -117,8 +117,9 @@ impl SingleCachedMemory{
         }
     }
 
-    pub fn new() -> Self{
-        SingleCachedMemory { page_pool: Option::None, cache: Mutex::new(Option::None) }
+    pub fn new() -> Box<Self>{
+        
+        box SingleCachedMemory { page_pool: Option::None, cache: Mutex::new(Option::None) }
     }
 }
 

@@ -160,7 +160,7 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     finished: bool,
     is_paused: bool,
     is_within_memory_event: bool,
-    instructions_ran: u64,
+    //instructions_ran: u64,
     paused: AtomicUsize,
     inturupts: Vec<()>,
     dropped: bool,
@@ -366,7 +366,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     #[allow(unused)]
     pub fn new(handler: T) -> Self {
         let mut tmp = MipsCpu {
-            instructions_ran: 0,
+            //instructions_ran: 0,
             pc: 0,
             reg: [0; 32],
             cp0: CP0::new(),
@@ -407,10 +407,10 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             None => panic!(),
         }
     }
-    #[allow(unused)]
-    pub fn get_instructions_ran(&self) -> u64 {
-        self.instructions_ran
-    }
+    // #[allow(unused)]
+    // pub fn get_instructions_ran(&self) -> u64 {
+    //     self.instructions_ran
+    // }
 
     #[allow(unused)]
     pub fn is_running(&self) -> bool {
@@ -455,7 +455,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.reg = [0; 32];
         self.lo = 0;
         self.hi = 0;
-        self.instructions_ran = 0;
+        //self.instructions_ran = 0;
     }
 
     #[allow(unused)]
@@ -694,8 +694,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                     let item = ins_cache.0.get_unchecked(self.pc as usize & 0xFFFF);
                     core::mem::transmute::<&u8, &u32>(item).to_be()
                 };
-                //self.mem.get_u32_alligned(self.pc);
-                self.instructions_ran += 1;
                 
                 //prevent overflow
                 self.pc = self.pc.wrapping_add(4);

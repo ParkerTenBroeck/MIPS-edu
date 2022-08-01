@@ -123,7 +123,7 @@ impl FullyCachedMemory{
         let mut lock = controller.lock();
         match lock.as_mut(){
             Ok(lock) => {
-                let mem = FullyCachedMemory{
+                let mem = box FullyCachedMemory{
                     page_pool: Option::None,
                     page_table: [INIT; SEG_SIZE],
                     listener: Option::None,

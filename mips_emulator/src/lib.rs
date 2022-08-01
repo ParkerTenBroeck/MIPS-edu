@@ -1,3 +1,5 @@
+#![feature(box_syntax)]
+
 pub mod memory;
 pub mod cpu;
 

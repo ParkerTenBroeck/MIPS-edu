@@ -217,7 +217,7 @@ impl PagePoolController{
         arc
     }
 
-    pub fn add_holder<T: PagePoolHolder + Send + Sync + 'static>(&mut self, holder: T) -> PagePoolRef<T>{
+    pub fn add_holder<T: PagePoolHolder + Send + Sync + 'static>(&mut self, holder: Box<T>) -> PagePoolRef<T>{
         let mut id: usize = 0;
 
         
@@ -227,8 +227,7 @@ impl PagePoolController{
             }
         }
 
-        let test = Box::new(holder);
-        let mut ptr = NonNull::new(Box::into_raw(test)).unwrap();
+        let mut ptr = NonNull::new(Box::into_raw(holder)).unwrap();
 
         self.holders.push((id, ptr));
 
