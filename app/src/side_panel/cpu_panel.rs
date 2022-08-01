@@ -332,13 +332,41 @@ impl SideTab for CPUSidePanel {
         if ui.button("Reset CPU").clicked() {
             app.cpu.stop_and_wait();
             if !app.cpu.is_running() {
+                app.cpu.reset();
+                log::info!("reset CPU");
+            } else {
+                log::warn!("Cannot reset CPU while running");
+            }
+        }
+        if ui.button("Load Demo 1").clicked(){
+
+            app.cpu.stop_and_wait();
+            if !app.cpu.is_running() {
+                app.cpu.clear();
+
+                
+
+            let mut test_prog = [0x3C027FFFu32, 0x00000820, 0x20210001, 0x10220001, 0x08000002, 0x0000000C];
+                for mem in test_prog.iter_mut(){
+                    *mem = mem.to_be();
+                }
+                app.cpu.get_mem().copy_into_raw(0, test_prog.as_slice());
+
+                log::info!("Loaded Demo 1 CPU");
+            } else {
+                log::warn!("Cannot reset CPU while running");
+            }
+        }
+        if ui.button("Load Demo 2").clicked(){
+            app.cpu.stop_and_wait();
+            if !app.cpu.is_running() {
                 app.cpu.clear();
 
                 let test_prog = include_bytes!("../../res/tmp.bin");
 
                 app.cpu.get_mem().copy_into_raw(0, test_prog);
 
-                log::info!("reset CPU");
+                log::info!("Loaded Demo 2 CPU");
             } else {
                 log::warn!("Cannot reset CPU while running");
             }
@@ -373,6 +401,9 @@ impl SideTab for CPUSidePanel {
                 }
                 if ui.button(create_text(&mut access.sound, "Sound")).clicked(){
                     app.add_cpu_sound_tab();
+                }
+                if ui.button("Memory").clicked(){
+                    app.add_cpu_memory_tab()
                 }
             });
         });

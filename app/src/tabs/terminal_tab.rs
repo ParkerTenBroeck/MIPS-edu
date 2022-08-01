@@ -1,6 +1,6 @@
 use std::{str::Chars};
 
-use eframe::{epaint::{text::{LayoutJob, TextWrapping, FontsImpl}, FontId, Color32, Rounding, Stroke, self}, egui::{TextFormat, Sense, WidgetInfo, WidgetType}};
+use eframe::{epaint::{text::{LayoutJob, TextWrapping}, FontId, Color32, Rounding, Stroke, self, FontFamily}, egui::{TextFormat, Sense, WidgetInfo, WidgetType}};
 
 use crate::platform::time;
 
@@ -37,8 +37,10 @@ const TEST_TEXT: &str =  "                 40m     41m     42m     43m     44m  
 1;36m \x1b[1;36m  gYw   \x1b[1;36m\x1b[40m  gYw  \x1b[0m \x1b[1;36m\x1b[41m  gYw  \x1b[0m \x1b[1;36m\x1b[42m  gYw  \x1b[0m \x1b[1;36m\x1b[43m  gYw  \x1b[0m \x1b[1;36m\x1b[44m  gYw  \x1b[0m \x1b[1;36m\x1b[45m  gYw  \x1b[0m \x1b[1;36m\x1b[46m  gYw  \x1b[0m \x1b[1;36m\x1b[47m  gYw  \x1b[0m
   37m \x1b[37m  gYw   \x1b[37m\x1b[40m  gYw  \x1b[0m \x1b[37m\x1b[41m  gYw  \x1b[0m \x1b[37m\x1b[42m  gYw  \x1b[0m \x1b[37m\x1b[43m  gYw  \x1b[0m \x1b[37m\x1b[44m  gYw  \x1b[0m \x1b[37m\x1b[45m  gYw  \x1b[0m \x1b[37m\x1b[46m  gYw  \x1b[0m \x1b[37m\x1b[47m  gYw  \x1b[0m
 1;37m \x1b[1;37m  gYw   \x1b[1;37m\x1b[40m  gYw  \x1b[0m \x1b[1;37m\x1b[41m  gYw  \x1b[0m \x1b[1;37m\x1b[42m  gYw  \x1b[0m \x1b[1;37m\x1b[43m  gYw  \x1b[0m \x1b[1;37m\x1b[44m  gYw  \x1b[0m \x1b[1;37m\x1b[45m  gYw  \x1b[0m \x1b[1;37m\x1b[46m  gYw  \x1b[0m \x1b[1;37m\x1b[47m  gYw  \x1b[0m
-\x1b[5;47;30;4mBLINKING 👩🏿‍⚕️ 日本語のキーボード  TEXT\x1b[0m
-👩🏿‍⚕️0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
+\x1b[5;47;30;4mBLINKI|NG |👩🏿‍⚕️ |日本語|のキー||ボード|  TEXT\x1b[0m
+★|☆|☐|☑|☜☝|☞☟|⛃|⛶✔|↺↻|⟲⟳|⬅➡⬆⬇|⬈⬉⬊⬋⬌⬍⮨⮩⮪⮫ ♡ 📅📆|||
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+👩🏿‍⚕️|0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\n\n1209387123987";
 
 impl TerminalTab{
     pub fn new() -> Self{
@@ -51,27 +53,211 @@ impl TerminalTab{
 
 }
 
+mod terminal_formatter{
+    use eframe::{egui::TextFormat, epaint::{text::{LayoutJob, FontsImpl}}};
+
+    pub struct Paragraph{
+        default_format: TextFormat,
+        character_width: f32,
+        target_line_width: f32,
+        target_lines: u32,
+        lines: Vec<Line>
+    }
+
+    impl Paragraph{
+        pub fn new(character_width: f32, characters_per_line: impl Into<f32>, target_lines: u32, default_format: TextFormat) -> Self{
+            Self { 
+                character_width, 
+                target_line_width: characters_per_line.into() * character_width, target_lines, 
+                lines: Default::default(),
+                default_format, 
+            }
+        }
+
+        fn last(&mut self) -> &mut Line{
+            if self.lines.is_empty(){
+                self.lines.push(Line::new());
+            }
+            match self.lines.last_mut(){
+                Some(last) => return last,
+                None => {panic!("lines are empty? but pushed if empty IMPOSSIBLE")},
+            }
+        }
+
+        fn append_last(&mut self, section: impl Into<Section>){
+            self.last().append(section.into());
+        }
+
+        fn finish_current_last_line(&mut self){
+            let leading_space = ((self.target_line_width - self.last().width()) / self.character_width).round();
+            let mut str = String::new();
+            for _ in 0..leading_space as usize{
+                str.push(' ');
+            }
+            str.push('\n');
+            
+            self.append_last(Section{
+                text_width: 0.0,
+                leading_space: 0.0,
+                text: str,
+                format: self.default_format.clone(),
+            });
+        }
+
+        fn new_line(&mut self){
+            self.finish_current_last_line();
+            self.lines.push(Line::new());
+        }
+
+        pub fn append_text(&mut self, str: &str, format: TextFormat, fonts: &mut FontsImpl){
+            let mut tmp = Section::new(format.clone());
+            let font = fonts.font(&format.font_id);
+
+            for char in str.chars(){
+                if char == '\n'{
+                    if !tmp.is_empty(){
+                        self.append_last(tmp.clone());
+                        tmp = Section::new(format.clone());
+                    }
+                    // if self.last_empty(){
+                    //     self.new_line();
+                    //     continue;
+                    // }
+                    self.new_line();
+                }else{
+                    if char == '\t'{
+                        for _ in 0..4{
+                            let width = font.glyph_width(' ');
+                            //let width = font.round_to_pixel(width);
+                            if font.round_to_pixel(self.last().width() + tmp.width() + width) > font.round_to_pixel(self.target_line_width){
+                                
+                            }else{
+                                tmp.append_char(' ', width);
+                            }
+                        }
+                    }else{
+                        let mut width = font.glyph_width(char);
+                        let mut char = char;
+                        if width != self.character_width && width != 0.0{
+                            char = '�';
+                            width = font.glyph_width(char);
+                        }
+                        if font.round_to_pixel(self.last().width() + tmp.width() + width) > font.round_to_pixel(self.target_line_width){
+                            self.append_last(tmp);
+                            self.new_line();
+                            tmp = Section::new(format.clone());
+                        }
+                        tmp.append_char(char, width);
+                    }
+                    
+                }
+            }
+            if !tmp.is_empty(){
+                self.append_last(tmp);
+            }
+        }
+
+        pub fn layout(&mut self, layout: &mut LayoutJob){
+            
+            while self.lines.len() < self.target_lines as usize{
+                self.new_line();
+            }
+            self.finish_current_last_line();
+            //removes last new line
+            self.last().sections.last_mut().unwrap().text.pop();
+
+            for i in (self.lines.len() - self.target_lines as usize)..(self.lines.len()){
+                for section in &mut self.lines[i].sections{
+                    layout.append(&section.text, section.leading_space, section.format.clone());
+                }
+            }
+        }
+    }
+    pub struct Line{
+        width: f32,
+        sections: Vec<Section>
+    }
+
+    impl Line{
+        fn width(&self) -> f32{
+            self.width
+        }
+        fn new() -> Self{
+            Self { width: 0.0, sections: Vec::new() }
+        }
+        fn append(&mut self, section: Section){
+            self.width += section.width();
+            self.sections.push(section);
+        }
+    }
+    #[derive(Clone)]
+    pub struct Section{
+        text_width: f32,
+        leading_space: f32,
+        text: String,
+        format: TextFormat
+    }
+    impl Section{
+        fn width(&self) -> f32{
+            self.text_width + self.leading_space
+        }
+        fn is_empty(&self) -> bool{
+            self.text.is_empty()
+        }
+        fn append_char(&mut self, char: char, width: f32){
+            self.text.push(char);
+            self.text_width += width;
+        }
+        fn new(format: TextFormat) -> Self{
+            Self { 
+                text_width: 0.0, 
+                leading_space: 0.0,
+                text: String::new(), 
+                format, 
+            }
+        }
+    }
+}
+
 impl Tab for TerminalTab{
     fn ui(&mut self, ui: &mut eframe::egui::Ui) {
         let mut layout = LayoutJob::default();
+
+        let font_family = FontFamily::Monospace;//FontFamily::Name("DroidSansMono".into());
         
         //font size calculation
+        //max horizontal size
         let mut size = (ui.max_rect().width() * 1.8 / 80.0) as i32;
         if size <= 0 {
             size = 1;
         };
+        //max vertical size
         while size > 1{
-            if FontId::monospace(size as f32).size * 24.0 > ui.available_height(){
+            if FontId::new(size as f32, font_family.clone()).size * 24.0 > ui.available_height(){
                 size -= 1;
             }else{
                 break;
             }
         }
         let size = size as f32;
-        //self.data.ch
-        //font size calculation
+
+        let font_id = FontId::new(size, font_family);
+
 
         let term_background = ui.style().visuals.extreme_bg_color;
+
+        let single_width = ui.ctx().fonts().lock().fonts.font(&font_id).glyph_width(' ');
+
+        let mut paragraph = 
+            terminal_formatter::Paragraph::new(
+                single_width, 
+                80.0, 24, 
+TextFormat{
+                font_id: font_id.clone(),
+                background: term_background,
+                ..Default::default()
+                }
+            );
 
         let pre_colors = [
             Color32::from_gray(0x00), //black
@@ -82,7 +268,7 @@ impl Tab for TerminalTab{
             Color32::from_rgb(0xBC, 0x3F, 0xBC), //purple
             Color32::from_rgb(0x11, 0xA8, 0xCD), //cyan
             Color32::from_gray(0xE5), //white
-            ]; 
+        ]; 
 
         let pre_colors_vib = [
             Color32::from_gray(0x66), //black
@@ -93,15 +279,7 @@ impl Tab for TerminalTab{
             Color32::from_rgb(0xD6, 0x70, 0xD6), //purple
             Color32::from_rgb(0x29, 0xB8, 0xDB), //cyan
             Color32::from_gray(0xE5), //white
-            ]; 
-            //black  =  0x000000
-            //red    =  0xCD3131
-            //yellow =  0xE5E510
-            //green  =  0x0DBC79
-            //cyan   =  0x11A8CD
-            //blue   =  0x2472C8
-            //purple =  0xBC3FBC
-            //white  =  0xE5E5E5
+        ];
 
         let mut background: Option<Color32> = Option::None;
         let mut forground: Option<Color32> = Option::None;
@@ -132,19 +310,6 @@ impl Tab for TerminalTab{
         }
 
         let iter = TerminalParser::new(self.data.as_str());
-
-        let empty_line = {
-            let mut item = Vec::new();
-            item.push(("                                                                                \n".into(),
-            TextFormat{
-                        font_id: FontId::monospace(size),
-                        background: term_background,
-                        ..Default::default()
-            }));
-            item
-        };
-        let mut lines: Vec<Vec<(String, TextFormat)>> = Vec::new();
-        lines.push(Vec::new());
 
         let alpha = 255 * (1 & ((time::duration_since_epoch().as_millis()) * 120 / 60000))  as u8;
 
@@ -202,7 +367,7 @@ impl Tab for TerminalTab{
             let stroke = Stroke::new(1.0, forground);
                 // fn generate_text_format(&self) -> TextFormat{
             let format = TextFormat { 
-                font_id: FontId::monospace(size), 
+                font_id:  font_id.clone(), 
                 color: forground, 
                 background, 
                 italics: italics, 
@@ -214,111 +379,16 @@ impl Tab for TerminalTab{
                 //lpol
             }
             
-            let mut tmp: Vec<&str> = str.split('\n').collect();
-            while !tmp.is_empty(){
-                let part = tmp.remove(0);
-                if !part.is_empty(){
-                    lines.last_mut().unwrap().push((part.into(), format.clone()));
-                }
-                if !tmp.is_empty(){
-                    
-                    let last = lines.last_mut().unwrap();
-                    if last.is_empty(){
-                        last.push(empty_line[0].clone());
-                        continue;
-                    }
-                    let mut count = 0;
-                    for part in last.iter(){
-                        for char in part.0.chars(){
-                            if !char.is_control(){
-                                count += 1;
-                            }
-                        }
-                    }
-                    let mut string = String::new();
-                    for _ in 0..(80 - count){
-                        string.push(' ');
-                    }
-                    string.push('\n');
-                    last.push((string, empty_line[0].1.clone()));
-                    lines.push(Vec::new());
-                }
-            }
-            
-            //layout.append(str.as_str(), 0.0, format);
+            paragraph.append_text(str.as_str(), format, &mut ui.fonts().lock().fonts);
         }
 
-        {
-            let last = lines.last_mut().unwrap();
-            if last.is_empty(){
-                last.push(empty_line[0].clone());
-            }else{
-                let mut count = 0;
-                for part in last.iter(){
-                    for char in part.0.chars(){
-                        if !char.is_control(){
-                            count += 1;
-                        }
-                    }
-                }
-                let mut string = String::new();
-                for _ in 0..(80 - count){
-                    string.push(' ');
-                }
-                string.push('\n');
-                last.push((string, empty_line[0].1.clone()));
-            }
-        }
-
-        while lines.len() < 24{
-            lines.push(empty_line.clone());
-        }
-        // {
-        //     let last = lines.last_mut().unwrap();
-        //     let mut count = 0;
-        //     for thing in last.iter(){
-        //         for char in thing.0.chars(){
-        //             if !char.is_control(){
-        //                 count += 1;
-        //             }
-        //         }
-        //     }
-        //     let mut string = String::new();
-        //     for _ in 0..(80 - count){
-        //         string.push(' ');
-        //     }
-        //     last.push((string, TextFormat{
-        //         font_id: FontId::monospace(size),
-        //         background: term_background,
-        //         ..Default::default()
-        //     }));
-        // }
-            let len = lines.len();
-        for i in (len - 24)..len{
-            for (text, format) in &mut lines[i]{
-                if i == len -1 {
-                    if let Option::Some(char) = text.pop(){
-                        if char != '\n'{
-                            text.push(char);
-                        }
-                    }
-                }
-                layout.append(text.as_str(), 0.0, format.clone())
-            }
-            // if i < lines.len() - 1{
-            //     layout.append("\n", 0.0, TextFormat{
-            //         font_id: FontId::monospace(size),
-            //         background: term_background,
-            //         ..Default::default()
-            //     });
-            // }
-        }
+        paragraph.layout(&mut layout);
 
         layout.wrap = TextWrapping{
             max_rows: 24,
             ..Default::default()
         };
-        
+
         let gallery = ui.fonts().layout_job(layout);
         
         let y_space = (ui.available_height() - gallery.rect.height()) / 2.0;
@@ -341,7 +411,7 @@ impl Tab for TerminalTab{
                 ui.memory().lock_focus(response.id, true);
 
             }
-            ui.ctx().fonts().font(FontId::monospace(size));
+            //ui.ctx().fonts().font(FontId::monospace(size));
             
 
             //let data = UnsafeCell::new(Pin::new(&12));
@@ -381,6 +451,7 @@ impl Tab for TerminalTab{
 struct TerminalParser<'a>{
     iter: Chars<'a>,
     string: String,
+    #[allow(unused)]
     row_count: usize,
     // background: Option<Color32>,
     // forground: Option<Color32>,
@@ -427,25 +498,6 @@ impl<'a> Iterator for TerminalParser<'a>{
                                     send = true;
                                 }
                                 char =>{
-                                    if !char.is_control(){
-                                        if self.row_count >= 80{
-                                            self.string.push('\n');
-                                            self.row_count = 0;
-                                        }
-                                        self.row_count += 1;
-                                    }
-                                    if char == '\n'{
-                                        self.row_count = 0;   
-                                    }
-                                    if char == '\t'{
-                                        for _ in 0..4{
-                                            if self.row_count < 80{
-                                                self.row_count += 1;
-                                                self.string.push(' ');
-                                            }
-                                        }
-                                        continue;
-                                    }
                                     self.string.push(char);
                                 }
                             }

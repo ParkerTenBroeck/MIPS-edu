@@ -407,7 +407,7 @@ impl Tab for HexEditor {
                                             ui.separator();
                                             let text = match self.mem.get_u32_alligned_o(address){
                                                 Some(val) => {
-                                                    assembler::disassembler::simple::disassemble(val)
+                                                    assembler::disassembler::simple::disassemble(val, address)
                                                 },
                                                 None => {
                                                     "".into()

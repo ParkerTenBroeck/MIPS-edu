@@ -6,6 +6,8 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    use app::create_app;
+
     if !app::app_init(){
         std::process::exit(0);
     }
@@ -41,18 +43,7 @@ fn main() {
     }
 
     eframe::run_native("Mips Edu", native_options, Box::new(|cc|{
-        
-        let app = app::Application::new(&cc.egui_ctx);
-        
-        match app.settings().theme {
-            app::app::Theme::DarkMode => {
-                cc.egui_ctx.set_visuals(eframe::egui::Visuals::dark());
-            }
-            app::app::Theme::LightMode => {
-                cc.egui_ctx.set_visuals(eframe::egui::Visuals::light());
-            }   
-        }     
-        Box::new(app)
+        create_app(cc)
     }));
 }
 

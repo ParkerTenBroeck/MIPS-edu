@@ -1,7 +1,7 @@
 use core::panic;
 use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
 
-use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
+use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault, Page}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
 
 
@@ -653,16 +653,595 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             }
             self.is_paused = false;
 
+            let mut ins_cache = (self.mem.get_or_make_page(self.pc).page, self.pc >> 16);
+            let mut mem_cache = (self.mem.get_or_make_page(0).page, 0u32);
 
+            macro_rules! set_mem_alligned {
+                ($add:expr, $val:expr, $fn_type:ty) => {
+                    unsafe{
+                        let address = $add;
+                        if address >> 16 != mem_cache.1{
+                            mem_cache = (self.mem.get_or_make_page(address).page, address >> 16);
+                        }
+                        
+                        let item = mem_cache.0.get_unchecked_mut(address as usize & 0xFFFF);
+                        *core::mem::transmute::<&mut u8, &mut $fn_type>(item) = $val.to_be()
+                    }
+                };
+            }
+
+            macro_rules! get_mem_alligned {
+                ($add:expr, $fn_type:ty) => {
+                    unsafe{
+                        let address = $add;
+                        if address >> 16 != mem_cache.1{
+                            mem_cache = (self.mem.get_or_make_page(address).page, address >> 16);
+                        }
+                        
+                        let item = mem_cache.0.get_unchecked(address as usize & 0xFFFF);
+                        core::mem::transmute::<&u8, &$fn_type>(item).to_be()
+                        }
+                };
+            }
+            
             while {
-                let op =
-                self.mem.get_u32_alligned(self.pc);
+                let op: u32 = 
+                unsafe{
+                    if self.pc >> 16 != ins_cache.1{
+                        ins_cache = (self.mem.get_or_make_page(self.pc).page, self.pc >> 16);
+                    }
+                    
+                    let item = ins_cache.0.get_unchecked(self.pc as usize & 0xFFFF);
+                    core::mem::transmute::<&u8, &u32>(item).to_be()
+                };
+                //self.mem.get_u32_alligned(self.pc);
                 self.instructions_ran += 1;
                 
                 //prevent overflow
                 self.pc = self.pc.wrapping_add(4);
                 
-                self.run_opcode(op);
+                {
+                    macro_rules! get_reg {
+                        ($reg:expr) => {
+                            unsafe { *self.reg.get_unchecked($reg) }
+                        };
+                    }
+            
+                    match op >> 26 {
+                        0 => {
+                            match op & 0b111111 {
+                                // REGISTER formatted instructions
+            
+                                //arithmatic
+                                0b100000 => {
+                                    //ADD
+                                    
+                                    match (self.reg[register_s!(op)] as i32).checked_add(self.reg[register_t!((op))] as i32)
+                                    {
+                                        Some(val) => {
+                                            self.reg[register_d!(op)] = val as u32;
+                                        },
+                                        None => {
+                                            self.arithmetic_error(2);
+                                        },
+                                    }
+                                }
+                                0b100001 => {
+                                    //ADDU
+                                    self.reg[register_d!(op)] = self.reg[register_s!(op)]
+                                        .wrapping_add(self.reg[register_t!((op))])
+                                }
+                                0b100100 => {
+                                    //AND
+                                    self.reg[register_d!(op)] =
+                                        self.reg[register_s!(op)] & self.reg[register_t!((op))]
+                                }
+                                0b011010 => {
+                                    //DIV
+                                    let t = self.reg[register_t!(op)] as i32;
+                                    if t != 0 {
+                                        let s = self.reg[register_s!(op)] as i32;
+                                        self.lo = (s.wrapping_div(t)) as u32;
+                                        self.hi = (s.wrapping_rem(t)) as u32;
+                                    } else {
+                                        //self.arithmetic_error(0);
+                                    }
+                                }
+                                0b011011 => {
+                                    //DIVU
+                                    let t = self.reg[register_t!(op)];
+                                    if t != 0 {
+                                        let s = self.reg[register_s!(op)];
+                                        self.lo = s.wrapping_div(t);
+                                        self.hi = s.wrapping_rem(t);
+                                    } else {
+                                        //self.arithmetic_error(0);
+                                    }
+                                }
+                                0b011000 => {
+                                    //MULT
+                                    let t = self.reg[register_t!(op)] as i32 as i64;
+                                    let s = self.reg[register_s!(op)] as i32 as i64;
+                                    let result = t.wrapping_mul(s);
+                                    self.lo = (result & 0xFFFFFFFF) as u32;
+                                    self.hi = (result >> 32) as u32;
+                                }
+                                0b011001 => {
+                                    //MULTU
+                                    let t = self.reg[register_t!(op)] as u64;
+                                    let s = self.reg[register_s!(op)] as u64;
+                                    let result = t.wrapping_mul(s);
+                                    self.lo = (result & 0xFFFFFFFF) as u32;
+                                    self.hi = (result >> 32) as u32;
+                                }
+                                0b100111 => {
+                                    //NOR
+                                    self.reg[register_d!(op)] =
+                                        !(self.reg[register_s!(op)] | self.reg[register_t!(op)]);
+                                }
+                                0b100101 => {
+                                    //OR
+                                    self.reg[register_d!(op)] =
+                                        self.reg[register_s!(op)] | self.reg[register_t!(op)];
+                                }
+                                0b100110 => {
+                                    //XOR
+                                    self.reg[register_d!(op)] =
+                                        self.reg[register_s!(op)] ^ self.reg[register_t!(op)];
+                                }
+                                0b000000 => {
+                                    //SLL
+                                    self.reg[register_d!(op)] =
+                                        self.reg[register_t!(op)] << register_a!(op);
+                                }
+                                0b000100 => {
+                                    //SLLV
+                                    self.reg[register_d!(op)] =
+                                        (self.reg[register_t!(op)]) << ( 0b11111 & self.reg[register_s!(op)]);
+                                }
+                                0b000011 => {
+                                    //SRA
+                                    self.reg[register_d!(op)] =
+                                        ((self.reg[register_t!(op)] as i32 >> register_a!(op))) as u32;
+                                }
+                                0b000111 => {
+                                    //SRAV
+                                    self.reg[register_d!(op)] = 
+                                        (self.reg[register_t!(op)] as i32 >>  ( 0b11111 & self.reg[register_s!(op)]))
+                                        as u32;
+                                }
+                                0b000010 => {
+                                    //SRL
+                                    self.reg[register_d!(op)] =
+                                        (self.reg[register_t!(op)] >> register_a!(op)) as u32;
+                                }
+                                0b000110 => {
+                                    //SRLV
+                                    self.reg[register_d!(op)] =
+                                        (self.reg[register_t!(op)] >> ( 0b11111 & self.reg[register_s!(op)])) as u32;
+                                }
+                                0b100010 => {
+                                    //SUB
+                                    self.reg[register_d!(op)] = (self.reg[register_s!(op)] as i32
+                                        - self.reg[register_t!(op)] as i32)
+                                        as u32;
+                                }
+                                0b100011 => {
+                                    //SUBU
+                                    self.reg[register_d!(op)] =
+                                        self.reg[register_s!(op)].wrapping_sub(self.reg[register_t!(op)]);
+                                }
+            
+                                //comparason
+                                0b101010 => {
+                                    //SLT
+                                    self.reg[register_d!(op)] = {
+                                        if (self.reg[register_s!(op)] as i32)
+                                            < (self.reg[register_t!(op)] as i32)
+                                        {
+                                            1
+                                        } else {
+                                            0
+                                        }
+                                    }
+                                }
+                                0b101011 => {
+                                    //SLTU
+                                    self.reg[register_d!(op)] = {
+                                        if self.reg[register_s!(op)] < self.reg[register_t!(op)] {
+                                            1
+                                        } else {
+                                            0
+                                        }
+                                    }
+                                }
+            
+                                //jump
+                                0b001001 => {
+                                    //JALR
+                                    self.reg[31] = self.pc;
+                                    self.pc = self.reg[register_s!(op)];
+                                }
+                                0b001000 => {
+                                    //JR
+                                    self.pc = self.reg[register_s!(op)];
+                                }
+            
+                                //data movement
+                                0b010000 => {
+                                    //MFHI
+                                    self.reg[register_d!(op)] = self.hi;
+                                }
+                                0b010010 => {
+                                    //MFLO
+                                    self.reg[register_d!(op)] = self.lo;
+                                }
+                                0b010001 => {
+                                    //MTHI
+                                    self.hi = self.reg[register_s!(op)];
+                                }
+                                0b010011 => {
+                                    //MTLO
+                                    self.lo = self.reg[register_s!(op)];
+                                }
+            
+                                //special
+                                0b001100 => {
+                                    //syscall
+                                    self.system_call((op >> 6) & 0b11111111111111111111)
+                                }
+                                0b001101 => {
+                                    //break
+                                    self.system_call((op >> 6) & 0b11111111111111111111)
+                                }
+                                0b110100 => {
+                                    //TEQ
+                                    if self.reg[register_s!(op)] == self.reg[register_t!(op)]{
+                                        self.system_call((op >> 6) & 0b1111111111)
+                                    }
+                                }
+                                0b110000 => {
+                                    //TGE
+                                    if self.reg[register_s!(op)] as i32 >= self.reg[register_t!(op)] as i32{
+                                        self.system_call((op >> 6) & 0b1111111111)
+                                    }
+                                }
+                                0b110001 => {
+                                    //TGEU
+                                    if self.reg[register_s!(op)] >= self.reg[register_t!(op)]{
+                                        self.system_call((op >> 6) & 0b1111111111)
+                                    }
+                                }
+                                0b110010 => {
+                                    //TIT
+                                    if (self.reg[register_s!(op)] as i32) < self.reg[register_t!(op)] as i32{
+                                        self.system_call((op >> 6) & 0b1111111111)
+                                    }
+                                }
+                                0b110011 => {
+                                    //TITU
+                                    if self.reg[register_s!(op)] < self.reg[register_t!(op)]{
+                                        self.system_call((op >> 6) & 0b1111111111)
+                                    }
+                                }
+                                0b110110 => {
+                                    //TNE
+                                    if self.reg[register_s!(op)] != self.reg[register_t!(op)]{
+                                        self.system_call((op >> 6) & 0b1111111111)
+                                    }
+                                }
+            
+                                _ => self.invalid_op_code(),
+                            }
+                        }
+                        //Jump instructions
+                        0b000010 => {
+                            //jump
+                            self.pc = (self.pc & 0b11110000000000000000000000000000) | jump_immediate_address!(op);
+                        }
+                        0b000011 => {
+                            //jal
+                            self.reg[31] = self.pc;
+                            self.pc = (self.pc & 0b11110000000000000000000000000000) | jump_immediate_address!(op);
+                        }
+                        // IMMEDIATE formmated instructions
+            
+                        // arthmetic
+                        0b001000 => {
+                            //ADDI
+                            self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+                        }
+                        0b001001 => {
+                            //ADDIU
+                            self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)] as u32).wrapping_add(immediate_immediate_signed_extended!(op) as u32);
+                        }
+                        0b001100 => {
+                            //ANDI
+                            self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)]
+                                & immediate_immediate_zero_extended!(op)
+                        }
+                        0b001101 => {
+                            //ORI
+                            self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
+                                | immediate_immediate_zero_extended!(op) as u32
+                        }
+                        0b001110 => {
+                            //XORI
+                            self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
+                                ^ immediate_immediate_zero_extended!(op) as u32
+                        }
+            
+                        // constant manupulating inctructions
+                        0b001111 => {
+                            //LUI
+                            self.reg[immediate_t!(op)] = immediate_immediate_zero_extended!(op) << 16; 
+                        }
+                        // these were replaced
+                        // 0b011001 => {
+                        //     //LHI
+                        //     let t = immediate_t!(op) as usize;
+                        //     self.reg[t] =
+                        //         self.reg[t] & 0xFFFF | immediate_immediate_unsigned_hi!(op) as u32;
+                        // }
+                        // 0b011000 => {
+                        //     //LLO
+                        //     let t = immediate_t!(op) as usize;
+                        //     self.reg[t] =
+                        //         self.reg[t] & 0xFFFF0000 | immediate_immediate_zero_extended!(op) as u32;
+                        // }
+            
+                        // comparison Instructions
+                        0b001010 => {
+                            //SLTI
+                            self.reg[immediate_t!(op)] = {
+                                if (self.reg[immediate_s!(op)] as i32)
+                                    < (immediate_immediate_signed_extended!(op) as i32)
+                                {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                        }
+                        0b001011 => {
+                            //SLTIU
+                            self.reg[immediate_t!(op)] = {
+                                if (self.reg[immediate_s!(op)] as u32)
+                                    < (immediate_immediate_signed_extended!(op) as u32)
+                                {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                        }
+            
+                        // branch instructions
+                        0b000100 => {
+                            //BEQ
+                            if get_reg!(immediate_s!(op)) == get_reg!(immediate_t!(op)) {
+                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                            }
+                        }
+                        0b000001 => {
+                            match immediate_t!(op){
+                                0b00001 => {
+                                    //BGEZ
+                                    if (self.reg[immediate_s!(op)] as i32) >= 0 {
+                                        self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                    }
+                                }
+                                0b00000 => {
+                                    //BLTZ
+                                    if (self.reg[immediate_s!(op)] as i32) < 0 {
+                                        self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                    }
+                                }
+                                _ => {
+                                    self.invalid_op_code();
+                                }
+                            }
+                        }
+                        0b000111 => {
+                            //BGTZ
+                            if self.reg[immediate_s!(op)] as i32 > 0 {
+                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                            }
+                        }
+            
+                        0b000110 => {
+                            //BLEZ
+                            if self.reg[immediate_s!(op)] as i32 <= 0 {
+                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                            }
+                        }
+                        0b000101 => {
+                            //BNE
+                            if self.reg[immediate_s!(op)] != self.reg[immediate_t!(op) as usize] {
+                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                            }
+                        }
+            
+                        //load unsinged instructions
+                        0b100010 => {
+                            //LWL
+                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let reg_num = immediate_t!(op);
+                            let mut thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                            thing[3] = get_mem_alligned!(address, u8);//self.mem.get_u8(address);
+                            thing[2] = get_mem_alligned!(address.wrapping_add(1), u8);//self.mem.get_u8(address + 1);
+                            self.reg[reg_num] = unsafe{core::mem::transmute(thing)};
+                        }
+                        0b100110 => {
+                            //LWR
+                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let reg_num = immediate_t!(op);
+                            let mut thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                            thing[0] = get_mem_alligned!(address, u8);//self.mem.get_u8(address);
+                            thing[1] = get_mem_alligned!(address.wrapping_sub(1), u8);//self.mem.get_u8(address.wrapping_sub(1));
+                            self.reg[reg_num] = unsafe{core::mem::transmute(thing)};
+                        }
+            
+            
+                        //save unaliged instructions
+                        0b101010 => {
+                            //SWL
+                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let reg_num = immediate_t!(op);
+                            let thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                            set_mem_alligned!(address, thing[3], u8);
+                            set_mem_alligned!(address.wrapping_add(1), thing[2], u8);
+                            //self.mem.set_u8(address, thing[3]);
+                            //self.mem.set_u8(address + 1, thing[2]);
+                        }
+                        0b101110 => {
+                            //SWR
+                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let reg_num = immediate_t!(op);
+                            let thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
+                            
+                            set_mem_alligned!(address, thing[0], u8);
+                            set_mem_alligned!(address.wrapping_sub(1), thing[1], u8);
+                            //self.mem.set_u8(address, thing[0]);
+                            //self.mem.set_u8(address.wrapping_sub(1), thing[1]);
+                        }
+            
+                        // load instrictions
+                        0b100000 => {
+                            //LB
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, i8) as u32//self.mem.get_i8(
+                            //     (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
+                            //         as u32,
+                            // ) as u32
+                        }
+                        0b100100 => {
+                            //LBU
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, u8) as u32//self.mem.get_u8(
+                            //     (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
+                            //         as u32,
+                            // ) as u32
+                        }
+                        0b100001 => {
+                            //LH
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+            
+                            #[cfg(feature = "memory_allignment_check")]
+                            if address & 0b1 == 0 {
+                                self.reg[immediate_t!(op)] = get_mem_alligned!(address, i16) as u32;//self.mem.get_i16_alligned(address) as u32
+                            } else {
+                                self.memory_error(0);
+                            }
+                            #[cfg(not(feature = "memory_allignment_check"))]
+                            {
+                                self.reg[immediate_t!(op)] = self.mem.get_i16_alligned(address) as u32
+                            }
+                        }
+                        0b100101 => {
+                            //LHU
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+            
+                            #[cfg(feature = "memory_allignment_check")]
+                            if address & 0b1 == 0 {
+                                self.reg[immediate_t!(op)] = get_mem_alligned!(address, u16) as u32;//self.mem.get_u16_alligned(address) as u32
+                            } else {
+                                self.memory_error(0);
+                            }
+                            #[cfg(not(feature = "memory_allignment_check"))]
+                            {
+                                self.reg[immediate_t!(op)] = self.mem.get_u16_alligned(address) as u32
+                            }
+                        }
+                        0b100011 => {
+                            //LW
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+            
+                            #[cfg(feature = "memory_allignment_check")]
+                            if address & 0b11 == 0 {
+                                self.reg[immediate_t!(op)] = get_mem_alligned!(address, u32);//self.mem.get_u32_alligned(address) as u32
+                            } else {
+                                self.memory_error(1);
+                            }
+                            #[cfg(not(feature = "memory_allignment_check"))]
+                            {
+                                self.reg[immediate_t!(op)] = self.mem.get_u32_alligned(address) as u32
+                            }
+                        }
+            
+                        // store instructions
+                        0b101000 => {
+                            //SB
+                            let address = (self.reg[immediate_s!(op)] as i32
+                            + immediate_immediate_signed_extended!(op) as i32)
+                            as u32;
+                            // self.mem.set_u8(
+                            //     (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
+                            //         as u32,
+                            //     (self.reg[immediate_t!(op)] & 0xFF) as u8,
+                            // );
+
+                            set_mem_alligned!(address, self.reg[immediate_t!(op)] as u8, u8);
+                        }
+                        0b101001 => {
+                            //SH
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+            
+                            if address & 0b1 == 0 {
+                                // self.mem.set_u16_alligned(
+                                //     address,
+                                //     (self.reg[immediate_t!(op)] & 0xFFFF) as u16,
+                                // );
+                                set_mem_alligned!(address, self.reg[immediate_t!(op)] as u16, u16);
+                            
+                            } else {
+                                self.memory_error(3);
+                            }
+                            #[cfg(not(feature = "memory_allignment_check"))]
+                            {
+                                self.mem.set_u16_alligned(
+                                    address,
+                                    (self.reg[immediate_t!(op)] & 0xFFFF) as u16,
+                                );
+                            }
+                        }
+                        0b101011 => {
+                            //SW
+                            let address = (self.reg[immediate_s!(op)] as i32
+                                + immediate_immediate_signed_extended!(op) as i32)
+                                as u32;
+                            if address & 0b11 == 0 {
+                                //self.mem
+                                //    .set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
+                                set_mem_alligned!(address, self.reg[immediate_t!(op)], u32);
+                            } else {
+                                self.memory_error(4);
+                            }
+                            #[cfg(not(feature = "memory_allignment_check"))]
+                            {
+                                self.mem
+                                    .set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
+                            }
+                        }
+            
+                        _ => self.invalid_op_code(),
+                    }
+                }
+                //self.run_opcode(op);
 
                 self.i_check
             }{}

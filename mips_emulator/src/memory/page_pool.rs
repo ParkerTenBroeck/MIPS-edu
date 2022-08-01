@@ -377,11 +377,8 @@ macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
         fn $func_name(&'a mut self, address: u32) -> $fn_type{
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
-                (*mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
-                    (&mut self.get_or_make_page(address).page).get_unchecked(tmp)).to_be()
-                
+                (core::mem::transmute::<&u8, &$fn_type>(self.get_or_make_page(address).page.get_unchecked_mut((address & 0xFFFF) as usize))).to_be()
             }
         }
     };
@@ -411,10 +408,8 @@ macro_rules! set_mem_alligned {
         // The macro will expand into the contents of this block.
         #[inline(always)]
         fn $func_name(&'a mut self, address: u32, data: $fn_type){
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             unsafe{
-                *mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
-                    (&mut self.get_or_make_page(address).page).get_unchecked_mut(tmp) = data.to_be();
+                (*core::mem::transmute::<&mut u8, &mut $fn_type>(self.get_or_make_page(address).page.get_unchecked_mut((address & 0xFFFF) as usize))) = data.to_be();
             }
         }
     };

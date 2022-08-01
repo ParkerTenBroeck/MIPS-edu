@@ -148,7 +148,6 @@ impl epi::App for Application {
     fn on_exit(&mut self, _gl: &eframe::glow::Context) {
         
     }
-    
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
 
