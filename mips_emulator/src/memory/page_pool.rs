@@ -311,7 +311,7 @@ impl PagePoolController{
         }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     pub fn create_page(&mut self, addr: u16) -> Result<&mut Page, Box<dyn Error>>{
 
 
