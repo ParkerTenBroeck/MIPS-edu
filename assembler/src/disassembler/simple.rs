@@ -9,7 +9,7 @@ pub fn disassemble(opcode: u32, add: u32) -> String{
         _ => immediate_encoding(opcode, add),
     }
 }
-fn register_encoding(opcode: u32, add: u32) -> String{
+fn register_encoding(opcode: u32, _add: u32) -> String{
 
     let s = (opcode >> 21) & 0b11111;
     let t = (opcode >> 16) & 0b11111;

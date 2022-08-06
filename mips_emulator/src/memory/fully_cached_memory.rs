@@ -6,15 +6,20 @@ use super::page_pool::{Page, PagePoolListener, PagePoolNotifier, SEG_SIZE, PageP
 
 
 //stupid workaround
-const INIT: Option<&'static mut Page> = None;
+const INIT: Option<*mut Page> = None;
 
 #[deprecated]
 pub struct FullyCachedMemory{
     pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
     pub(crate) page_pool: Option<PagePoolNotifier>,
-    pub(crate) page_table: [Option<&'static mut Page>; SEG_SIZE],
+    pub(crate) page_table: [Option<*mut Page>; SEG_SIZE],
 }
+unsafe impl Send for FullyCachedMemory{
 
+}
+unsafe impl Sync for FullyCachedMemory{
+    
+}
 
 impl PagePoolHolder for FullyCachedMemory{
 
@@ -37,13 +42,11 @@ impl PagePoolHolder for FullyCachedMemory{
         for page in self.page_table.iter_mut(){
             *page = Option::None;
         }
-        
+            
         let pages = page_pool.pool.iter_mut();
         let mut addresses = page_pool.address_mapping.iter();
         for page in pages{
-            unsafe{
-                self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(std::mem::transmute(page));
-            }
+            self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(page);
         }
 
         match &mut self.listener{
@@ -69,24 +72,22 @@ impl Default for PagePoolRef<FullyCachedMemory>{
 
 impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory{
     #[inline(always)]
-    fn get_page(&mut self, address: u32) -> Option<&mut Page> {
+    unsafe fn get_page(&mut self, address: u32) -> Option<&mut Page> {
         let addr = (address >> 16) as usize;
-        let p =unsafe{self.page_table.get_unchecked_mut(addr)};
-        match p{
-            Some(val) => Option::Some(val),
+        match *self.page_table.get_unchecked_mut(addr){
+            Some(val) => Option::Some(val.as_mut().unwrap_unchecked()),
             None => Option::None,
         }
     }
 
     #[inline(always)]
-    fn get_or_make_page(&mut self, address: u32) -> &mut Page {
+    unsafe fn get_or_make_page(&mut self, address: u32) -> &mut Page {
         let addr = (address >> 16) as usize;
         //we dont need to check if the addr is in bounds since it is always below 2^16
         {
-            let p =unsafe{self.page_table.get_unchecked_mut(addr)};
-
-            match p{
-                Some(val) => return val,
+            let p = self.page_table.get_unchecked_mut(addr);
+            match *p{
+                Some(val) => return val.as_mut().unwrap_unchecked(),
                 None => {
                     
                     match &self.page_pool{
@@ -95,7 +96,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
                             let val = val.create_page(addr as u16);
                             match val{
                                 Ok(ok) => {
-                                    *p = Option::Some(unsafe{std::mem::transmute(ok)});
+                                    *p = Option::Some(ok);
                                 },
                                 Err(_) => {},
                             }
@@ -104,9 +105,9 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
                     }
                     
 
-                    match p {
-                        Some(val) => return val,
-                        None => unsafe { std::hint::unreachable_unchecked() },
+                    match *p {
+                        Some(val) => return val.as_mut().unwrap_unchecked(),
+                        None => std::hint::unreachable_unchecked() ,
                     }  
                 },
             }

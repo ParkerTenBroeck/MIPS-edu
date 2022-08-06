@@ -94,7 +94,7 @@ impl HexEditor {
 
 impl Tab for HexEditor {
     fn ui(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
+        ui.vertical(|ui| unsafe {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.add_enabled_ui(!self.show_disassembly, |ui| {
@@ -275,7 +275,7 @@ impl Tab for HexEditor {
                     
                     if self.scroll_to_pc{
                         let tmp = self.align_address_to_row((self.last_height * self.bytes_per_line as u32) / 2);
-                        let tmp2 = self.align_address_to_row(unsafe{self.cpu.pc()});
+                        let tmp2 = self.align_address_to_row(self.cpu.pc());
                         self.starting_offset = match tmp2.checked_sub(tmp){
                             Some(val) => val,
                             None => {

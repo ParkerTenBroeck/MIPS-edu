@@ -16,6 +16,22 @@ impl Page{
     }
 }
 
+pub trait PageImpl{
+    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE];
+}
+
+impl PageImpl for *mut Page{
+    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+        &mut (**self).page
+    }
+}
+
+impl PageImpl for &mut Page{
+    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+        &mut self.page
+    }
+}
+
 pub trait PagePoolHolder{
     fn init_holder(&mut self, _notifier: PagePoolNotifier) {}
     fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier>;
@@ -31,12 +47,18 @@ pub trait PagePoolListener{
 
 //------------------------------------------------------------------------------------------------------
 
-pub type PageGuard<'a> = ControllerGuard<'a, Page>;
+pub type PageGuard<'a> = ControllerGuard<'a, *mut Page>;
+
+impl<'a> PageImpl for PageGuard<'a>{
+    unsafe fn page(&mut self) -> *mut  [u8; SEG_SIZE] {
+        &mut (***self).page
+    }
+}
 
 //------------------------------------------------------------------------------------------------------
 pub struct ControllerGuard<'a, T>{
     _guard: MutexGuard<'a, PagePoolController>,
-    pub data: &'a mut T,
+    pub data: T,
 }
 impl<'a, T> std::ops::Deref for ControllerGuard<'a, T>{
     type Target = T;
@@ -70,7 +92,7 @@ impl PagePoolNotifier{
         self.page_pool.clone()
     }
 
-    pub fn create_controller_guard<'a, T>(&'a self, data: &'a mut T) -> ControllerGuard<'a, T> {
+    pub fn create_controller_guard<'a, T>(&'a self, data: T) -> ControllerGuard<'a, T> {
         ControllerGuard{
             _guard: self.page_pool.lock().unwrap(),
             data: data,
@@ -302,17 +324,17 @@ impl PagePoolController{
         Result::Ok(())
     }
 
-    pub fn get_page(&mut self, addr: u16) -> Option<&mut Page>{
+    pub unsafe fn get_page(&mut self, addr: u16) -> Option<*mut Page>{
         let thing = self.page_pool.address_mapping.iter().position(|val| {*val == addr});
         if let Option::Some(addr) = thing{
-            Option::Some(unsafe{self.page_pool.pool.get_unchecked_mut(addr)})
+            Option::Some(self.page_pool.pool.get_unchecked_mut(addr))
         }else{
             Option::None
         }
     }
 
-    #[inline(never)]
-    pub fn create_page(&mut self, addr: u16) -> Result<&mut Page, Box<dyn Error>>{
+    #[inline(always)]
+    pub fn create_page(&mut self, addr: u16) -> Result<*mut Page, Box<dyn Error>>{
 
 
         match self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}) {
@@ -347,7 +369,7 @@ impl PagePoolController{
         Result::Ok(())
     }
 
-    #[inline(always)]
+    #[inline(never)]
     pub fn remove_page(&mut self, add: u16) -> Result<(), Box<dyn Error>>{
         
         let pos = self.page_pool.address_mapping.iter().position(|i| {
@@ -375,10 +397,8 @@ impl PagePoolController{
 macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&'a mut self, address: u32) -> $fn_type{
-            unsafe{
-                (core::mem::transmute::<&u8, &$fn_type>(self.get_or_make_page(address).page.get_unchecked_mut((address & 0xFFFF) as usize))).to_be()
-            }
+        unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type{
+            (core::mem::transmute::<&u8, &$fn_type>((*self.get_or_make_page(address).page()).get_unchecked_mut((address & 0xFFFF) as usize))).to_be()
         }
     };
 }
@@ -388,12 +408,9 @@ macro_rules! get_mem_alligned {
 macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&'a mut self, address: u32) -> $fn_type{
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+        unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type{
             unsafe{
-                *mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
-                    (&mut self.get_or_make_page(address).page).get_unchecked(tmp)
-                
+                (core::mem::transmute::<&u8, &$fn_type>(self.get_or_make_page(address).page.get_unchecked_mut((address & 0xFFFF) as usize)))
             }
         }
     };
@@ -406,10 +423,8 @@ macro_rules! set_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
-        fn $func_name(&'a mut self, address: u32, data: $fn_type){
-            unsafe{
-                (*core::mem::transmute::<&mut u8, &mut $fn_type>(self.get_or_make_page(address).page.get_unchecked_mut((address & 0xFFFF) as usize))) = data.to_be();
-            }
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type){
+            (*core::mem::transmute::<&mut u8, &mut $fn_type>((*self.get_or_make_page(address).page()).get_unchecked_mut((address & 0xFFFF) as usize))) = data.to_be();
         }
     };
 }
@@ -421,11 +436,9 @@ macro_rules! set_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
-        fn $func_name(&'a mut self, address: u32, data: $fn_type){
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type){
             unsafe{
-                *mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
-                    (&mut self.get_or_make_page(address).page).get_unchecked_mut(tmp) = data;
+                (*core::mem::transmute::<&mut u8, &mut $fn_type>(self.get_or_make_page(address).page.get_unchecked_mut((address & 0xFFFF) as usize))) = data;
             }
         }
     };
@@ -436,20 +449,20 @@ macro_rules! set_mem_alligned {
 macro_rules! get_mem_alligned_o {
     ($func_name:ident, $fn_type:ty) => {
         #[inline(always)]
-        fn $func_name(&'a mut self, address: u32) -> Option<$fn_type>{
+        unsafe fn $func_name(&'a mut self, address: u32) -> Option<$fn_type>{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
-            unsafe{
+            
                 match &mut self.get_page(address){
                     Option::Some(val) => {
                         return Option::Some(
                             (mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
-                            (&mut val.page)[tmp]).to_be());
+                            ( &mut *val.page())[tmp]).to_be());
                     }
                     Option::None => {
                         return Option::None;
                     }
                 }
-            }
+            
         }
     };
 }
@@ -484,14 +497,14 @@ macro_rules! set_mem_alligned_o {
     ($func_name:ident, $fn_type:ty) => {
         // The macro will expand into the contents of this block.
         #[inline(always)]
-        fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()>{
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()>{
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             match self.get_page(address){
                 Option::Some(mut val) => {
-                    unsafe{
+                    
                         mem::transmute::<&mut[u8; crate::memory::page_pool::SEG_SIZE], &mut[$fn_type; crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()]>
-                            (&mut val.page)[tmp] = data.to_be();
-                    }
+                            (&mut *val.page())[tmp] = data.to_be();
+                    
                     return Result::Ok(());
                 }
                 Option::None => {
@@ -527,26 +540,26 @@ macro_rules! set_mem_alligned_o {
     };
 }
 
+
 //------------------------------------------------------------------------------------------------------
-pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
+pub trait MemoryDefault<'a, P> where P: PageImpl{
 
-    fn get_or_make_page(&'a mut self, page: u32) -> P;//&mut Page;
-    fn get_page(&'a mut self, page: u32) -> Option<P>;//Option<&mut Page>;
+    unsafe fn get_or_make_page(&'a mut self, page: u32) -> P;//&mut Page;
+    unsafe fn get_page(&'a mut self, page: u32) -> Option<P>;//Option<&mut Page>;
 
 
-    fn copy_into_raw<T: Copy>(&'a mut self, address: u32, data: &[T]){
+    unsafe fn copy_into_raw<T: Copy>(&'a mut self, address: u32, data: &[T]){
         let size: usize = data.len() * mem::size_of::<T>();
-        unsafe {
+        
             let data = core::slice::from_raw_parts(std::mem::transmute(data.as_ptr()), size);
-            self.copy_into(address, data, 0, size); 
-        }
+            self.copy_into(address, data, 0, size);
     }
 
     unsafe fn get_or_make_mut_ptr_to_address(&'a mut self, address: u32) -> *mut u8{
-        &mut self.get_or_make_page(address).page[(address & 0xFFFF) as usize]
+        &mut (*self.get_or_make_page(address).page())[(address & 0xFFFF) as usize]
     }
 
-    fn copy_into(&'a mut self, address: u32, data: &[u8], start: usize, end: usize){
+    unsafe fn copy_into(&'a mut self, address: u32, data: &[u8], start: usize, end: usize){
         let mut id = start;
 
         let mut tmp: Option<P>= Option::None;
@@ -558,14 +571,14 @@ pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
             }
             match &mut tmp {
                 None => {
-                    let page = unsafe{(*ptr).get_or_make_page(im)};
+                    let page = (*ptr).get_or_make_page(im);
                     tmp = Option::Some(page);
                 },
                 _ => {}
             }
             match &mut tmp {
                 Some(val) => {
-                    val.page[(im & 0xFFFF) as usize] = data[id];
+                    (*val.page())[(im & 0xFFFF) as usize] = data[id];
                 },
                 None => panic!(),
             }
@@ -574,7 +587,7 @@ pub trait MemoryDefault<'a, P> where P: DerefMut + Deref<Target=Page> {
     }
 }
 
-pub trait MemoryDefaultAccess<'a, P> where P: DerefMut + Deref<Target=Page>, Self: MemoryDefault<'a, P> {
+pub trait MemoryDefaultAccess<'a, P> where P: PageImpl, Self: MemoryDefault<'a, P> {
     get_mem_alligned!(get_i64_alligned, i64);
     set_mem_alligned!(set_i64_alligned, i64);
     get_mem_alligned!(get_u64_alligned, u64);
