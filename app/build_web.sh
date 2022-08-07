@@ -45,7 +45,7 @@ rm -f "docs/${CRATE_NAME_SNAKE_CASE}_bg.wasm"
 echo "Building rust…"
 BUILD=release
 RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals' \
-cargo +nightly-2022-07-01 build -p "${CRATE_NAME}" --release --lib --target wasm32-unknown-unknown -Z build-std=std,panic_abort
+cargo +nightly build -p "${CRATE_NAME}" --release --lib --target wasm32-unknown-unknown -Z build-std=std,panic_abort
 
 # Get the output directory (in the workspace it is in another location)
 TARGET=$(cargo metadata --format-version=1 | jq --raw-output .target_directory)

@@ -1,5 +1,5 @@
 use core::panic;
-use std::{sync::{atomic::AtomicUsize, Arc}, time::Duration, panic::AssertUnwindSafe, cell::UnsafeCell, ptr::NonNull};
+use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe, ptr::NonNull};
 
 use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
@@ -617,12 +617,12 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.i_check = !true;
 
         log::info!("CPU Started");
-        let start = std::time::SystemTime::now();
+        //let start = std::time::SystemTime::now();
         self.run();
-        let since_the_epoch = std::time::SystemTime::now()
-           .duration_since(start)
-           .expect("Time went backwards");
-        println!("{:?}", since_the_epoch);
+        // let since_the_epoch = std::time::SystemTime::now()
+        //    .duration_since(start)
+        //    .expect("Time went backwards");
+        // println!("{:?}", since_the_epoch);
         log::info!("CPU Step Stopping");
     }
 
