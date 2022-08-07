@@ -1,10 +1,10 @@
-use std::{pin::Pin, sync::{Arc}};
+use std::{sync::{Arc}};
 use std::sync::Mutex;
 use crate::{platform::sync::PlatSpecificLocking, emulator::handlers::CPUAccessInfo};
 //use crate::platform::sync::Mutex;
 
 use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
-use mips_emulator::{cpu::MipsCpu};
+use mips_emulator::{cpu::{MipsCpu, EmulatorInterface}};
 
 use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler, util::keyboard_util::KeyboardMemory, side_panel::{side_tabbed_panel::SideTabbedPanel}};
 
@@ -43,7 +43,7 @@ pub struct Application {
     #[cfg_attr(feature = "persistence", serde(skip))]
     frame: u32,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    pub cpu: Pin<Box<MipsCpu<ExternalHandler>>>,
+    pub cpu: EmulatorInterface<ExternalHandler>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_screen: TextureHandle,
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -66,7 +66,7 @@ impl Application {
         let cpu_screen_texture = Arc::new(Mutex::new((0, Option::None)));
         let cpu_screen = ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest);        
         let cpu_virtual_keyboard = Arc::new(Mutex::new(KeyboardMemory::new()));
-        let cpu = Box::pin(MipsCpu::new(ExternalHandler::new(access_info.clone(), cpu_screen_texture.clone(), cpu_virtual_keyboard.clone())));
+        let cpu = MipsCpu::new(ExternalHandler::new(access_info.clone(), cpu_screen_texture.clone(), cpu_virtual_keyboard.clone()));
 
         let mut ret = Self {
             settings: ApplicationSettings::default(),
@@ -124,7 +124,7 @@ impl Application{
     }
 
     pub fn add_cpu_memory_tab(&mut self){
-        self.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(unsafe{std::mem::transmute(self.cpu.as_mut().get_mut())})));
+        self.tabbed_area.add_tab(Box::new(crate::tabs::hex_editor::HexEditor::new(self.cpu.clone())));
     }
 
     pub fn add_cpu_screen_tab(&mut self){
@@ -151,8 +151,10 @@ impl epi::App for Application {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
 
-        if self.cpu.is_running() && !self.cpu.paused_or_stopped() {
-            ctx.request_repaint();
+        unsafe{
+            if (*self.cpu.raw_cpu()).is_running() && !(*self.cpu.raw_cpu()).paused_or_stopped(){
+                ctx.request_repaint()
+            }
         }
         
         if let Result::Ok(mut lock) = self.cpu_screen_texture.plat_lock(){

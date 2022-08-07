@@ -1,8 +1,8 @@
 use eframe::{egui::{WidgetText}};
-use mips_emulator::{memory::page_pool::MemoryDefault, cpu::MipsCpu};
+use mips_emulator::{memory::page_pool::MemoryDefault};
 
 
-use crate::{platform::sync::PlatSpecificLocking, emulator::handlers::ExternalHandler};
+use crate::{platform::sync::PlatSpecificLocking};
 
 use super::side_tabbed_panel::SideTab;
 
@@ -130,11 +130,12 @@ impl SideTab for CPUSidePanel {
 
 
         let (pc, hi, lo, reg) = unsafe{
+            let cpu = app.cpu.raw_cpu();
             (
-                app.cpu.pc(),
-                app.cpu.hi(),
-                app.cpu.lo(),
-                *app.cpu.reg(),
+                (*cpu).pc(),
+                (*cpu).hi(),
+                (*cpu).lo(),
+                *(*cpu).reg(),
             )
         };
 
@@ -246,131 +247,84 @@ impl SideTab for CPUSidePanel {
             });
         //});
 
-
-
-        //ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
         if ui.button("Start CPU").clicked() {
-            unsafe {
-                // static mut CPU: Option<MipsCpu> = Option::None;
-                // let cpu = CPU.get_or_insert_with(||{
-                //     MipsCpu::new()
-                // });
-                if app.cpu.is_running() {
-                    log::warn!("CPU is already running");
-                } else {
-                    log::info!("CPU Starting");
-                    let cpu =
-                        &mut (*app.cpu.as_mut()) as *mut MipsCpu<ExternalHandler>;
-                        
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let cpu = cpu.as_mut().unwrap();
-
-                        let _ = crate::platform::thread::start_thread(||{
-                            cpu.start_local();
-                        });
-                    }
-
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        let cpu = cpu.as_mut().unwrap();
-                        cpu.start_new_thread();
-                    }
+            if {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    app.cpu.start_new_thread()
                 }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    app.cpu.start(|inner|{
+
+                    })
+                }
+            }.is_ok(){
+                log::info!("CPU Started");
+            }else{
+                log::warn!("CPU is already running");
             }
         }
         if ui.button("Step CPU").clicked() {
-            unsafe {
-                if app.cpu.is_running() {
-                    log::warn!("CPU is already running");
-                } else {
-                    let cpu =
-                    &mut (*app.cpu.as_mut()) as *mut MipsCpu<ExternalHandler>;
-                        
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let cpu = cpu.as_mut().unwrap();
-
-                        let _ = crate::platform::thread::start_thread(||{
-                            cpu.step_local();
-                        });
-                    }
-
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        let cpu = cpu.as_mut().unwrap();
-                        cpu.step_new_thread();
-                    }
+            if {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    app.cpu.step_new_thread()
                 }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    app.cpu.step(|inner|{
+
+                    })
+                }
+            }.is_ok(){
+                log::info!("CPU Started");
+            }else{
+                log::warn!("CPU is already running");
             }
         }
 
         if ui.button("Stop CPU").clicked() {
-            if app.cpu.is_running() {
-                app.cpu.stop();
-                log::info!("Stopping CPU");
+            if app.cpu.stop().is_ok() {
+                log::info!("Stopped CPU");
             } else {
                 log::warn!("CPU is already stopped");
             }
         }
-        if ui.button("Pause CPU").clicked() {
-            if app.cpu.paused_or_stopped() {
-                log::warn!("CPU is already paused");
-            } else {
-                app.cpu.pause();
-                log::info!("CPU is paused");
-            }
-        }
-        if ui.button("Resume CPU").clicked() {
-            if app.cpu.paused_or_stopped() {
-                app.cpu.resume();
-                log::info!("CPU resumed");
-            } else {
-                log::warn!("CPU is already resumed");
-            }
-        }
         if ui.button("Reset CPU").clicked() {
-            app.cpu.stop_and_wait();
-            if !app.cpu.is_running() {
-                app.cpu.reset();
+            let _ = app.cpu.stop();
+            if app.cpu.restart().is_ok() {
                 log::info!("reset CPU");
             } else {
                 log::warn!("Cannot reset CPU while running");
             }
         }
         if ui.button("Load Demo 1").clicked(){
+            let _ = app.cpu.stop();
+            app.cpu.cpu_mut(|cpu|{
+                cpu.clear();                
 
-            app.cpu.stop_and_wait();
-            if !app.cpu.is_running() {
-                app.cpu.clear();
-
-                
-
-            let mut test_prog = [0x3C027FFFu32, 0x00000820, 0x0AC01001C, 0x20210001, 0x10220001, 0x08000002, 0x0000000C];
+                let mut test_prog = [0x3C027FFFu32, 0x00000820, /* 0x0AC01001C, */ 0x20210001, 0x10220001, 0x08000002, 0x0000000C];
                 for mem in test_prog.iter_mut(){
                     *mem = mem.to_be();
                 }
                 unsafe{
-                    app.cpu.get_mem().copy_into_raw(0, test_prog.as_slice());
+                    cpu.get_mem().copy_into_raw(0, test_prog.as_slice());
                 }
                 log::info!("Loaded Demo 1 CPU");
-            } else {
-                log::warn!("Cannot reset CPU while running");
-            }
+            });
         }
         if ui.button("Load Demo 2").clicked(){
-            app.cpu.stop_and_wait();
-            if !app.cpu.is_running() {
-                app.cpu.clear();
+            let _ = app.cpu.stop();
+            app.cpu.cpu_mut(|cpu|{
+                cpu.clear();                
 
                 let test_prog = include_bytes!("../../res/tmp.bin");
                 unsafe{
-                    app.cpu.get_mem().copy_into_raw(0, test_prog);
+                    cpu.get_mem().copy_into_raw(0, test_prog);
                 }
                 log::info!("Loaded Demo 2 CPU");
-            } else {
-                log::warn!("Cannot reset CPU while running");
-            }
+            });
         }
 
         fn create_text(access_kind: &mut crate::emulator::handlers::AccessKind, text: &str) -> WidgetText{
