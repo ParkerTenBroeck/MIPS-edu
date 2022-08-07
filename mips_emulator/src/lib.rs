@@ -1,3 +1,6 @@
+#![feature(box_syntax)]
+#![feature(core_intrinsics)]
+
 pub mod memory;
 pub mod cpu;
 

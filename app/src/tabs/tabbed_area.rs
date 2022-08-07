@@ -124,9 +124,7 @@ impl TabbedArea {
 
     pub fn add_tab(&mut self, tab: Box<dyn Tab>) {
         self.tabs.push(tab);
-        if self.selected == 0 {
-            self.selected = 1;
-        }
+        self.selected = self.tabs.len() as u32;
     }
 }
 

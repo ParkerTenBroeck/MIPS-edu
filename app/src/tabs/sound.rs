@@ -100,7 +100,7 @@ impl Tab for SoundTab {
     }
 
     fn get_name(&self) -> eframe::egui::WidgetText {
-        "Sound Tab".into()
+        "MIPS Sound".into()
     }
 }
 

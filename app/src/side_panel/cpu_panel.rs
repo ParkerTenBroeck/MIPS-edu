@@ -1,5 +1,8 @@
+use eframe::{egui::{WidgetText}};
 use mips_emulator::{memory::page_pool::MemoryDefault, cpu::MipsCpu};
 
+
+use crate::{platform::sync::PlatSpecificLocking, emulator::handlers::ExternalHandler};
 
 use super::side_tabbed_panel::SideTab;
 
@@ -22,7 +25,7 @@ pub struct CPUSidePanel {
     int_format: IntegerFormat,
     float_foramt: FloatFormat,
     use_reg_names: bool,
-    thing: Vec<(u128, u64)>
+    //thing: Vec<(u128, u64)>
 }
 
 impl CPUSidePanel {
@@ -31,7 +34,7 @@ impl CPUSidePanel {
             int_format: IntegerFormat::SignedBase10,
             float_foramt: FloatFormat::Base10,
             use_reg_names: true,
-            thing: Default::default(),
+            //thing: Default::default(),
         }
     }
 }
@@ -126,12 +129,12 @@ impl SideTab for CPUSidePanel {
 
 
 
-        let (pc, hi, lo, reg) = {
+        let (pc, hi, lo, reg) = unsafe{
             (
-                app.cpu.get_pc(),
-                app.cpu.get_hi_register(),
-                app.cpu.get_lo_register(),
-                *app.cpu.get_general_registers(),
+                app.cpu.pc(),
+                app.cpu.hi(),
+                app.cpu.lo(),
+                *app.cpu.reg(),
             )
         };
 
@@ -143,28 +146,28 @@ impl SideTab for CPUSidePanel {
             };
         }
 
-        let ins = app.cpu.get_instructions_ran();
-        ui.label(format!("instructions ran: {}", ins));
+        // let ins = app.cpu.get_instructions_ran();
+        // ui.label(format!("instructions ran: {}", ins));
         
-        let ins_p_s;
+        // let ins_p_s;
 
-        if app.cpu.is_running(){
-            self.thing.push((crate::platform::time::duration_since_epoch().as_nanos(), ins));
-            if self.thing.len() > 60{
-                self.thing.remove(0);
-            }
-            let start = self.thing[0];
-            let end = *self.thing.last().unwrap();
-            if let Option::Some(val) = ((end.1 - start.1) * 1000000000).checked_div((end.0 - start.0) as u64){
-                ins_p_s = val;
-            }else{
-                ins_p_s = 0;
-            }
-        }else{
-            self.thing.clear();
-            ins_p_s = 0;
-        }
-        ui.label(format!("Instructions/Second: {}", ins_p_s));
+        // if app.cpu.is_running(){
+        //     self.thing.push((crate::platform::time::duration_since_epoch().as_nanos(), ins));
+        //     if self.thing.len() > 60{
+        //         self.thing.remove(0);
+        //     }
+        //     let start = self.thing[0];
+        //     let end = *self.thing.last().unwrap();
+        //     if let Option::Some(val) = ((end.1 - start.1) * 1000000000).checked_div((end.0 - start.0) as u64){
+        //         ins_p_s = val;
+        //     }else{
+        //         ins_p_s = 0;
+        //     }
+        // }else{
+        //     self.thing.clear();
+        //     ins_p_s = 0;
+        // }
+        // ui.label(format!("Instructions/Second: {}", ins_p_s));
         
 
         //ui.horizontal(|ui| {
@@ -257,7 +260,7 @@ impl SideTab for CPUSidePanel {
                 } else {
                     log::info!("CPU Starting");
                     let cpu =
-                        &mut (*app.cpu.as_mut()) as *mut MipsCpu;
+                        &mut (*app.cpu.as_mut()) as *mut MipsCpu<ExternalHandler>;
                         
                     #[cfg(target_arch = "wasm32")]
                     {
@@ -282,7 +285,7 @@ impl SideTab for CPUSidePanel {
                     log::warn!("CPU is already running");
                 } else {
                     let cpu =
-                    &mut (*app.cpu.as_mut()) as *mut MipsCpu;
+                    &mut (*app.cpu.as_mut()) as *mut MipsCpu<ExternalHandler>;
                         
                     #[cfg(target_arch = "wasm32")]
                     {
@@ -329,17 +332,84 @@ impl SideTab for CPUSidePanel {
         if ui.button("Reset CPU").clicked() {
             app.cpu.stop_and_wait();
             if !app.cpu.is_running() {
-                app.cpu.clear();
-
-                let test_prog = include_bytes!("../../res/tmp.bin");
-
-                app.cpu.get_mem().copy_into_raw(0, test_prog);
-
+                app.cpu.reset();
                 log::info!("reset CPU");
             } else {
                 log::warn!("Cannot reset CPU while running");
             }
         }
+        if ui.button("Load Demo 1").clicked(){
+
+            app.cpu.stop_and_wait();
+            if !app.cpu.is_running() {
+                app.cpu.clear();
+
+                
+
+            let mut test_prog = [0x3C027FFFu32, 0x00000820, 0x0AC01001C, 0x20210001, 0x10220001, 0x08000002, 0x0000000C];
+                for mem in test_prog.iter_mut(){
+                    *mem = mem.to_be();
+                }
+                unsafe{
+                    app.cpu.get_mem().copy_into_raw(0, test_prog.as_slice());
+                }
+                log::info!("Loaded Demo 1 CPU");
+            } else {
+                log::warn!("Cannot reset CPU while running");
+            }
+        }
+        if ui.button("Load Demo 2").clicked(){
+            app.cpu.stop_and_wait();
+            if !app.cpu.is_running() {
+                app.cpu.clear();
+
+                let test_prog = include_bytes!("../../res/tmp.bin");
+                unsafe{
+                    app.cpu.get_mem().copy_into_raw(0, test_prog);
+                }
+                log::info!("Loaded Demo 2 CPU");
+            } else {
+                log::warn!("Cannot reset CPU while running");
+            }
+        }
+
+        fn create_text(access_kind: &mut crate::emulator::handlers::AccessKind, text: &str) -> WidgetText{
+            let mut text = eframe::egui::WidgetText::RichText(text.into());
+            match access_kind{
+                crate::emulator::handlers::AccessKind::SinglFrame => {
+                    text = text.underline();
+                    text = text.strong();
+                    *access_kind = crate::emulator::handlers::AccessKind::Nothing;
+                },
+                crate::emulator::handlers::AccessKind::MultiFrame => {
+                    text = text.underline();
+                    text = text.strong();
+                },
+                crate::emulator::handlers::AccessKind::Nothing => {},
+            }
+            text
+        }
+        ui.horizontal(|ui|{
+            ui.add_space(10.0);
+            ui.vertical(|ui|{
+                let clone = app.access_info.clone();
+                let mut access =  clone.plat_lock().unwrap();
+                if ui.button(create_text(&mut access.terminal, "Terminal")).clicked(){
+                    app.add_cpu_terminal_tab();
+                }
+                if ui.button(create_text(&mut access.display, "Display")).clicked(){
+                    app.add_cpu_screen_tab();
+                }
+                if ui.button(create_text(&mut access.sound, "Sound")).clicked(){
+                    app.add_cpu_sound_tab();
+                }
+                if ui.button("Memory").clicked(){
+                    app.add_cpu_memory_tab()
+                }
+            });
+        });
+
+
     }
 
     fn get_icon(&mut self) {

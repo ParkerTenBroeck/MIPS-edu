@@ -145,7 +145,6 @@ impl CodeTheme {
                 TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(37, 203, 105)),
                 TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::DARK_GRAY),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
-
                 TokenType::NumberLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(72, 130, 186)),
                 TokenType::Documentation => TextFormat::simple(font_id.clone(), Color32::from_rgb(98, 151, 85)),
                 TokenType::Error => {let mut fmt = TextFormat::simple(font_id.clone(), Color32::from_rgb(160, 182, 197)); fmt.background = Color32::RED; fmt},

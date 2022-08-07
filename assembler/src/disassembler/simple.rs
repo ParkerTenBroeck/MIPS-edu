@@ -1,16 +1,23 @@
-pub fn disassemble(opcode: u32) -> String{
+pub fn disassemble(opcode: u32, add: u32) -> String{
+
+    if opcode == 0{
+        return "nop".into();
+    }
+
     match opcode >> 26 {
-        0b000000 => register_encoding(opcode),
-        0b000010|0b000011|0b011010 => jump_encoding(opcode),
-        _ => immediate_encoding(opcode),
+        0b000000 => register_encoding(opcode, add),
+        _ => immediate_encoding(opcode, add),
     }
 }
-fn register_encoding(opcode: u32) -> String{
+fn register_encoding(opcode: u32, _add: u32) -> String{
+
     let s = (opcode >> 21) & 0b11111;
     let t = (opcode >> 16) & 0b11111;
     let d = (opcode >> 11) & 0b11111;
     let a = (opcode >> 6) & 0b11111;
     let f = opcode & 0b111111;
+    let tc = (opcode >> 6) & 0b1111111111;
+    let tce = (opcode >> 6) & 0b11111111111111111111;
 
     match f {
         //arithmatic
@@ -63,6 +70,36 @@ fn register_encoding(opcode: u32) -> String{
         0b001000 =>  //jr
             format!( "jr    ${}", s),
 
+
+        //system
+        0b001100 => {
+            if tce != 0{
+                format!("syscall  {:#x}", tce)
+            }else{
+                format!("syscall")
+            }
+        },
+        0b001101 => {
+            if tce != 0{
+                format!("break    {:#x}", tce)
+            }else{
+                format!("break")
+            }
+        },
+        //conditional traps
+        0b110100 => //TEQ
+            format!( "teq   ${}, ${}, {:#X}", s, t, tc),
+        0b110000 => //TGE
+            format!( "tge   ${}, ${}, {:#X}", s, t, tc),
+        0b110001 => //TGEU
+            format!( "tgeu  ${}, ${}, {:#X}", s, t, tc),
+        0b110010 => //TIT
+            format!( "tit   ${}, ${}, {:#X}", s, t, tc),
+        0b110011 => //TITU
+            format!( "titu  ${}, ${}, {:#X}", s, t, tc),
+        0b110110 => //TNE
+            format!( "tne  ${}, ${}, {:#X}", s, t, tc),
+
         //dataMovement
         0b010000 =>  //mfhi
             format!( "mfhi  ${}", d),
@@ -75,12 +112,13 @@ fn register_encoding(opcode: u32) -> String{
         _ => format!("db {:#08x}", opcode)
     }
 }
-fn immediate_encoding(opcode: u32) -> String{
+fn immediate_encoding(opcode: u32, add: u32) -> String{
     let o = (opcode >> 26) & 0b111111;
     let s = (opcode >> 21) & 0b11111;
     let t = (opcode >> 16) & 0b11111;
     let sei = ((opcode as i32) << 16) >> 16;
     let zei = opcode & 0xFFFF;
+    let b_arr = add.wrapping_add((sei as u32) << 2).wrapping_add(4);
 
     match o {
         //arthmetic
@@ -89,31 +127,55 @@ fn immediate_encoding(opcode: u32) -> String{
         0b001001 =>  //addiu
             format!("addiu ${}, ${}, {}", t, s, zei),
         0b001100 =>  //andi
-            format!("andi  ${}, ${}, {}", t, s, zei),
+            format!("andi  ${}, ${}, {:#x}", t, s, zei),
         0b001101 =>  //ori
-            format!("ori   ${}, ${}, {}", t, s, zei),
+            format!("ori   ${}, ${}, {:#x}", t, s, zei),
         0b001110 =>  //xori
-            format!("xori  ${}, ${}, {}", t, s, zei),
+            format!("xori  ${}, ${}, {:#x}", t, s, zei),
 
         //constant manupulating inctructions
-        0b011001 =>  //lhi
-            format!("lhi   ${}, {}", t, zei),
-        0b011000 =>  //llo
-            format!("llo   ${}, {}", t, zei),
+        0b001111 =>  //lhi
+            format!("lui   ${}, {:#x}", t, zei),
             
         //comparison instructions
         0b001010 =>  //slti
             format!("slti  ${}, ${}, {}", t, s, sei),
+        0b001011 =>  //sltu
+            format!("sltu  ${}, ${}, {}", t, s, sei),
 
         //branch instructions 
-        0b000100 =>  //beq
-            format!("beq   ${}, ${}, {}", t, s, sei),
+        0b000100 => { //beq
+            if t == 0 && s == 0{
+                format!("b     {:#x}", b_arr)
+            }else{
+                format!("beq   ${}, ${}, {:#x}", t, s, b_arr)
+            }
+        }
+        0b000001 => match t{
+            0b00001 => 
+                format!("bgez  ${}, ${}, {:#x}", t, s, b_arr),
+            0b00000 => 
+                format!("bltz  ${}, ${}, {:#x}", t, s, b_arr),
+            _ => format!("db {:#08x}", opcode),
+        }
         0b000111 =>  //bgtz
-            format!("bgtz  ${}, ${}, {}", t, s, sei),
+            format!("bgtz  ${}, ${}, {:#x}", t, s, b_arr),
         0b000110 =>  //blez
-            format!("blez  ${}, ${}, {}", t, s, sei),
+            format!("blez  ${}, ${}, {:#x}", t, s, b_arr),
         0b000101 =>  //bne
-            format!("bne   ${}, ${}, {}", t, s, sei),
+            format!("bne   ${}, ${}, {:#x}", t, s, b_arr),
+
+        //load unaliged instructions
+        0b100010 =>
+            format!("swl   ${}, {}(${})", t, sei, s),
+        0b100110 =>
+            format!("swr   ${}, {}(${})", t, sei, s),
+
+        //save unaliged instructions
+        0b101010 =>
+            format!("swl   ${}, {}(${})", t, sei, s),
+        0b101110 =>
+            format!("swr   ${}, {}(${})", t, sei, s),
 
         //load instrictions
         0b100000 =>  //lb
@@ -134,18 +196,17 @@ fn immediate_encoding(opcode: u32) -> String{
             format!("sh    ${}, {}(${})", t, sei, s),
         0b101011 =>  //sw
             format!("sw    ${}, {}(${})", t, sei, s),
-        _ => format!("db {:#08x}", opcode)
+        _ => jump_encoding(opcode, add)
     }
 }
-fn jump_encoding(opcode: u32) -> String{
+fn jump_encoding(opcode: u32, add: u32) -> String{
     let o = (opcode >> 26) & 0b111111;
     let i = (opcode << 6) >> 6;
-    let is = ((opcode as i32) << 6) >> 6;
+    let j_add = add & 0b11110000000000000000000000000000 | (i << 2);
 
     match o {
-        0b000010 => format!("j     {}", is),
-        0b000011 => format!("jal   {}", is),
-        0b011010 => format!("trap  {}", i),
+        0b000010 => format!("j        {:#x}", j_add),
+        0b000011 => format!("jal      {:#x}", j_add),
         _ => format!("db {:#08x}", opcode)
     }
 }

@@ -1,4 +1,4 @@
-//#![forbid(unsafe_code)]
+#![feature(backtrace)]
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
@@ -17,6 +17,7 @@ pub use app::Application;
 // ----------------------------------------------------------------------------
 // When compiling for web:
 
+use eframe::{CreationContext, App};
 #[cfg(target_arch = "wasm32")]
 use eframe::wasm_bindgen::{self, prelude::*};
 
@@ -30,7 +31,7 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     // Make sure panics are logged using `console.error`.
     console_error_panic_hook::set_once();
 
-    if !crate::loggers::init(){
+    if !app_init(){
         panic!("Failed to init logging");
     }
 
@@ -38,11 +39,41 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     tracing_wasm::set_as_global_default();
     let canvas_id = canvas_id.to_string();
 
-    //let _ = crate::platform::thread::start_thread(move ||{
+    eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
+        create_app(cc)
+    }))
+}
 
-        eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
-            Box::new(Application::new(&cc.egui_ctx))
-        }))
-    //});
-    //Ok(())
+fn panic_hook(info: &std::panic::PanicInfo<'_>) {
+    log::error!("{}\n{}", info, std::backtrace::Backtrace::force_capture().to_string());
+}
+
+pub fn app_init() -> bool{
+    if !crate::loggers::init(){
+        return false;
+    }
+    std::panic::set_hook(Box::new(panic_hook));
+    log::debug!("panic_hook set");
+    
+    true
+}
+
+pub fn create_app(cc: &CreationContext<'_>) -> Box<dyn App>{
+    let app = app::Application::new(&cc.egui_ctx);
+
+    // let mut fonts = eframe::egui::FontDefinitions::default(); 
+    // fonts.font_data.insert( "DroidSansMono".to_owned(), eframe::egui::FontData::from_static(include_bytes!("../res/ttf/DroidSansMono.ttf")) );
+    // fonts.families.insert(eframe::egui::FontFamily::Name("DroidSansMono".into()), vec!["DroidSansMono".to_owned()]);
+    // cc.egui_ctx.set_fonts(fonts);
+
+        
+    match app.settings().theme {
+        crate::app::Theme::DarkMode => {
+            cc.egui_ctx.set_visuals(eframe::egui::Visuals::dark());
+        }
+        crate::app::Theme::LightMode => {
+            cc.egui_ctx.set_visuals(eframe::egui::Visuals::light());
+        }   
+    }     
+    Box::new(app)
 }

@@ -60,7 +60,8 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn info(s: &str);
     #[wasm_bindgen(js_namespace = console)]
-    fn debug(s: &str);    #[wasm_bindgen(js_namespace = console)]
+    fn debug(s: &str);    
+    #[wasm_bindgen(js_namespace = console)]
     fn trace(s: &str);
 }
 struct Logger;
@@ -70,7 +71,6 @@ static LOGGER: Logger = Logger;
 fn full_msg(record: &log::Record<'_>, data: &LogData) -> String{
     let time_since_epoch = crate::platform::time::duration_since_epoch();
                 
-    //record.file()
     let mut buf = format!(
 "{{
 millis: {},
@@ -86,6 +86,7 @@ record.level(),
 data.sequence,
 record.args(),
 record.target());
+
     if let Option::Some(file) = record.file()
     {
         buf.push_str("\tfile: ");
@@ -166,8 +167,8 @@ record.target());
 }
 
 impl log::Log for Logger {
-    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-        metadata.level() <= log::Level::Debug
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
+        true//metadata.level() <= log::Level::Debug
     }
 
     fn log(&self, record: &log::Record<'_>) {
@@ -239,7 +240,7 @@ impl log::Log for Logger {
 
 pub fn init_logger() -> Result<(), log::SetLoggerError> {
     log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(log::LevelFilter::Info))
+        .map(|()| log::set_max_level(log::LevelFilter::Trace))
 }
 
 pub fn init() -> bool{
@@ -266,6 +267,6 @@ pub fn init() -> bool{
         },
     }
     drop(data);
-    log::info!("Initialized log");
+    log::debug!("Initialized log");
     true
 }

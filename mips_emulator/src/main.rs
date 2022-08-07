@@ -1,14 +1,20 @@
+
+
 use std::{io::Read};
 
-use mips_emulator::{cpu::MipsCpu, memory::page_pool::MemoryDefault};
+use mips_emulator::{cpu::{MipsCpu, DefaultExternalHandler}, memory::page_pool::MemoryDefault};
 
 
-static mut CPU_TEST: Option<MipsCpu> = Option::None;
+static mut CPU_TEST: Option<MipsCpu<DefaultExternalHandler>> = Option::None;
 
 fn main(){
 
+    // let test = &();
+    // let test = test as *mut ();
+    // let val = test;
+
     unsafe{
-        CPU_TEST = Option::Some(MipsCpu::new());
+        CPU_TEST = Option::Some(MipsCpu::new(DefaultExternalHandler {  }));
     }
 
     println!("s to start CPU, r to reset CPU, h to halt CPU and e to exit");
@@ -38,14 +44,11 @@ fn main(){
                         
                         CPU_TEST.as_mut().unwrap().clear();
 
-                        let test_prog = [
-                            0x64020001u32,
-                            0x00000820,
-                            0x20210001,
-                            0x10220001,
-                            0x0BFFFFF0,
-                            0x68000000,
-                        ]; //
+                        let mut test_prog = [0x3C027FFFu32, 0x00000820, 0x0AC01001C, 0x20210001, 0x10220001, 0x08000002, 0x0000000C];
+                        for item in test_prog.iter_mut(){
+                            *item = item.to_be();
+                        } 
+                        //
                         CPU_TEST
                             .as_mut()
                             .unwrap()
