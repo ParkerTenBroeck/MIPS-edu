@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Mutex, ops::DerefMut};
+use std::{error::Error, sync::Mutex, ops::DerefMut, ptr::NonNull};
 
 
 //use crate::{set_mem_alligned, get_mem_alligned, get_mem_alligned_o, set_mem_alligned_o};
@@ -7,7 +7,7 @@ use super::{page_pool::{PagePoolHolder, PagePool, PagePoolNotifier, Page, Memory
 
 pub struct SingleCachedMemory{
     page_pool: Option<PagePoolNotifier>,
-    cache: Mutex<Option<(u16, *mut Page)>>,
+    cache: Mutex<Option<(u16, NonNull<Page>)>>,
 }
 
 unsafe impl Sync for SingleCachedMemory{
@@ -84,7 +84,7 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
         match &mut self.page_pool{
             Some(val) => {
 
-                let page_ref: Option<*mut Page> = val.get_page_pool().get_page(page_id);
+                let page_ref: Option<NonNull<Page>> = val.get_page_pool().get_page(page_id);
                 let mut lock = self.cache.lock().unwrap();
                 let tmp = lock.deref_mut();
 

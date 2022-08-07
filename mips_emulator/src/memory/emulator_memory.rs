@@ -1,4 +1,4 @@
-use std::{error::Error};
+use std::{error::Error, ptr::NonNull};
 
 //use crate::{set_mem_alligned, get_mem_alligned, set_mem_alligned_o, get_mem_alligned_o};
 
@@ -6,12 +6,12 @@ use super::page_pool::{Page, PagePoolListener, PagePoolNotifier, SEG_SIZE, PageP
 
 
 //stupid workaround
-const INIT: Option<*mut Page> = None;
+const INIT: Option<NonNull<Page>> = None;
 pub struct Memory{
     pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
     pub(crate) page_pool: Option<PagePoolNotifier>,
     pub(crate) going_to_lock: Option<&'static mut bool>,
-    pub(crate) page_table: [Option<*mut Page>; SEG_SIZE],
+    pub(crate) page_table: [Option<NonNull<Page>>; SEG_SIZE],
 }
 
 unsafe impl Sync for Memory{
@@ -47,7 +47,7 @@ impl PagePoolHolder for Memory{
         let pages = page_pool.pool.iter_mut();
         let mut addresses = page_pool.address_mapping.iter();
         for page in pages{
-            self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(page);
+            self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(page.into());
         }
 
         match &mut self.listener{
@@ -71,9 +71,9 @@ impl Default for PagePoolRef<Memory>{
     }
 }
 
-impl<'a> super::page_pool::MemoryDefault<'a, *mut Page> for Memory{
+impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory{
     #[inline(always)]
-    unsafe fn get_page(&mut self, address: u32) -> Option<*mut Page> {
+    unsafe fn get_page(&mut self, address: u32) -> Option<NonNull<Page>> {
         let addr = (address >> 16) as usize;
         let p = *self.page_table.get_unchecked_mut(addr);
         match p{
@@ -82,8 +82,8 @@ impl<'a> super::page_pool::MemoryDefault<'a, *mut Page> for Memory{
         }
     }
 
-    #[inline(always)]
-    unsafe fn get_or_make_page(&mut self, address: u32) -> *mut Page {
+    #[inline(never)]
+    unsafe fn get_or_make_page(&mut self, address: u32) -> NonNull<Page> {
         let addr = (address >> 16) as usize;
         //we dont need to check if the addr is in bounds since it is always below 2^16
         {
@@ -118,7 +118,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, *mut Page> for Memory{
     }
 }
 
-impl<'a> super::page_pool::MemoryDefaultAccess<'a, *mut Page> for Memory{
+impl<'a> super::page_pool::MemoryDefaultAccess<'a, NonNull<Page>> for Memory{
 
 }
 

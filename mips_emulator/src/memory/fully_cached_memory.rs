@@ -1,18 +1,18 @@
 #![allow(deprecated)]
 
-use std::{error::Error};
+use std::{error::Error, ptr::NonNull};
 
 use super::page_pool::{Page, PagePoolListener, PagePoolNotifier, SEG_SIZE, PagePool, PagePoolHolder, PagePoolRef, PagePoolController};
 
 
 //stupid workaround
-const INIT: Option<*mut Page> = None;
+const INIT: Option<NonNull<Page>> = None;
 
 #[deprecated]
 pub struct FullyCachedMemory{
     pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
     pub(crate) page_pool: Option<PagePoolNotifier>,
-    pub(crate) page_table: [Option<*mut Page>; SEG_SIZE],
+    pub(crate) page_table: [Option<NonNull<Page>>; SEG_SIZE],
 }
 unsafe impl Send for FullyCachedMemory{
 
@@ -46,7 +46,7 @@ impl PagePoolHolder for FullyCachedMemory{
         let pages = page_pool.pool.iter_mut();
         let mut addresses = page_pool.address_mapping.iter();
         for page in pages{
-            self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(page);
+            self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(page.into());
         }
 
         match &mut self.listener{
@@ -75,7 +75,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
     unsafe fn get_page(&mut self, address: u32) -> Option<&mut Page> {
         let addr = (address >> 16) as usize;
         match *self.page_table.get_unchecked_mut(addr){
-            Some(val) => Option::Some(val.as_mut().unwrap_unchecked()),
+            Some(mut val) => Option::Some(val.as_mut()),
             None => Option::None,
         }
     }
@@ -87,7 +87,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
         {
             let p = self.page_table.get_unchecked_mut(addr);
             match *p{
-                Some(val) => return val.as_mut().unwrap_unchecked(),
+                Some(mut val) => return val.as_mut(),
                 None => {
                     
                     match &self.page_pool{
@@ -106,7 +106,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
                     
 
                     match *p {
-                        Some(val) => return val.as_mut().unwrap_unchecked(),
+                        Some(mut val) => return val.as_mut(),
                         None => std::hint::unreachable_unchecked() ,
                     }  
                 },

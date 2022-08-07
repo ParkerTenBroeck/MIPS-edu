@@ -26,6 +26,12 @@ impl PageImpl for *mut Page{
     }
 }
 
+impl PageImpl for NonNull<Page>{
+    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+       &mut self.as_mut().page
+    }
+}
+
 impl PageImpl for &mut Page{
     unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
         &mut self.page
@@ -47,11 +53,11 @@ pub trait PagePoolListener{
 
 //------------------------------------------------------------------------------------------------------
 
-pub type PageGuard<'a> = ControllerGuard<'a, *mut Page>;
+pub type PageGuard<'a> = ControllerGuard<'a, NonNull<Page>>;
 
 impl<'a> PageImpl for PageGuard<'a>{
     unsafe fn page(&mut self) -> *mut  [u8; SEG_SIZE] {
-        &mut (***self).page
+        &mut self.as_mut().page
     }
 }
 
@@ -324,17 +330,17 @@ impl PagePoolController{
         Result::Ok(())
     }
 
-    pub unsafe fn get_page(&mut self, addr: u16) -> Option<*mut Page>{
+    pub unsafe fn get_page(&mut self, addr: u16) -> Option<NonNull<Page>>{
         let thing = self.page_pool.address_mapping.iter().position(|val| {*val == addr});
         if let Option::Some(addr) = thing{
-            Option::Some(self.page_pool.pool.get_unchecked_mut(addr))
+            Option::Some(self.page_pool.pool.get_unchecked_mut(addr).into())
         }else{
             Option::None
         }
     }
 
-    #[inline(always)]
-    pub fn create_page(&mut self, addr: u16) -> Result<*mut Page, Box<dyn Error>>{
+    #[inline(never)]
+    pub fn create_page(&mut self, addr: u16) -> Result<NonNull<Page>, Box<dyn Error>>{
 
 
         match self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}) {
@@ -357,7 +363,7 @@ impl PagePoolController{
             },
         }
 
-        Result::Ok(self.page_pool.pool.get_mut(self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}).unwrap()).unwrap())
+        Result::Ok(self.page_pool.pool.get_mut(self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}).unwrap()).unwrap().into())
     }
 
     #[inline(always)]

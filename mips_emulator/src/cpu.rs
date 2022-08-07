@@ -1,5 +1,5 @@
 use core::panic;
-use std::{sync::{atomic::AtomicUsize}, time::Duration, panic::AssertUnwindSafe};
+use std::{sync::{atomic::AtomicUsize, Arc}, time::Duration, panic::AssertUnwindSafe, cell::UnsafeCell, ptr::NonNull};
 
 use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
@@ -112,6 +112,14 @@ macro_rules! cop1_fmt {
 
 
 //Macros
+
+pub struct EmulatorInterface<T: CpuExternalHandler>{
+    cpu: NonNull<MipsCpu<T>>
+}
+impl<T: CpuExternalHandler> EmulatorInterface<T>{
+    fn test(&mut self){
+    }
+}
 
 
 //-------------------------------------------------------- co processors
@@ -659,15 +667,15 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             }
             self.is_paused = false;
             
-            let mut ins_cache = unsafe{(&mut (*self.mem.get_or_make_page(self.pc)).page, self.pc >> 16)};
-            let mut mem_cache = unsafe{(&mut (*self.mem.get_or_make_page(0)).page, 0u32)};
+            let mut ins_cache = unsafe{(&mut (self.mem.get_or_make_page(self.pc).as_mut()).page, self.pc >> 16)};
+            let mut mem_cache = unsafe{(&mut (self.mem.get_or_make_page(0).as_mut()).page, 0u32)};
 
             macro_rules! set_mem_alligned {
                 ($add:expr, $val:expr, $fn_type:ty) => {
                     unsafe{
                         let address = $add;
-                        if address >> 16 != mem_cache.1{
-                            mem_cache = (&mut (*self.mem.get_or_make_page(address)).page, address >> 16);
+                        if core::intrinsics::unlikely(address >> 16 != mem_cache.1){
+                            mem_cache = (&mut (self.mem.get_or_make_page(address).as_mut()).page, address >> 16);
                         }
                         
                         let item = mem_cache.0.get_unchecked_mut(address as usize & 0xFFFF);
@@ -680,8 +688,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 ($add:expr, $fn_type:ty) => {
                     unsafe{
                         let address = $add;
-                        if address >> 16 != mem_cache.1{
-                            mem_cache = (&mut (*self.mem.get_or_make_page(address)).page, address >> 16);
+                        if core::intrinsics::unlikely(address >> 16 != mem_cache.1){
+                            mem_cache = (&mut (self.mem.get_or_make_page(address).as_mut()).page, address >> 16);
                         }
                         
                         let item = mem_cache.0.get_unchecked(address as usize & 0xFFFF);
@@ -693,8 +701,9 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             while {
                 let op: u32 = 
                 unsafe{
-                    if self.pc >> 16 != ins_cache.1{
-                        ins_cache = (&mut (*self.mem.get_or_make_page(self.pc)).page, self.pc >> 16);
+                    
+                    if core::intrinsics::unlikely(self.pc >> 16 != ins_cache.1){
+                        ins_cache = (&mut (self.mem.get_or_make_page(self.pc).as_mut()).page, self.pc >> 16);
                     }
                     
                     let item = ins_cache.0.get_unchecked(self.pc as usize & 0xFFFF);
@@ -719,12 +728,12 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 //arithmatic
                                 0b100000 => {
                                     //ADD
-                                    
                                     match (self.reg[register_s!(op)] as i32).checked_add(self.reg[register_t!((op))] as i32)
                                     {
                                         Some(val) => {
                                             self.reg[register_d!(op)] = val as u32;
                                         },
+                                        
                                         None => {
                                             self.arithmetic_error(2);
                                         },
@@ -743,7 +752,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 0b011010 => {
                                     //DIV
                                     let t = self.reg[register_t!(op)] as i32;
-                                    if t != 0 {
+                                    if core::intrinsics::likely(t != 0) {
                                         let s = self.reg[register_s!(op)] as i32;
                                         self.lo = (s.wrapping_div(t)) as u32;
                                         self.hi = (s.wrapping_rem(t)) as u32;
@@ -754,7 +763,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 0b011011 => {
                                     //DIVU
                                     let t = self.reg[register_t!(op)];
-                                    if t != 0 {
+                                    if core::intrinsics::likely(t != 0) {
                                         let s = self.reg[register_s!(op)];
                                         self.lo = s.wrapping_div(t);
                                         self.hi = s.wrapping_rem(t);
@@ -1140,7 +1149,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 as u32;
             
                             #[cfg(feature = "memory_allignment_check")]
-                            if address & 0b1 == 0 {
+                            if core::intrinsics::likely(address & 0b1 == 0) {
                                 self.reg[immediate_t!(op)] = get_mem_alligned!(address, i16) as u32;//self.mem.get_i16_alligned(address) as u32
                             } else {
                                 self.memory_error(0);
@@ -1157,7 +1166,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 as u32;
             
                             #[cfg(feature = "memory_allignment_check")]
-                            if address & 0b1 == 0 {
+                            if core::intrinsics::likely(address & 0b1 == 0) {
                                 self.reg[immediate_t!(op)] = get_mem_alligned!(address, u16) as u32;//self.mem.get_u16_alligned(address) as u32
                             } else {
                                 self.memory_error(0);
@@ -1174,7 +1183,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 as u32;
             
                             #[cfg(feature = "memory_allignment_check")]
-                            if address & 0b11 == 0 {
+                            if core::intrinsics::likely(address & 0b11 == 0) {
                                 self.reg[immediate_t!(op)] = get_mem_alligned!(address, u32);//self.mem.get_u32_alligned(address) as u32
                             } else {
                                 self.memory_error(1);
@@ -1205,7 +1214,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 + immediate_immediate_signed_extended!(op) as i32)
                                 as u32;
             
-                            if address & 0b1 == 0 {
+                            if core::intrinsics::likely(address & 0b1 == 0) {
                                 // self.mem.set_u16_alligned(
                                 //     address,
                                 //     (self.reg[immediate_t!(op)] & 0xFFFF) as u16,
@@ -1228,7 +1237,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                             let address = (self.reg[immediate_s!(op)] as i32
                                 + immediate_immediate_signed_extended!(op) as i32)
                                 as u32;
-                            if address & 0b11 == 0 {
+                            if core::intrinsics::likely(address & 0b11 == 0) {
                                 //self.mem
                                 //    .set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
                                 set_mem_alligned!(address, self.reg[immediate_t!(op)], u32);
