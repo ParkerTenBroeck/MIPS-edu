@@ -37,6 +37,7 @@ jobs:
         run: |
          rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
          chmod +x build_web.sh
+         cargo update -p wasm-bindgen
          ./build_web.sh
       
       - name: Upload production-ready build files
