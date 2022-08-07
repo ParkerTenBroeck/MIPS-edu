@@ -28,6 +28,8 @@ jobs:
       #     target: x86_64-unknown-linux-gnu
       - uses: jetli/wasm-pack-action@v0.3.0
       - uses: jetli/wasm-bindgen-action@v0.1.0
+        with:
+          version: '0.2.81'
       
     
       - name: Install 
@@ -37,7 +39,6 @@ jobs:
         run: |
          rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
          chmod +x build_web.sh
-         cargo update -p wasm-bindgen
          ./build_web.sh
       
       - name: Upload production-ready build files
