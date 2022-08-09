@@ -1,5 +1,5 @@
 use core::panic;
-use std::{sync::{atomic::{AtomicUsize, AtomicU8}, Arc}, time::Duration, panic::AssertUnwindSafe, ptr::NonNull, pin::Pin};
+use std::{sync::{atomic::{AtomicUsize, AtomicU8}, Arc, Mutex}, time::Duration, panic::AssertUnwindSafe, ptr::NonNull, pin::Pin};
 
 use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
@@ -320,7 +320,7 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     is_within_memory_event: bool,
     //instructions_ran: u64,
     paused: AtomicUsize,
-    inturupts: Vec<()>,
+    inturupts: Mutex<Vec<()>>,
     dropped: bool,
     mem: PagePoolRef<Memory>,
     external_handler: T,
@@ -556,7 +556,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             is_within_memory_event: false,
             mem: Memory::new(),
             external_handler: handler,
-            inturupts: Vec::new(),
+            inturupts: Default::default(),
             dropped: false,
         };
         
@@ -677,21 +677,28 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.clear();
     }
 
+    #[inline(never)]
+    #[cold]
     fn system_call_error(&mut self, call_id: u32, error_id: u32, message: &str) {
         unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
         .system_call_error(self, call_id, error_id, message);
     }
-
+    #[inline(never)]
+    #[cold]
     fn memory_error(&mut self, error_id: u32) {
         unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
         .memory_error(self, error_id);
     }
 
+    #[inline(never)]
+    #[cold]
     fn arithmetic_error(&mut self, id: u32) {
         unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
         .arithmetic_error(self, id);
     }
 
+    #[inline(never)]
+    #[cold]
     fn invalid_op_code(&mut self) {
         unsafe{ core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler)}
         .invalid_opcode(self);
@@ -922,7 +929,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                         self.lo = (s.wrapping_div(t)) as u32;
                                         self.hi = (s.wrapping_rem(t)) as u32;
                                     } else {
-                                        //self.arithmetic_error(0);
+                                        self.arithmetic_error(0);
                                     }
                                 }
                                 0b011011 => {
@@ -933,7 +940,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                         self.lo = s.wrapping_div(t);
                                         self.hi = s.wrapping_rem(t);
                                     } else {
-                                        //self.arithmetic_error(0);
+                                        self.arithmetic_error(0);
                                     }
                                 }
                                 0b011000 => {
@@ -1000,9 +1007,11 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 }
                                 0b100010 => {
                                     //SUB
-                                    self.reg[register_d!(op)] = (self.reg[register_s!(op)] as i32
-                                        - self.reg[register_t!(op)] as i32)
-                                        as u32;
+                                    if let Option::Some(val) = (self.reg[register_s!(op)] as i32).checked_sub(self.reg[register_t!(op)] as i32){
+                                        self.reg[register_d!(op)] = val as u32;
+                                    }else{
+                                        self.arithmetic_error(1)
+                                    }
                                 }
                                 0b100011 => {
                                     //SUBU
@@ -1127,13 +1136,15 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                         // arthmetic
                         0b001000 => {
                             //ADDI
-                            self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
+                            if let Option::Some(val) = (self.reg[immediate_s!(op)] as i32).checked_add(immediate_immediate_signed_extended!(op) as i32){
+                                self.reg[immediate_t!(op)] = val as u32;
+                            }else{
+                                self.arithmetic_error(1);
+                            }
                         }
                         0b001001 => {
                             //ADDIU
-                            self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)] as u32).wrapping_add(immediate_immediate_signed_extended!(op) as u32);
+                            self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)]).wrapping_add(immediate_immediate_signed_extended!(op));
                         }
                         0b001100 => {
                             //ANDI
@@ -1200,7 +1211,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                         0b000100 => {
                             //BEQ
                             if get_reg!(immediate_s!(op)) == get_reg!(immediate_t!(op)) {
-                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                self.pc = ((self.pc as i32).wrapping_add(immediate_immediate_address!(op))) as u32;
                             }
                         }
                         0b000001 => {
@@ -1208,13 +1219,13 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 0b00001 => {
                                     //BGEZ
                                     if (self.reg[immediate_s!(op)] as i32) >= 0 {
-                                        self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                        self.pc = ((self.pc as i32).wrapping_add(immediate_immediate_address!(op))) as u32;
                                     }
                                 }
                                 0b00000 => {
                                     //BLTZ
                                     if (self.reg[immediate_s!(op)] as i32) < 0 {
-                                        self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                        self.pc = ((self.pc as i32).wrapping_add(immediate_immediate_address!(op))) as u32;
                                     }
                                 }
                                 _ => {
@@ -1225,27 +1236,27 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                         0b000111 => {
                             //BGTZ
                             if self.reg[immediate_s!(op)] as i32 > 0 {
-                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                self.pc = ((self.pc as i32).wrapping_add(immediate_immediate_address!(op))) as u32;
                             }
                         }
             
                         0b000110 => {
                             //BLEZ
                             if self.reg[immediate_s!(op)] as i32 <= 0 {
-                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                self.pc = ((self.pc as i32).wrapping_add(immediate_immediate_address!(op))) as u32;
                             }
                         }
                         0b000101 => {
                             //BNE
                             if self.reg[immediate_s!(op)] != self.reg[immediate_t!(op) as usize] {
-                                self.pc = (self.pc as i32 + immediate_immediate_address!(op)) as u32;
+                                self.pc = ((self.pc as i32).wrapping_add(immediate_immediate_address!(op))) as u32;
                             }
                         }
             
                         //load unsinged instructions
                         0b100010 => {
                             //LWL
-                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32).wrapping_add(immediate_immediate_signed_extended!(op) as i32) ) as u32;
                             let reg_num = immediate_t!(op);
                             let mut thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
                             thing[3] = get_mem_alligned!(address, u8);//self.mem.get_u8(address);
@@ -1254,7 +1265,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                         }
                         0b100110 => {
                             //LWR
-                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32).wrapping_add(immediate_immediate_signed_extended!(op) as i32) ) as u32;
                             let reg_num = immediate_t!(op);
                             let mut thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
                             thing[0] = get_mem_alligned!(address, u8);//self.mem.get_u8(address);
@@ -1266,52 +1277,42 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                         //save unaliged instructions
                         0b101010 => {
                             //SWL
-                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32).wrapping_add(immediate_immediate_signed_extended!(op) as i32) ) as u32;
                             let reg_num = immediate_t!(op);
                             let thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
                             set_mem_alligned!(address, thing[3], u8);
                             set_mem_alligned!(address.wrapping_add(1), thing[2], u8);
-                            //self.mem.set_u8(address, thing[3]);
-                            //self.mem.set_u8(address + 1, thing[2]);
                         }
                         0b101110 => {
                             //SWR
-                            let address = (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32) as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32).wrapping_add(immediate_immediate_signed_extended!(op) as i32) ) as u32;
                             let reg_num = immediate_t!(op);
                             let thing:[u8; 4] = unsafe{core::mem::transmute(self.reg[reg_num])};
                             
                             set_mem_alligned!(address, thing[0], u8);
                             set_mem_alligned!(address.wrapping_sub(1), thing[1], u8);
-                            //self.mem.set_u8(address, thing[0]);
-                            //self.mem.set_u8(address.wrapping_sub(1), thing[1]);
                         }
             
                         // load instrictions
                         0b100000 => {
                             //LB
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
-                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, i8) as u32//self.mem.get_i8(
-                            //     (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
-                            //         as u32,
-                            // ) as u32
+                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, i8) as u32;
                         }
                         0b100100 => {
                             //LBU
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
-                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, u8) as u32//self.mem.get_u8(
-                            //     (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
-                            //         as u32,
-                            // ) as u32
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                           as u32;
+                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, u8) as u32;
                         }
                         0b100001 => {
                             //LH
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                           as u32;
             
                             #[cfg(feature = "memory_allignment_check")]
                             if core::intrinsics::likely(address & 0b1 == 0) {
@@ -1319,16 +1320,12 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                             } else {
                                 self.memory_error(0);
                             }
-                            #[cfg(not(feature = "memory_allignment_check"))]
-                            {
-                                self.reg[immediate_t!(op)] = self.mem.get_i16_alligned(address) as u32
-                            }
                         }
                         0b100101 => {
                             //LHU
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                           as u32;
             
                             #[cfg(feature = "memory_allignment_check")]
                             if core::intrinsics::likely(address & 0b1 == 0) {
@@ -1336,16 +1333,12 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                             } else {
                                 self.memory_error(0);
                             }
-                            #[cfg(not(feature = "memory_allignment_check"))]
-                            {
-                                self.reg[immediate_t!(op)] = self.mem.get_u16_alligned(address) as u32
-                            }
                         }
                         0b100011 => {
                             //LW
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                           as u32;
             
                             #[cfg(feature = "memory_allignment_check")]
                             if core::intrinsics::likely(address & 0b11 == 0) {
@@ -1353,66 +1346,37 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                             } else {
                                 self.memory_error(1);
                             }
-                            #[cfg(not(feature = "memory_allignment_check"))]
-                            {
-                                self.reg[immediate_t!(op)] = self.mem.get_u32_alligned(address) as u32
-                            }
                         }
             
                         // store instructions
                         0b101000 => {
                             //SB
-                            let address = (self.reg[immediate_s!(op)] as i32
-                            + immediate_immediate_signed_extended!(op) as i32)
-                            as u32;
-                            // self.mem.set_u8(
-                            //     (self.reg[immediate_s!(op)] as i32 + immediate_immediate_signed_extended!(op) as i32)
-                            //         as u32,
-                            //     (self.reg[immediate_t!(op)] & 0xFF) as u8,
-                            // );
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                           as u32;
 
                             set_mem_alligned!(address, self.reg[immediate_t!(op)] as u8, u8);
                         }
                         0b101001 => {
                             //SH
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                           as u32;
             
                             if core::intrinsics::likely(address & 0b1 == 0) {
-                                // self.mem.set_u16_alligned(
-                                //     address,
-                                //     (self.reg[immediate_t!(op)] & 0xFFFF) as u16,
-                                // );
                                 set_mem_alligned!(address, self.reg[immediate_t!(op)] as u16, u16);
                             
                             } else {
                                 self.memory_error(3);
                             }
-                            #[cfg(not(feature = "memory_allignment_check"))]
-                            {
-                                self.mem.set_u16_alligned(
-                                    address,
-                                    (self.reg[immediate_t!(op)] & 0xFFFF) as u16,
-                                );
-                            }
                         }
                         0b101011 => {
                             //SW
-                            let address = (self.reg[immediate_s!(op)] as i32
-                                + immediate_immediate_signed_extended!(op) as i32)
-                                as u32;
+                            let address = ((self.reg[immediate_s!(op)] as i32).wrapping_add(immediate_immediate_signed_extended!(op) as i32)) as u32;
                             if core::intrinsics::likely(address & 0b11 == 0) {
-                                //self.mem
-                                //    .set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
                                 set_mem_alligned!(address, self.reg[immediate_t!(op)], u32);
                             } else {
                                self.memory_error(4);
-                            }
-                            #[cfg(not(feature = "memory_allignment_check"))]
-                            {
-                                self.mem
-                                    .set_u32_alligned(address, (self.reg[immediate_t!(op)]) as u32);
                             }
                         }
             

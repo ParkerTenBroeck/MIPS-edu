@@ -32,7 +32,7 @@ fn main(){
                 }else{
                     emulator.cpu_mut(|cpu|{
 
-                        let mut test_prog = [0x3C027FFFu32, 0x00000820, 0x0AC01001C, 0x20210001, 0x10220001, 0x08000002, 0x0000000C];
+                        let mut test_prog = [0x3C027FFFu32, 0x00000820, /*0x0AC01001C,*/ 0x24210001, 0x10220001, 0x08000002, 0x0000000C];
                         for item in test_prog.iter_mut(){
                             *item = item.to_be();
                         } 

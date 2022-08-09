@@ -128,7 +128,7 @@ impl Application{
     }
 
     pub fn add_cpu_screen_tab(&mut self){
-        let tab = Box::new(crate::tabs::image_tab::ImageTab::new("MIPS Display", self.cpu_screen.clone()));
+        let tab = Box::new(crate::tabs::mips_display::MipsDisplay::new(self.cpu_screen.clone()));
         self.tabbed_area.add_tab(tab);
     }
 
