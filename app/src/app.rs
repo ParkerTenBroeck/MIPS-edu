@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use crate::{platform::sync::PlatSpecificLocking, emulator::handlers::CPUAccessInfo};
 //use crate::platform::sync::Mutex;
 
-use eframe::{egui::{self}, epi, epaint::{TextureHandle, ColorImage, Color32}};
+use eframe::{egui::{self}, epaint::{TextureHandle, ColorImage, Color32}, App, Frame};
 use mips_emulator::{cpu::{MipsCpu, EmulatorInterface}};
 
 use crate::{tabs::{code_editor::CodeEditor, tabbed_area::TabbedArea}, emulator::handlers::ExternalHandler, util::keyboard_util::KeyboardMemory, side_panel::{side_tabbed_panel::SideTabbedPanel}};
@@ -61,10 +61,9 @@ pub struct Application {
 impl Application {
     pub fn new(ctx: &egui::Context) -> Self {
 
-
         let access_info: Arc<Mutex<crate::emulator::handlers::AccessInfo>> = Default::default();
         let cpu_screen_texture = Arc::new(Mutex::new((0, Option::None)));
-        let cpu_screen = ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), eframe::epaint::textures::TextureFilter::Nearest);        
+        let cpu_screen = ctx.load_filtered_texture("ImageTabImage", ColorImage::new([1,1], Color32::BLACK), egui::TextureFilter::LinearTiled);        
         let cpu_virtual_keyboard = Arc::new(Mutex::new(KeyboardMemory::new()));
         let cpu = MipsCpu::new(ExternalHandler::new(access_info.clone(), cpu_screen_texture.clone(), cpu_virtual_keyboard.clone()));
 
@@ -139,20 +138,17 @@ impl Application{
 }
 
 
-impl epi::App for Application {
+impl App for Application {
 
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
         epi::set_value(storage, epi::APP_KEY, self);
     }
-    fn on_exit(&mut self, _gl: &eframe::glow::Context) {
-        
-    }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
 
         unsafe{
-            if (*self.cpu.raw_cpu()).is_running() && !(*self.cpu.raw_cpu()).paused_or_stopped(){
+            if (*self.cpu.raw_cpu()).is_running(){
                 ctx.request_repaint()
             }
         }
@@ -161,7 +157,7 @@ impl epi::App for Application {
             let (frame, texture) = &mut *lock;
             *frame = self.frame;
             if let Option::Some(image) = texture.take(){
-                self.cpu_screen.set(image, eframe::epaint::textures::TextureFilter::Nearest);
+                self.cpu_screen.set(image, egui::TextureFilter::NearestTiled);
             }
         }
 
@@ -249,13 +245,7 @@ impl epi::App for Application {
                              },
                         }
                     }
-                    //ui.painter().rect_filled(ui.min_rect(), rounding, ui.ctx().visuals);
                 });
-                
-                //let (response, painter) = ui.allocate_painter(ui.max_rect().size(), egui::Sense::hover());
-                //let rect = response.rect;
-                //let rounding = ui.style().interact(&response).rounding;
-                //painter.rect_filled(rect, rounding, ui.visuals().extreme_bg_color);
                 
                 ui.allocate_space(ui.available_size());
 
@@ -267,15 +257,6 @@ impl epi::App for Application {
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             self.tabbed_area.ui(ui);
         });
-
-        // if false {
-        //     egui::Window::new("Window").show(ctx, |ui| {
-        //         ui.label("Windows can be moved by dragging them.");
-        //         ui.label("They are automatically sized based on contents.");
-        //         ui.label("You can turn on resizing and scrolling if you like.");
-        //         ui.label("You would normally chose either panels OR windows.");
-        //     });
-        // }
 
         self.frame += 1;
     }

@@ -14,7 +14,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 #eframe = "0.18.0"
-eframe = { git = "https://github.com/ParkerTenBroeck/egui" } # Gives us egui, epi and web+native backends
+mycelium-bitfield = "0.1.2"
+eframe = { path = "/home/may/Documents/GitHub/egui/eframe" } # Gives us egui, epi and web+native backendsgit = "https://github.com/ParkerTenBroeck/egui"
 mips_emulator = { path = "../mips_emulator" }
 clike = { path = "../compiler" }
 assembler = { path = "../assembler" }
@@ -23,7 +24,7 @@ enum-map = { version = "2", features = ["serde"] }
 log = { version = "0.4" }
 
 serde = { version = "1", features = ["derive"], optional = false }
-
+qoi = "*"
 
 
 

@@ -1,5 +1,5 @@
 use core::panic;
-use std::{sync::{atomic::{AtomicUsize, AtomicU8}, Arc, Mutex}, time::Duration, panic::AssertUnwindSafe, ptr::NonNull, pin::Pin};
+use std::{sync::{atomic::{AtomicUsize, AtomicU8}, Arc, Mutex}, time::Duration, panic::AssertUnwindSafe, ptr::NonNull, pin::Pin, cell::UnsafeCell};
 
 use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
@@ -175,15 +175,15 @@ impl<T: CpuExternalHandler> EmulatorInterface<T>{
             }
         });
     }
-    pub fn start(&mut self, runner: impl FnOnce(&mut (dyn FnOnce() -> ()))) -> Result<(), ()>{
+    pub fn start(&mut self, runner: impl FnOnce(Box<dyn FnOnce() -> () + Sync + Send>)) -> Result<(), ()>{
         self.lock_mut(|inner| unsafe{
             if (*inner.raw_cpu_mut()).is_running(){
                 Result::Err(())
             }else{
-                let mut local = ||{
-                    (*inner.raw_cpu_mut()).start_local();
-                };
-                runner(&mut local);
+                let mut cpy = inner.clone();
+                runner(Box::new(move ||{
+                    (*cpy.raw_cpu_mut()).start_local()
+                }));
                 Result::Ok(())      
             }
         })
@@ -198,15 +198,15 @@ impl<T: CpuExternalHandler> EmulatorInterface<T>{
             }
         })
     }
-    pub fn step(&mut self, runner: impl FnOnce(&mut (dyn FnOnce() -> () + Sync + Send))) -> Result<(), ()>{
+    pub fn step(&mut self, runner: impl FnOnce(Box<dyn FnOnce() -> () + Sync + Send>)) -> Result<(), ()>{
         self.lock_mut(|inner| unsafe{
             if (*inner.raw_cpu_mut()).is_running(){
                 Result::Err(())
             }else{
-                let mut local = ||{
-                    (*inner.raw_cpu_mut()).step_local();
-                };
-                runner(&mut local);
+                let mut cpy = inner.clone();
+                runner(Box::new(move ||{
+                    (*cpy.raw_cpu_mut()).step_local()
+                }));
                 Result::Ok(())      
             }
         })

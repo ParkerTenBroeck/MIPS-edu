@@ -16,7 +16,7 @@ fn main() {
         Result::Ok(val) => {
             let icon = val.to_rgba8();
             let (icon_width, icon_height) = icon.dimensions();
-            Some(eframe::epi::IconData{
+            Some(eframe::IconData{
                 rgba: icon.into_raw(),
                 width: icon_width,
                 height: icon_height,

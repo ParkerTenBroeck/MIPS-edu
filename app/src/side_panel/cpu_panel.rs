@@ -1,3 +1,5 @@
+use std::{fs::File, io::{BufReader, Read}};
+
 use eframe::{egui::{WidgetText}};
 use mips_emulator::{memory::page_pool::MemoryDefault};
 
@@ -256,7 +258,9 @@ impl SideTab for CPUSidePanel {
                 #[cfg(target_arch = "wasm32")]
                 {
                     app.cpu.start(|inner|{
-
+                        let _ = crate::platform::thread::start_thread(move ||{
+                            inner();
+                        });
                     })
                 }
             }.is_ok(){
@@ -274,7 +278,9 @@ impl SideTab for CPUSidePanel {
                 #[cfg(target_arch = "wasm32")]
                 {
                     app.cpu.step(|inner|{
-
+                        let _ = crate::platform::thread::start_thread(move ||{
+                            inner();
+                        });
                     })
                 }
             }.is_ok(){
@@ -320,6 +326,21 @@ impl SideTab for CPUSidePanel {
                 cpu.clear();                
 
                 let test_prog = include_bytes!("../../res/tmp.bin");
+                unsafe{
+                    cpu.get_mem().copy_into_raw(0, test_prog);
+                }
+                log::info!("Loaded Demo 2 CPU");
+            });
+        }
+        if ui.button("Load Demo 3").clicked(){
+            let _ = app.cpu.stop();
+            app.cpu.cpu_mut(|cpu|{
+                cpu.clear();                
+
+                let mut buf = Vec::new();
+                BufReader::new(File::open("/home/may/Documents/GitHub/OxidizedMips/mips/bin/tmp.bin").unwrap()).read_to_end(&mut buf).unwrap();
+
+                let test_prog = buf.as_slice();
                 unsafe{
                     cpu.get_mem().copy_into_raw(0, test_prog);
                 }

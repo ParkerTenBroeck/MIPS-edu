@@ -91,6 +91,8 @@ dependencies = [
  "js-sys",
  "log",
  "mips_emulator",
+ "mycelium-bitfield",
+ "qoi",
  "rodio",
  "serde",
  "serde_closure",
@@ -689,20 +691,26 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "eframe"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
+version = "0.18.0"
 dependencies = [
+ "bytemuck",
  "egui",
  "egui-winit",
  "egui_glow",
- "egui_web",
- "epi",
+ "glow",
+ "glutin",
+ "js-sys",
+ "percent-encoding",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "winit",
 ]
 
 [[package]]
 name = "egui"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
+version = "0.18.1"
 dependencies = [
  "ahash",
  "epaint",
@@ -712,14 +720,12 @@ dependencies = [
 
 [[package]]
 name = "egui-winit"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
+version = "0.18.0"
 dependencies = [
  "arboard",
  "egui",
- "epi",
- "glow",
  "instant",
+ "smithay-clipboard",
  "tracing",
  "webbrowser",
  "winit",
@@ -727,35 +733,14 @@ dependencies = [
 
 [[package]]
 name = "egui_glow"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
+version = "0.18.1"
 dependencies = [
  "bytemuck",
  "egui",
- "egui-winit",
- "epi",
  "glow",
- "glutin",
  "memoffset",
  "tracing",
  "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "egui_web"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
-dependencies = [
- "bytemuck",
- "egui",
- "egui_glow",
- "epi",
- "js-sys",
- "percent-encoding",
- "tracing",
- "wasm-bindgen",
- "wasm-bindgen-futures",
  "web-sys",
 ]
 
@@ -776,8 +761,7 @@ dependencies = [
 
 [[package]]
 name = "emath"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
+version = "0.18.0"
 dependencies = [
  "bytemuck",
 ]
@@ -814,8 +798,7 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
+version = "0.18.1"
 dependencies = [
  "ab_glyph",
  "ahash",
@@ -824,16 +807,6 @@ dependencies = [
  "emath",
  "nohash-hasher",
  "parking_lot 0.12.0",
-]
-
-[[package]]
-name = "epi"
-version = "0.17.0"
-source = "git+https://github.com/ParkerTenBroeck/egui#cf8c9b01259fb4717abb9f3dc835ca6bc32a6a8c"
-dependencies = [
- "egui",
- "glow",
- "tracing",
 ]
 
 [[package]]
@@ -1368,6 +1341,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "memmap2"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a79b39c93a7a5a27eeaf9a23b5ff43f1b9e0ad6b1cdd441140ae53c35613fc7"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1450,6 +1432,12 @@ version = "0.1.0"
 dependencies = [
  "log",
 ]
+
+[[package]]
+name = "mycelium-bitfield"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96f3b4fd7c38f30b8a1dec2c215ae636f84dc9bc2d5915f08ae5ca132b0ab464"
 
 [[package]]
 name = "nanorand"
@@ -1580,6 +1568,17 @@ dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "memoffset",
+]
+
+[[package]]
+name = "nix"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "195cdbc1741b8134346d515b3a56a1c94b0912758009cfd53f99ea0f57b065fc"
+dependencies = [
+ "bitflags",
+ "cfg-if 1.0.0",
+ "libc",
 ]
 
 [[package]]
@@ -1950,6 +1949,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qoi"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21259622fa9dfe4a094c4c91a1ef9963324e2453136f55ad5b05a8850e6c6d19"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "quote"
 version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2199,12 +2207,40 @@ dependencies = [
  "dlib",
  "lazy_static",
  "log",
- "memmap2",
+ "memmap2 0.3.1",
  "nix 0.22.3",
  "pkg-config",
  "wayland-client",
  "wayland-cursor",
  "wayland-protocols",
+]
+
+[[package]]
+name = "smithay-client-toolkit"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f307c47d32d2715eb2e0ece5589057820e0e5e70d07c247d1063e844e107f454"
+dependencies = [
+ "bitflags",
+ "dlib",
+ "lazy_static",
+ "log",
+ "memmap2 0.5.5",
+ "nix 0.24.2",
+ "pkg-config",
+ "wayland-client",
+ "wayland-cursor",
+ "wayland-protocols",
+]
+
+[[package]]
+name = "smithay-clipboard"
+version = "0.6.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a345c870a1fae0b1b779085e81b51e614767c239e93503588e54c5b17f4b0e8"
+dependencies = [
+ "smithay-client-toolkit 0.16.0",
+ "wayland-client",
 ]
 
 [[package]]
@@ -2673,9 +2709,9 @@ dependencies = [
 
 [[package]]
 name = "webbrowser"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9c28b6b6a78440b02647358625e3febc90724126480b9da6a967b5f674b3554"
+checksum = "fc6a3cffdb686fbb24d9fb8f03a213803277ed2300f11026a3afe1f108dc021b"
 dependencies = [
  "jni",
  "ndk-glue 0.6.1",
@@ -2804,7 +2840,7 @@ dependencies = [
  "parking_lot 0.11.2",
  "percent-encoding",
  "raw-window-handle",
- "smithay-client-toolkit",
+ "smithay-client-toolkit 0.15.4",
  "wasm-bindgen",
  "wayland-client",
  "wayland-protocols",

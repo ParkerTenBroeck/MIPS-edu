@@ -1,63 +1,176 @@
-use eframe::{egui::{self, Painter}, epaint::{TextureHandle, Shape, Mesh, Rect, Color32, pos2, Stroke, Rounding}};
+use eframe::{egui::{self, Painter, Sense}, epaint::{TextureHandle, Shape, Rect, Color32, Stroke, Rounding, RectShape, Vec2, Pos2}};
+
+use crate::{emulator::screen::{Screen, Layer, Sprite, SizeRot, Tile, PosRot}, platform};
 
 use super::tabbed_area::Tab;
 
 pub struct MipsDisplay{
-    bg1: eframe::epaint::TextureHandle,
-    bg2: eframe::epaint::TextureHandle,
-    sprite: eframe::epaint::TextureHandle,
+    screen: Screen,
+    mouse: Option<([u32; 2], bool, bool, bool)>
 }
 
 impl MipsDisplay{
     pub fn new(bg1: TextureHandle) -> Self{
+
         Self{
-            bg1,
-            bg2: todo!(),
-            sprite: todo!(),
+            screen: Screen { 
+                aspect_ratio: [0; 2],
+                 layers:[Layer::BitMapExpand(bg1), Default::default(), Default::default(), Default::default()] 
+            },
+            mouse: None,
         }
     }
 }
 
 impl Tab for MipsDisplay{
     fn ui(&mut self, ui: &mut egui::Ui) {
-        //ui.image(&self.image, ui.available_size());
-        let painter = Painter::new(ui.ctx().clone(), ui.layer_id(), ui.available_rect_before_wrap());
         
-
-        let mut shapes = Vec::new();
-
-        let tiles_x = 8;
-        let tiles_y = 8;
-
-        let mut rect = painter.clip_rect();
-        let x_step = (rect.max.x - rect.min.x) / tiles_x as f32;
-        let y_step = (rect.max.y - rect.min.y) / tiles_y as f32;
-        rect.max.x = rect.min.x + x_step;
-        rect.max.y = rect.min.y + y_step;
-        for x in 0..tiles_x{
-            for y in 0..tiles_y{
-                //ui.painter().rect_stroke(rect, Rounding::default(), Stroke::new(2.0, Color32::RED));
-                let mut mesh = Mesh::with_texture(self.bg1.id());
-                mesh.add_rect_with_uv(rect, 
-                    Rect::from_min_max(
-                        pos2((x as f32)/tiles_x as f32, (y as f32)/ tiles_y as f32), 
-                        pos2((x as f32+1.0)/tiles_x as f32, (y as f32+1.0)/ tiles_y as f32)), 
-                        Color32::WHITE);
-                shapes.push(Shape::Mesh(mesh));
-        
-                rect.min.y += y_step;
-                rect.max.y += y_step;    
-            }
-            rect.min.y = painter.clip_rect().min.y;
-            rect.max.y = rect.min.y + y_step;
-
-            rect.min.x += x_step;
-            rect.max.x += x_step;
+        if let Layer::BitMapExpand(text) = &self.screen.layers[0]{
+            self.screen.aspect_ratio = text.size();
         }
+
+        let (rect, resp) = ui.allocate_exact_size(ui.available_size_before_wrap(), Sense{ click: true, drag: false, focusable: false });
+
+        let mut calc_rect = rect;
+        if self.screen.aspect_ratio[0] == 0 || self.screen.aspect_ratio[1] == 0{
+
+        }else{
+            let ta = calc_rect.aspect_ratio();
+            let ga =  self.screen.aspect_ratio[0] as f32 /  self.screen.aspect_ratio[1] as f32;
+            if ta > ga{
+                calc_rect.max.x = calc_rect.min.x + 1.0/ta * rect.size().x;
+            }else if ta < ga{
+                calc_rect.max.y = calc_rect.min.y + ta * rect.size().y;
+            }
+        }
+        let offset = rect.center() - calc_rect.center();
+        calc_rect.min += offset;
+        calc_rect.max += offset;
         
+        if let Option::Some(pos) = resp.hover_pos(){
+            if calc_rect.contains(pos){
+                let mut pos = pos - calc_rect.min;
+                pos.x /= calc_rect.size().x;
+                pos.y /= calc_rect.size().y;
+                let x = (pos.x * self.screen.aspect_ratio[0] as f32) as u32;
+                let y = (pos.y * self.screen.aspect_ratio[1] as f32) as u32;
+                
+                let pri = ui.ctx().input().pointer.button_down(egui::PointerButton::Primary);
+                let sec = ui.ctx().input().pointer.button_down(egui::PointerButton::Secondary);
+                let middle = ui.ctx().input().pointer.button_down(egui::PointerButton::Middle);
+                self.mouse = Option::Some(([x,y], pri, sec, middle));    
+            }else{
+                self.mouse = Option::None;
+            }
+        }else{
+            self.mouse = Option::None;
+        }
+
+        if let Layer::Dissabled = self.screen.layers[1]{
+            let handle = ui.ctx().load_filtered_texture("iamgfeasd", egui::ColorImage::example(), egui::TextureFilter::Nearest);
+            self.screen.layers[1] = Layer::BitMapScroll { texture: handle.clone(), visible: handle.size(), scroll: [0,0] };
+        
+            let data = include_bytes!("../../res/sprite_sheet.qoi");
+            let image = qoi::decode_to_vec(data).unwrap();
+            let mut pixels = Vec::new();
+            let mut iter = image.1.iter();
+            
+            while let (Option::Some(r),Option::Some(g),Option::Some(b),Option::Some(a)) = (iter.next(),iter.next(),iter.next(),iter.next()){
+                match image.0.colorspace{
+                    qoi::ColorSpace::Srgb => {
+                        pixels.push(Color32::from_rgba_premultiplied(*r,*g,*b,*a));
+                    },
+                    qoi::ColorSpace::Linear => {
+                        pixels.push(Color32::from_rgba_unmultiplied(*r,*g,*b,*a));
+                    },
+                }
+            }
+            assert!(image.0.channels.is_rgba());
+            let image = egui::ColorImage{
+                size: [image.0.width as usize, image.0.height as usize],
+                pixels: pixels,
+            };
+            let texture = ui.ctx().load_filtered_texture("tile_map", image, egui::TextureFilter::NearestTiled);
+
+
+            let mut tiles = Vec::new();
+            for i in 0..(30 * 30){
+                tiles.push(Tile{ 
+                    index_rot: crate::emulator::screen::PosRot::new().set(PosRot::POX_X, (i % 10) * 2).set(PosRot::POX_Y, (i / 10) * 2).to_owned(), 
+                    tint: [255, 255, 255, 255] 
+                })
+            }
+
+            self.screen.layers[2] = Layer::TileMap { 
+                scroll: [0,0], 
+                visible_tiles_x_y: [16,16], 
+                tiles_x_y: [30,30], 
+                tiles_text: texture, 
+                tiles: tiles
+            };
+
+            self.screen.layers[3] = Layer::Sprite { 
+                resolution: [128, 128], 
+                sprites: vec![Sprite{ 
+                    sp_pos: [0 ,handle.size()[1] as u16 - 8], 
+                    screen_pos: [60, 60], 
+                    tint: [255, 255, 255, 255], 
+                    size_rot: SizeRot::from_bits(0)
+                },Sprite{ 
+                    sp_pos: [0 ,handle.size()[1] as u16 - 8], 
+                    screen_pos: [60, 60], 
+                    tint: [255, 255, 255, 255], 
+                    size_rot: SizeRot::from_bits(0)
+                },Sprite{ 
+                    sp_pos: [0 ,handle.size()[1] as u16 - 8], 
+                    screen_pos: [60, 60], 
+                    tint: [255, 255, 255, 255], 
+                    size_rot: SizeRot::from_bits(0)
+                },Sprite{ 
+                    sp_pos: [0 ,handle.size()[1] as u16 - 8], 
+                    screen_pos: [60, 60], 
+                    tint: [255, 255, 255, 255], 
+                    size_rot: SizeRot::from_bits(0)
+                }],
+                sprite_text: handle, 
+            };
+        }
+        if let Layer::Sprite { resolution, sprites, .. } = &mut self.screen.layers[3]{
+            let mut millies = platform::time::duration_since_epoch().as_millis();
+            for sprite in sprites{
+                let rad = ((millies % 3600) as f32 / 10.0).to_radians();
+                
+                sprite.screen_pos[0] = ((rad.sin() + 1.0) * resolution[0] as f32 / 2.0) as i16 - 4;
+                sprite.screen_pos[1] = ((rad.cos() + 1.0) * resolution[1] as f32 / 2.0) as i16 - 4;
+                
+                millies += 200;
+            }
+        }
+        if let Layer::TileMap { scroll , .. } = &mut self.screen.layers[2] {
+            scroll[0] = ((platform::time::duration_since_epoch().as_millis() / 100) % (30 *8 * 4)) as usize;
+            scroll[1] = ((platform::time::duration_since_epoch().as_millis() / 128) % (30 *8 * 4)) as usize;
+        }
+
+        let painter = Painter::new(ui.ctx().clone(), ui.layer_id(), calc_rect);
+        let mut shapes = Vec::new();
+        self.screen.draw(calc_rect, &mut shapes);
+
+        if let Option::Some(mouse) = self.mouse{
+            let mut pos = Vec2::new(mouse.0[0] as f32, mouse.0[1] as f32);
+            pos = pos / Vec2::new(self.screen.aspect_ratio[0] as f32, self.screen.aspect_ratio[1] as f32);
+            pos = pos * calc_rect.size();
+            pos = pos + calc_rect.min.to_vec2();
+
+            let mouse_rect = Rect::from_min_size(Pos2::new(pos.x, pos.y), Vec2::new(1.0, 1.0));
+            shapes.push(Shape::Rect(RectShape{ 
+                rect: mouse_rect, 
+                rounding: Rounding::none(), 
+                fill: Color32::RED, 
+                stroke: Stroke::new(0.0, Color32::RED), 
+            }));
+        }
 
         painter.extend(shapes);
-        ui.expand_to_include_rect(painter.clip_rect());
     }
 
     fn get_name(&self) -> egui::WidgetText {

@@ -11,7 +11,7 @@ pub struct Page{
 impl Page{
     fn new() -> Self{
         Page{
-            page: [0xdf; SEG_SIZE]
+            page: [0x00; SEG_SIZE]
         }
     }
 }
