@@ -38,9 +38,10 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
     tracing_wasm::set_as_global_default();
     let canvas_id = canvas_id.to_string();
 
-    eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
+    eframe::start_web(canvas_id.as_str(), eframe::WebOptions::default(), Box::new(|cc|{
         create_app(cc)
-    }))
+    }))?;
+    Ok(())
 }
 
 fn panic_hook(info: &std::panic::PanicInfo<'_>) {

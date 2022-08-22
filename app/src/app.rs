@@ -152,8 +152,10 @@ impl Application{
     pub fn add_cpu_sound_tab(&mut self){
         #[cfg(not(target_arch = "wasm32"))]
         //self.tabbed_area.add_tab(Box::new(crate::tabs::sound::SoundTab::new()));
-        let tab = crate::tabs::sound::SoundTab::new();
-        self.add_tab(tab);
+        {
+            let tab = crate::tabs::sound::SoundTab::new();
+            self.add_tab(tab);    
+        }
         //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![Box::new(tab)]);
     }
 }
@@ -191,6 +193,7 @@ impl App for Application {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
+                        #[cfg(not(target_arch = "wasm32"))]
                         frame.close();
                     }
                     
