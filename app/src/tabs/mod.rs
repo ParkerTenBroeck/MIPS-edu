@@ -1,4 +1,3 @@
-pub mod tabbed_area;
 pub mod hex_editor;
 pub mod image_tab;
 pub mod code_editor;
@@ -7,3 +6,4 @@ pub mod settings;
 pub mod sound;
 pub mod terminal_tab;
 pub mod mips_display;
+pub mod dummy_tab;

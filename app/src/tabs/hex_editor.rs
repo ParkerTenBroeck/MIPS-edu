@@ -1,8 +1,7 @@
-use eframe::{epaint::{Color32}, egui::{self}};
+use eframe::{epaint::{Color32}, egui::{self, WidgetText}};
+use egui_dock::Tab;
 use mips_emulator::{memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess, PagePoolRef}}, cpu::EmulatorInterface};
 use crate::emulator::handlers::ExternalHandler;
-
-use super::tabbed_area::Tab;
 
 pub struct HexEditor {
     mem: PagePoolRef<SingleCachedMemory>,
@@ -304,7 +303,7 @@ impl Tab for HexEditor {
                     //     strikethrough: todo!(), 
                     //     valign: todo!() 
                     // });
-                    let clip = ui.max_rect();
+                    let clip = ui.available_rect_before_wrap();
                     ui.set_clip_rect(clip);
                     ui.vertical(|ui|{
                         
@@ -462,7 +461,7 @@ impl Tab for HexEditor {
         });
     }
 
-    fn get_name(&self) -> egui::WidgetText {
+    fn title(&mut self) -> WidgetText {
         "MIPS memory".into()
     }
 }

@@ -10,4 +10,14 @@ members = [
     "mips_emulator",
     "elf",
 ]
-rust-version = "1.60"
+
+
+#[patch."https://github.com/ParkerTenBroeck/egui_dock?branch=closing_tabs#ff0f67f5462f0974560e7f00dcec1b21f925c3e0"]
+#"egui" = { git = "https://github.com/ParkerTenBroeck/egui" }
+
+
+[patch.crates-io]
+"egui" = { git = "https://github.com/ParkerTenBroeck/egui" }
+"eframe" = { git = "https://github.com/ParkerTenBroeck/egui" }
+"egui_dock" = {  git = "https://github.com/ParkerTenBroeck/egui_dock.git", branch = "closing_tabs" }
+#"egui_dock" = { path = "/home/may/Documents/GitHub/egui_dock" }

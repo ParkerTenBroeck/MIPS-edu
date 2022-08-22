@@ -4,7 +4,7 @@ use eframe::{egui::{WidgetText}};
 use mips_emulator::{memory::page_pool::MemoryDefault};
 
 
-use crate::{platform::sync::PlatSpecificLocking};
+use crate::{platform::{sync::PlatSpecificLocking}};
 
 use super::side_tabbed_panel::SideTab;
 
@@ -268,6 +268,7 @@ impl SideTab for CPUSidePanel {
             }else{
                 log::warn!("CPU is already running");
             }
+            ui.ctx().request_repaint();
         }
         if ui.button("Step CPU").clicked() {
             if {
@@ -288,11 +289,13 @@ impl SideTab for CPUSidePanel {
             }else{
                 log::warn!("CPU is already running");
             }
+            ui.ctx().request_repaint();
         }
 
         if ui.button("Stop CPU").clicked() {
             if app.cpu.stop().is_ok() {
                 log::info!("Stopped CPU");
+                ui.ctx().request_repaint();
             } else {
                 log::warn!("CPU is already stopped");
             }
@@ -301,6 +304,7 @@ impl SideTab for CPUSidePanel {
             let _ = app.cpu.stop();
             if app.cpu.restart().is_ok() {
                 log::info!("reset CPU");
+                ui.ctx().request_repaint();
             } else {
                 log::warn!("Cannot reset CPU while running");
             }
@@ -319,6 +323,7 @@ impl SideTab for CPUSidePanel {
                 }
                 log::info!("Loaded Demo 1 CPU");
             });
+            ui.ctx().request_repaint();
         }
         if ui.button("Load Demo 2").clicked(){
             let _ = app.cpu.stop();
@@ -331,6 +336,7 @@ impl SideTab for CPUSidePanel {
                 }
                 log::info!("Loaded Demo 2 CPU");
             });
+            ui.ctx().request_repaint();
         }
         if ui.button("Load Demo 3").clicked(){
             let _ = app.cpu.stop();
@@ -346,21 +352,14 @@ impl SideTab for CPUSidePanel {
                 }
                 log::info!("Loaded Demo 2 CPU");
             });
+            ui.ctx().request_repaint();
         }
 
-        fn create_text(access_kind: &mut crate::emulator::handlers::AccessKind, text: &str) -> WidgetText{
+        fn create_text(accessed: bool, text: &str) -> WidgetText{
             let mut text = eframe::egui::WidgetText::RichText(text.into());
-            match access_kind{
-                crate::emulator::handlers::AccessKind::SinglFrame => {
-                    text = text.underline();
-                    text = text.strong();
-                    *access_kind = crate::emulator::handlers::AccessKind::Nothing;
-                },
-                crate::emulator::handlers::AccessKind::MultiFrame => {
-                    text = text.underline();
-                    text = text.strong();
-                },
-                crate::emulator::handlers::AccessKind::Nothing => {},
+            if accessed{     
+                text = text.underline();
+                text = text.strong();
             }
             text
         }
@@ -368,14 +367,14 @@ impl SideTab for CPUSidePanel {
             ui.add_space(10.0);
             ui.vertical(|ui|{
                 let clone = app.access_info.clone();
-                let mut access =  clone.plat_lock().unwrap();
-                if ui.button(create_text(&mut access.terminal, "Terminal")).clicked(){
+                let access =  clone.plat_lock().unwrap();
+                if ui.button(create_text(access.was_terminal_accessed(), "Terminal")).clicked(){
                     app.add_cpu_terminal_tab();
                 }
-                if ui.button(create_text(&mut access.display, "Display")).clicked(){
+                if ui.button(create_text(access.was_display_accessed(), "Display")).clicked(){
                     app.add_cpu_screen_tab();
                 }
-                if ui.button(create_text(&mut access.sound, "Sound")).clicked(){
+                if ui.button(create_text(access.was_sound_accessed(), "Sound")).clicked(){
                     app.add_cpu_sound_tab();
                 }
                 if ui.button("Memory").clicked(){

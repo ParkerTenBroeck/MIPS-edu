@@ -3,7 +3,7 @@ use std::{time::Duration, sync::{Mutex, Arc}};
 use eframe::epaint::{ColorImage, Color32};
 use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::{MemoryDefaultAccess, MemoryDefault}};
 
-use crate::util::keyboard_util::KeyboardMemory;
+use crate::{util::keyboard_util::KeyboardMemory, platform::{self}};
 
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -15,10 +15,53 @@ pub enum AccessKind{
 }
 
 #[derive(Default, Clone, Copy, Debug)]
-pub struct AccessInfo{
-    pub terminal: AccessKind,
-    pub display: AccessKind,
-    pub sound: AccessKind,
+pub struct AccessInfo{    
+    terminal: (u128, AccessKind),
+    display: (u128, AccessKind),
+    sound: (u128, AccessKind),
+}
+impl AccessInfo{
+    pub fn get_terminal(&self) -> (u128, AccessKind){
+        self.terminal
+    }
+    pub fn was_terminal_accessed(&self) -> bool{
+        Self::was_accessed(self.terminal)
+    }
+    pub fn set_terminal(&mut self, access: AccessKind){
+        self.terminal = (platform::time::duration_since_epoch().as_millis(),access);
+    }
+    
+    pub fn get_display(&self) -> (u128, AccessKind){
+        self.display
+    }
+    pub fn was_display_accessed(&self) -> bool{
+        Self::was_accessed(self.display)
+    }
+    pub fn set_display(&mut self, access: AccessKind){
+        self.display = (platform::time::duration_since_epoch().as_millis(),access);
+    }
+
+    pub fn get_sound(&self) -> (u128, AccessKind){
+        self.sound
+    }
+    pub fn was_sound_accessed(&self) -> bool{
+        Self::was_accessed(self.sound)
+    }
+    pub fn set_sound(&mut self, access: AccessKind){
+        self.sound = (platform::time::duration_since_epoch().as_millis(),access);
+    }
+
+
+    fn was_accessed(info: (u128, AccessKind)) -> bool{
+        match info.1{
+            AccessKind::SinglFrame 
+            if platform::time::duration_since_epoch().as_millis() < (info.0 + 50) => {
+                true
+            },
+            AccessKind::MultiFrame => true,
+            _ => false,
+        }
+    }
 }
 
 pub type CPUAccessInfo = Arc<Mutex<AccessInfo>>;
@@ -61,7 +104,7 @@ impl ExternalHandler{
     }
 }
 
-impl CpuExternalHandler for ExternalHandler {
+unsafe impl CpuExternalHandler for ExternalHandler {
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32) {
         log::warn!("arithmetic error {}", error_id);
         cpu.stop();
@@ -77,6 +120,13 @@ impl CpuExternalHandler for ExternalHandler {
             log::warn!("invalid opcode {:#08X} at {:#08X}", Self::opcode(cpu), Self::opcode_address(cpu));
         }            
         cpu.stop();
+    }
+
+    fn cpu_stop(&mut self) {
+        let mut lock = self.access_info.lock().unwrap();
+        lock.set_display(AccessKind::Nothing);    
+        lock.set_sound(AccessKind::Nothing);
+        lock.set_terminal(AccessKind::Nothing);
     }
 
     fn system_call(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32) {
@@ -233,14 +283,14 @@ impl CpuExternalHandler for ExternalHandler {
                 }
                 153 => {       
                     (*self.image_sender.lock().unwrap()).1 = Option::Some(self.image.clone());    
-                    self.access_info.lock().unwrap().display = AccessKind::SinglFrame;     
+                    self.access_info.lock().unwrap().set_display(AccessKind::SinglFrame);     
                 }
                 154 => {
                     let mut lock = self.image_sender.lock().unwrap();
                     lock.1 = Option::Some(self.image.clone());
                     let frame = lock.0;
                     drop(lock);
-                    self.access_info.lock().unwrap().display = AccessKind::MultiFrame;
+                    self.access_info.lock().unwrap().set_display(AccessKind::SinglFrame);
                     //cpu.pause_exclude_memory_event()
                     while !cpu.is_being_dropped(){
                         if let Ok(val) = self.image_sender.lock(){
@@ -252,7 +302,7 @@ impl CpuExternalHandler for ExternalHandler {
                         }
                         
                         std::thread::sleep(std::time::Duration::from_micros(250))
-                    }   
+                    } 
                 }
                 155 => {//hsv to rgb
                     let color = u32_to_color32(cpu.reg_mut()[4]);

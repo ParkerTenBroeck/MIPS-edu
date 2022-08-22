@@ -15,7 +15,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 #eframe = "0.18.0"
 mycelium-bitfield = "0.1.2"
-eframe = { path = "/home/may/Documents/GitHub/egui/eframe" } # Gives us egui, epi and web+native backendsgit = "https://github.com/ParkerTenBroeck/egui"
+eframe = "*" # Gives us egui, epi and web+native backendsgit = "https://github.com/ParkerTenBroeck/egui"
+egui_dock = "*"#{ git = "https://github.com/ParkerTenBroeck/egui_dock", branch = "closing_tabs" }
 mips_emulator = { path = "../mips_emulator" }
 clike = { path = "../compiler" }
 assembler = { path = "../assembler" }
@@ -25,7 +26,6 @@ log = { version = "0.4" }
 
 serde = { version = "1", features = ["derive"], optional = false }
 qoi = "*"
-
 
 
 [features]
@@ -38,8 +38,6 @@ opt-level = 2 # fast and small wasm
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-Oz", "--enable-mutable-globals", '--debuginfo', '--enable-threads', '--enable-bulk-memory']
-
-[patch.crates-io]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

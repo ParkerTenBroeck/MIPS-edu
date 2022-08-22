@@ -357,7 +357,7 @@ impl<T: CpuExternalHandler> MipsCpu<T>{
     }
 }
 
-pub trait CpuExternalHandler: Sync + Send + Sized + 'static{
+pub unsafe trait CpuExternalHandler: Sync + Send + Sized + 'static{
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32);
     fn memory_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32);
     fn invalid_opcode(&mut self, cpu: &mut MipsCpu<Self>);
@@ -373,6 +373,9 @@ pub trait CpuExternalHandler: Sync + Send + Sized + 'static{
         while *cpu.paused.get_mut() > 0 {
             std::hint::spin_loop();
         }
+    }
+    fn cpu_stop(&mut self){
+
     }
 }
 
@@ -399,7 +402,7 @@ impl Default for DefaultExternalHandler{
     }
 }
 
-impl CpuExternalHandler for DefaultExternalHandler {
+unsafe impl CpuExternalHandler for DefaultExternalHandler {
 
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32) {
         log::warn!("arithmetic error {}", error_id);
@@ -1395,5 +1398,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.finished = true;
         self.mem.remove_listener();
         self.mem.remove_thing();
+
+        self.external_handler.cpu_stop();
     }
 }

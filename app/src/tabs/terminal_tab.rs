@@ -1,10 +1,10 @@
 use std::{str::Chars};
 
 use eframe::{epaint::{text::{LayoutJob, TextWrapping}, FontId, Color32, Rounding, Stroke, self, FontFamily}, egui::{TextFormat, Sense, WidgetInfo, WidgetType}};
+use egui_dock::Tab;
 
 use crate::platform::time;
 
-use super::tabbed_area::Tab;
 
 
 pub enum TerminalMode{
@@ -442,7 +442,7 @@ TextFormat{
         //ui.label(layout);
     }
 
-    fn get_name(&self) -> eframe::egui::WidgetText {
+    fn title(&mut self) -> eframe::egui::WidgetText {
         "Mips Terminal".into()
     }
 }

@@ -1,4 +1,6 @@
-use super::tabbed_area::Tab;
+use eframe::egui::{WidgetText};
+use egui_dock::Tab;
+
 
 pub struct SettingsTab{
     
@@ -9,7 +11,7 @@ impl Tab for SettingsTab{
         
     }
 
-    fn get_name(&self) -> eframe::egui::WidgetText {
+    fn title(&mut self) -> WidgetText {
         "Settings".into()
     }
 }
