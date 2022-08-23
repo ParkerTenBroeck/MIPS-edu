@@ -1,6 +1,6 @@
 use clike::parsing_lexer::tokenizer::IdentifierMode;
 #[allow(unused_imports)]
-use eframe::{egui, epi};
+use eframe::{egui};
 use eframe::egui::{Color32};
 use eframe::egui::text::LayoutJob;
 use crate::syntax_highlighter;

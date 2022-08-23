@@ -1,6 +1,5 @@
-use eframe::egui;
-
-use super::tabbed_area::Tab;
+use eframe::egui::{self, WidgetText};
+use egui_dock::Tab;
 
 pub struct CodeEditor {
     title: String,
@@ -91,7 +90,7 @@ impl Tab for CodeEditor {
         });
     }
 
-    fn get_name(&self) -> egui::WidgetText {
+    fn title(&mut self) -> WidgetText {
         self.title.clone().into()
     }
 }

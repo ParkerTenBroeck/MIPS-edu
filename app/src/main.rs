@@ -3,6 +3,10 @@
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
+
+
+
+
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
@@ -16,7 +20,7 @@ fn main() {
         Result::Ok(val) => {
             let icon = val.to_rgba8();
             let (icon_width, icon_height) = icon.dimensions();
-            Some(eframe::epi::IconData{
+            Some(eframe::IconData{
                 rgba: icon.into_raw(),
                 width: icon_width,
                 height: icon_height,

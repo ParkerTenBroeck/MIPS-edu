@@ -1,6 +1,6 @@
-use eframe::{egui::{self}, epaint::{TextureHandle}};
+use eframe::{egui::{self, WidgetText}, epaint::{TextureHandle}};
+use egui_dock::Tab;
 
-use super::tabbed_area::Tab;
 
 pub struct ImageTab{
     title: String,
@@ -21,7 +21,7 @@ impl Tab for ImageTab{
         ui.image(&self.image, ui.available_size());
     }
 
-    fn get_name(&self) -> egui::WidgetText {
+    fn title(&mut self) -> WidgetText{
         self.title.clone().into()
     }
 }

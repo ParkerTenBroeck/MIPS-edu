@@ -26,7 +26,9 @@ impl<T> PlatSpecificLocking for Mutex<T>{
                         std::sync::TryLockError::Poisoned(val) => {
                             return Err(val);
                         },
-                        std::sync::TryLockError::WouldBlock => {},
+                        std::sync::TryLockError::WouldBlock => {
+                            std::hint::spin_loop();
+                        },
                     }
                 },
             }

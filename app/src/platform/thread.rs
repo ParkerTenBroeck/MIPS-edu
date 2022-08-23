@@ -40,8 +40,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::ErrorEvent;
 use web_sys::{DedicatedWorkerGlobalScope, MessageEvent};
-use web_sys::{ErrorEvent, Event, Worker};
+use web_sys::{Event, Worker};
 
 #[wasm_bindgen]
 pub struct WorkerPool {

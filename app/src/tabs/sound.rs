@@ -1,4 +1,7 @@
+
+use eframe::egui::plot::{PlotPoints};
 use eframe::egui::{ComboBox, Slider};
+use egui_dock::Tab;
 use rodio::source::{Source};
 use rodio::{OutputStream, OutputStreamHandle, Sink};
 use std::f64::consts::PI;
@@ -6,8 +9,6 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use self::filter::FirstOrderFilter;
-
-use super::tabbed_area::Tab;
 
 pub struct SoundTab {
     #[allow(unused)]
@@ -91,7 +92,7 @@ impl Tab for SoundTab {
                         .center_y_axis(true);
         plot.show(ui, |plot_ui|{
             plot_ui.line(eframe::egui::plot::Line::new(
-                eframe::egui::plot::Values::from_ys_f32(&self.wave)));
+                PlotPoints::from_ys_f32(&self.wave)));
         });
 
         if sound_state.volume > 0.0 {
@@ -99,7 +100,7 @@ impl Tab for SoundTab {
         }
     }
 
-    fn get_name(&self) -> eframe::egui::WidgetText {
+    fn title(&mut self) -> eframe::egui::WidgetText {
         "MIPS Sound".into()
     }
 }

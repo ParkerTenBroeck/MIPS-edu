@@ -1,12 +1,11 @@
-use eframe::{epaint::{Color32}, egui::{self}};
-use mips_emulator::memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess, PagePoolRef}};
+use eframe::{epaint::{Color32}, egui::{self, WidgetText}};
+use egui_dock::Tab;
+use mips_emulator::{memory::{single_cached_memory::SingleCachedMemory, page_pool::{MemoryDefaultAccess, PagePoolRef}}, cpu::EmulatorInterface};
 use crate::emulator::handlers::ExternalHandler;
-
-use super::tabbed_area::Tab;
 
 pub struct HexEditor {
     mem: PagePoolRef<SingleCachedMemory>,
-    cpu: &'static mut mips_emulator::cpu::MipsCpu<ExternalHandler>,
+    cpu: EmulatorInterface<ExternalHandler>,
     starting_offset: u32,
     cursor_offset: Option<(u32, bool)>,
     selection_offset: Option<u32>,
@@ -22,10 +21,17 @@ pub struct HexEditor {
 }
 
 impl HexEditor {
-    pub fn new(cpu: &'static mut mips_emulator::cpu::MipsCpu<ExternalHandler>) -> Self {
+    pub fn new(mut cpu: EmulatorInterface<ExternalHandler>) -> Self {
+
+
+        let mem = unsafe{
+            cpu.lock_raw_cpu_mut(|cpu|{
+                (*cpu).get_mem()
+            })
+        };
 
         HexEditor {
-            mem: cpu.get_mem_controller().lock().unwrap().add_holder(SingleCachedMemory::new()),
+            mem,
             cpu,
             cursor_offset: Option::None,
             selection_offset: Option::None,
@@ -64,25 +70,25 @@ impl HexEditor {
             }
         }
         if self.highlight_return{
-            let val = unsafe{*self.cpu.reg_num(31)};
+            let val = unsafe{self.cpu.reg()[31]};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::DARK_RED);
             }
         }
         if self.highlight_stack{
-            let val = unsafe{*self.cpu.reg_num(29)};
+            let val = unsafe{self.cpu.reg()[29]};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::DARK_GREEN);
             }
         }
         if self.highlight_frame{
-            let val = unsafe{*self.cpu.reg_num(30)};
+            let val = unsafe{self.cpu.reg()[30]};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::GOLD);
             }
         }
         if self.highlight_global{
-            let val = unsafe{*self.cpu.reg_num(28)};
+            let val = unsafe{self.cpu.reg()[28]};
             if val <= address && address <= (val + 3){
                 return Option::Some(Color32::KHAKI);
             }
@@ -297,7 +303,7 @@ impl Tab for HexEditor {
                     //     strikethrough: todo!(), 
                     //     valign: todo!() 
                     // });
-                    let clip = ui.max_rect();
+                    let clip = ui.available_rect_before_wrap();
                     ui.set_clip_rect(clip);
                     ui.vertical(|ui|{
                         
@@ -455,7 +461,7 @@ impl Tab for HexEditor {
         });
     }
 
-    fn get_name(&self) -> egui::WidgetText {
+    fn title(&mut self) -> WidgetText {
         "MIPS memory".into()
     }
 }

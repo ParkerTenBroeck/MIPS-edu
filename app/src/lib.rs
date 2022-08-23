@@ -1,4 +1,3 @@
-#![feature(backtrace)]
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
@@ -25,6 +24,7 @@ use eframe::wasm_bindgen::{self, prelude::*};
 /// This is called once from the HTML.
 /// It loads the app, installs some callbacks, then returns.
 /// You can add more callbacks like this if you want to call in to your code.
+// when compiling to web using trunk.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
@@ -37,11 +37,11 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
 
     // Redirect tracing to console.log and friends:
     tracing_wasm::set_as_global_default();
-    let canvas_id = canvas_id.to_string();
 
-    eframe::start_web(canvas_id.as_str(), Box::new(|cc|{
+    eframe::start_web(canvas_id, eframe::WebOptions::default(), Box::new(|cc|{
         create_app(cc)
-    }))
+    }))?;
+    Ok(())
 }
 
 fn panic_hook(info: &std::panic::PanicInfo<'_>) {

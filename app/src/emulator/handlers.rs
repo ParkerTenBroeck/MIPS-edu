@@ -3,7 +3,7 @@ use std::{time::Duration, sync::{Mutex, Arc}};
 use eframe::epaint::{ColorImage, Color32};
 use mips_emulator::{cpu::{MipsCpu, CpuExternalHandler}, memory::page_pool::{MemoryDefaultAccess, MemoryDefault}};
 
-use crate::util::keyboard_util::KeyboardMemory;
+use crate::{util::keyboard_util::KeyboardMemory, platform::{self}};
 
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -15,10 +15,53 @@ pub enum AccessKind{
 }
 
 #[derive(Default, Clone, Copy, Debug)]
-pub struct AccessInfo{
-    pub terminal: AccessKind,
-    pub display: AccessKind,
-    pub sound: AccessKind,
+pub struct AccessInfo{    
+    terminal: (u128, AccessKind),
+    display: (u128, AccessKind),
+    sound: (u128, AccessKind),
+}
+impl AccessInfo{
+    pub fn get_terminal(&self) -> (u128, AccessKind){
+        self.terminal
+    }
+    pub fn was_terminal_accessed(&self) -> bool{
+        Self::was_accessed(self.terminal)
+    }
+    pub fn set_terminal(&mut self, access: AccessKind){
+        self.terminal = (platform::time::duration_since_epoch().as_millis(),access);
+    }
+    
+    pub fn get_display(&self) -> (u128, AccessKind){
+        self.display
+    }
+    pub fn was_display_accessed(&self) -> bool{
+        Self::was_accessed(self.display)
+    }
+    pub fn set_display(&mut self, access: AccessKind){
+        self.display = (platform::time::duration_since_epoch().as_millis(),access);
+    }
+
+    pub fn get_sound(&self) -> (u128, AccessKind){
+        self.sound
+    }
+    pub fn was_sound_accessed(&self) -> bool{
+        Self::was_accessed(self.sound)
+    }
+    pub fn set_sound(&mut self, access: AccessKind){
+        self.sound = (platform::time::duration_since_epoch().as_millis(),access);
+    }
+
+
+    fn was_accessed(info: (u128, AccessKind)) -> bool{
+        match info.1{
+            AccessKind::SinglFrame 
+            if platform::time::duration_since_epoch().as_millis() < (info.0 + 50) => {
+                true
+            },
+            AccessKind::MultiFrame => true,
+            _ => false,
+        }
+    }
 }
 
 pub type CPUAccessInfo = Arc<Mutex<AccessInfo>>;
@@ -61,7 +104,7 @@ impl ExternalHandler{
     }
 }
 
-impl CpuExternalHandler for ExternalHandler {
+unsafe impl CpuExternalHandler for ExternalHandler {
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id:  u32) {
         log::warn!("arithmetic error {}", error_id);
         cpu.stop();
@@ -79,13 +122,20 @@ impl CpuExternalHandler for ExternalHandler {
         cpu.stop();
     }
 
+    fn cpu_stop(&mut self) {
+        let mut lock = self.access_info.lock().unwrap();
+        lock.set_display(AccessKind::Nothing);    
+        lock.set_sound(AccessKind::Nothing);
+        lock.set_terminal(AccessKind::Nothing);
+    }
+
     fn system_call(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32) {
         unsafe{
             match call_id {
                 0 => cpu.stop(),
-                1 => log::info!("{}", cpu.reg()[4] as i32),
+                1 => log::info!("{}", cpu.reg_mut()[4] as i32),
                 4 => {
-                    let start_address = cpu.reg()[4];
+                    let start_address = cpu.reg_mut()[4];
                     let end_address = {
                         let mut i = start_address;
                         loop {
@@ -109,24 +159,31 @@ impl CpuExternalHandler for ExternalHandler {
                     if start_address < end_address{
                         let ptr = cpu.mem().get_or_make_mut_ptr_to_address(start_address);
                         let slice = core::slice::from_raw_parts(ptr, (end_address - start_address) as usize);
+                        
                         match std::str::from_utf8(slice){
                             Ok(str) => {
-                                log::info!("{}", str)
+                                Self::pause_block(cpu, |_cpu|{
+                                    log::info!("{}", str)
+                                });
                             },
                             Err(_err) => {
-                                log::info!("Malformed String");
+                                Self::pause_block(cpu, |_cpu|{
+                                    log::info!("Malformed String");
+                                });
                                 cpu.stop();
                             },
                         }
                     }
                 }
                 5 => {
-                    let mut string = String::new();
-                    let _ = std::io::stdin().read_line(&mut string);
+                    let mut string = String::new(); 
+                    Self::pause_block(cpu, |_cpu|{
+                        let _ = std::io::stdin().read_line(&mut string);
+                    });
                     match string.parse::<i32>() {
-                        Ok(val) => cpu.reg()[2] = val as u32,
+                        Ok(val) => cpu.reg_mut()[2] = val as u32,
                         Err(_) => match string.parse::<u32>() {
-                            Ok(val) => cpu.reg()[2] = val,
+                            Ok(val) => cpu.reg_mut()[2] = val,
                             Err(_) => {
                                 self.system_call_error(cpu, 
                                     call_id,
@@ -145,17 +202,17 @@ impl CpuExternalHandler for ExternalHandler {
                     let x = (x >> 1) as i32;
                     
     
-                    let dif = (cpu.reg()[5] as i32).wrapping_sub(cpu.reg()[4] as i32);
+                    let dif = (cpu.reg_mut()[5] as i32).wrapping_sub(cpu.reg_mut()[4] as i32);
                     if dif > 0{
-                        cpu.reg()[2] = ((x % dif).wrapping_add(cpu.reg()[4] as i32)) as u32;
+                        cpu.reg_mut()[2] = ((x % dif).wrapping_add(cpu.reg_mut()[4] as i32)) as u32;
                     }else{
-                        cpu.reg()[2] = 0;
+                        cpu.reg_mut()[2] = 0;
                     }
                     self.rand_seed = self.rand_seed.wrapping_add(1);
                 }
-                101 => match char::from_u32(cpu.reg()[4]) {
+                101 => match char::from_u32(cpu.reg_mut()[4]) {
                     Some(val) => log::info!("{}", val),
-                    None => log::warn!("Invalid char{}", cpu.reg()[4]),
+                    None => log::warn!("Invalid char{}", cpu.reg_mut()[4]),
                 },
                 102 => {
                     let mut string = String::new();
@@ -163,28 +220,28 @@ impl CpuExternalHandler for ExternalHandler {
                     string = string.replace("\n", "");
                     string = string.replace("\r", "");
                     if string.len() != 1 {
-                        cpu.reg()[2] = string.chars().next().unwrap() as u32;
+                        cpu.reg_mut()[2] = string.chars().next().unwrap() as u32;
                     } else {
                         self.system_call_error(cpu, call_id, 0, "invalid input");
                     }
                 }
                 104 => {
-                    if self.keyboard.lock().unwrap().is_pressed((cpu.reg()[4] as u8 as char).to_ascii_uppercase()){
-                        cpu.reg()[2] = 1;
+                    if self.keyboard.lock().unwrap().is_pressed((cpu.reg_mut()[4] as u8 as char).to_ascii_uppercase()){
+                        cpu.reg_mut()[2] = 1;
                     }else{
-                        cpu.reg()[2] = 0;
+                        cpu.reg_mut()[2] = 0;
                     }
                 }
                 105 => {
                     use std::thread;
-                    thread::sleep(Duration::from_millis(cpu.reg()[4] as u64));
+                    thread::sleep(Duration::from_millis(cpu.reg_mut()[4] as u64));
                 }
                 106 => {
                     let time = crate::platform::time::duration_since_epoch().as_millis();
                     let dur = time - self.last_106;
                     
-                    if (cpu.reg()[4]  as u128 ) >= dur{
-                        std::thread::sleep(std::time::Duration::from_millis((cpu.reg()[4] as u64) - (dur as u64)));
+                    if (cpu.reg_mut()[4]  as u128 ) >= dur{
+                        std::thread::sleep(std::time::Duration::from_millis((cpu.reg_mut()[4] as u64) - (dur as u64)));
                         self.last_106 = crate::platform::time::duration_since_epoch().as_millis();
                         
                     }else{
@@ -193,20 +250,20 @@ impl CpuExternalHandler for ExternalHandler {
                     
                 }
                 107 => {
-                    cpu.reg()[2] = (crate::platform::time::duration_since_epoch().as_millis() & 0xFFFFFFFFu128) as u32;
+                    cpu.reg_mut()[2] = (crate::platform::time::duration_since_epoch().as_millis() & 0xFFFFFFFFu128) as u32;
                 }
                 108 => {
                     let time = crate::platform::time::duration_since_epoch().as_micros();
-                    cpu.reg()[3] = (time >> 32) as u32;
-                    cpu.reg()[2] = time as u32;
+                    cpu.reg_mut()[3] = (time >> 32) as u32;
+                    cpu.reg_mut()[2] = time as u32;
                 }
                 109 => {
                     let time = crate::platform::time::duration_since_epoch().as_nanos();
-                    cpu.reg()[3] = (time >> 32) as u32;
-                    cpu.reg()[2] = time as u32;
+                    cpu.reg_mut()[3] = (time >> 32) as u32;
+                    cpu.reg_mut()[2] = time as u32;
                 }
                 130 => {
-                    cpu.reg()[2] = (crate::platform::time::duration_since_epoch().as_micros()
+                    cpu.reg_mut()[2] = (crate::platform::time::duration_since_epoch().as_micros()
                         & 0xFFFFFFFFu128) as u32;
                 }
                 111 => {
@@ -214,26 +271,26 @@ impl CpuExternalHandler for ExternalHandler {
                 }
                      
                 150 => {                
-                    self.screen_x = cpu.reg()[4] as usize;
-                    self.screen_y = cpu.reg()[5] as usize;
+                    self.screen_x = cpu.reg_mut()[4] as usize;
+                    self.screen_y = cpu.reg_mut()[5] as usize;
                     self.image = ColorImage::new([self.screen_x, self.screen_y], Color32::BLACK)
                 }
                 151 => {
-                    self.image.pixels[(cpu.reg()[4] + cpu.reg()[5] * ((self.screen_x) as u32)) as usize] = u32_to_color32(cpu.reg()[6]);
+                    self.image.pixels[(cpu.reg_mut()[4] + cpu.reg_mut()[5] * ((self.screen_x) as u32)) as usize] = u32_to_color32(cpu.reg_mut()[6]);
                 }
                 152 => {
-                    self.image.pixels[cpu.reg()[4] as usize] = u32_to_color32(cpu.reg()[5]);
+                    self.image.pixels[cpu.reg_mut()[4] as usize] = u32_to_color32(cpu.reg_mut()[5]);
                 }
                 153 => {       
                     (*self.image_sender.lock().unwrap()).1 = Option::Some(self.image.clone());    
-                    self.access_info.lock().unwrap().display = AccessKind::SinglFrame;     
+                    self.access_info.lock().unwrap().set_display(AccessKind::SinglFrame);     
                 }
                 154 => {
                     let mut lock = self.image_sender.lock().unwrap();
                     lock.1 = Option::Some(self.image.clone());
                     let frame = lock.0;
                     drop(lock);
-                    self.access_info.lock().unwrap().display = AccessKind::MultiFrame;
+                    self.access_info.lock().unwrap().set_display(AccessKind::SinglFrame);
                     //cpu.pause_exclude_memory_event()
                     while !cpu.is_being_dropped(){
                         if let Ok(val) = self.image_sender.lock(){
@@ -245,10 +302,10 @@ impl CpuExternalHandler for ExternalHandler {
                         }
                         
                         std::thread::sleep(std::time::Duration::from_micros(250))
-                    }   
+                    } 
                 }
                 155 => {//hsv to rgb
-                    let color = u32_to_color32(cpu.reg()[4]);
+                    let color = u32_to_color32(cpu.reg_mut()[4]);
                     let (h,s,v) = (color.r() as f32, color.g() as f32, color.b() as f32);
                     let (h ,s, v) = (h / 255.0, s / 255.0, v / 255.0);
                     let arr = eframe::egui::color::rgb_from_hsv((h, s, v));
@@ -256,10 +313,10 @@ impl CpuExternalHandler for ExternalHandler {
                     let (r,g,b) = (r * 255.0, g * 255.0, b * 255.0);
                     let (r,g,b) = (r.round() as u32, g.round() as u32, b.round() as u32);
                     let color = r | (g << 8) | (b << 16);
-                    cpu.reg()[2] = color;
+                    cpu.reg_mut()[2] = color;
                 }
                 156 => {
-                    let color = u32_to_color32(cpu.reg()[4]);
+                    let color = u32_to_color32(cpu.reg_mut()[4]);
                     for pixel in self.image.pixels.iter_mut(){
                         *pixel = color;
                     }

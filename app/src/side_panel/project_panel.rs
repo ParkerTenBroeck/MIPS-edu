@@ -74,12 +74,12 @@ impl SideTab for ProjectSidePanel {
                                     .clicked()
                                 {
                                     if let Result::Ok(str) = std::fs::read_to_string(val.path()) {
-                                        t.tabbed_area.add_tab(Box::new(
+                                        t.add_tab(
                                             crate::tabs::code_editor::CodeEditor::new(
                                                 val.file_name().into_string().unwrap(),
                                                 str,
                                             ),
-                                        ));
+                                        );
                                     }
                                     log::info!("loaded file: {}", val.path().display());
                                 }

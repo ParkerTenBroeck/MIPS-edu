@@ -5,6 +5,7 @@ use std::{error::Error, sync::Mutex, ops::DerefMut, ptr::NonNull};
 
 use super::{page_pool::{PagePoolHolder, PagePool, PagePoolNotifier, Page, MemoryDefault, PageGuard, MemoryDefaultAccess}};
 
+#[derive(Default)]
 pub struct SingleCachedMemory{
     page_pool: Option<PagePoolNotifier>,
     cache: Mutex<Option<(u16, NonNull<Page>)>>,
@@ -75,32 +76,27 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory{
     unsafe fn get_page(&'a mut self, page_id: u32) -> Option<PageGuard<'a>>{
         let page_id = (page_id >> 16) as u16;
 
+        let mut page_pool = page_pool!(self).get_page_pool();
         if let Option::Some((page_id_cache, page)) = *self.cache.lock().unwrap(){
             if page_id == page_id_cache{
-
-                return Option::Some(page_pool!(self).create_controller_guard(page))
+                return Option::Some(PagePoolNotifier::new_controller_guard(page_pool, page))
             }
         }
-        match &mut self.page_pool{
-            Some(val) => {
+        
+        let page_ref: Option<NonNull<Page>> = page_pool.get_page(page_id);
+        let mut lock = self.cache.lock().unwrap();
+        let tmp = lock.deref_mut();
 
-                let page_ref: Option<NonNull<Page>> = val.get_page_pool().get_page(page_id);
-                let mut lock = self.cache.lock().unwrap();
-                let tmp = lock.deref_mut();
-
-                if let Option::Some(page_ref) = page_ref{
-                    *tmp = Option::Some((page_id, page_ref));
-                    match *tmp{
-                        Some((_page_id, page)) => {
-                            Option::Some(page_pool!(self).create_controller_guard( page))
-                        },
-                        None => std::hint::unreachable_unchecked(),
-                    }
-                }else{
-                    Option::None
-                }
-            },
-            None => panic!(),
+        if let Option::Some(page_ref) = page_ref{
+            *tmp = Option::Some((page_id, page_ref));
+            match *tmp{
+                Some((_page_id, page)) => {
+                    Option::Some(PagePoolNotifier::new_controller_guard(page_pool, page))
+                },
+                None => std::hint::unreachable_unchecked(),
+            }
+        }else{
+            Option::None
         }
     }
 }
@@ -149,10 +145,6 @@ impl PagePoolHolder for SingleCachedMemory{
 
 
 mod tests{
-
-
-
-
     #[test]
     fn interlock_test(){
 
