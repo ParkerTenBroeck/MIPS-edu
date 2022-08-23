@@ -1,7 +1,7 @@
 use core::panic;
 use std::{sync::{atomic::{AtomicUsize, AtomicU8}, Arc, Mutex}, time::Duration, panic::AssertUnwindSafe, ptr::NonNull, pin::Pin, cell::UnsafeCell};
 
-use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
+use crate::memory::{page_pool::{ PagePoolRef, PagePoolListener, PagePoolController, MemoryDefaultAccess, MemoryDefault, PagePoolHolder}, emulator_memory::Memory, single_cached_memory::SingleCachedMemory};
 
 
 
@@ -572,9 +572,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     }
 
     #[allow(unused)]
-    pub fn get_mem(&mut self) -> PagePoolRef<SingleCachedMemory>{
-        //&mut self.mem
-        self.get_mem_controller().lock().unwrap().add_holder(SingleCachedMemory::new())
+    pub fn get_mem<M: PagePoolHolder + Default + Send + Sync + 'static>(&mut self) -> PagePoolRef<M>{
+        self.get_mem_controller().lock().unwrap().add_holder(Box::new(M::default()))
     }
     #[allow(unused)]
     pub fn get_mem_controller(&mut self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>>{

@@ -63,7 +63,7 @@ impl<'a> PageImpl for PageGuard<'a>{
 
 //------------------------------------------------------------------------------------------------------
 pub struct ControllerGuard<'a, T>{
-    _guard: MutexGuard<'a, PagePoolController>,
+    _guard: NotifierGuard<'a>,
     pub data: T,
 }
 impl<'a, T> std::ops::Deref for ControllerGuard<'a, T>{
@@ -87,11 +87,14 @@ pub struct PagePoolNotifier{
 }
 
 impl PagePoolNotifier{
+    pub unsafe fn get_raw_pool(&self) -> &Arc<Mutex<PagePoolController>>{
+        &self.page_pool
+    }
     
     pub fn get_page_pool(&self) -> NotifierGuard{
-        let mut test = self.page_pool.lock().unwrap();
-        test.last_lock_id = self.id;
-        NotifierGuard{guard: test}
+        let mut controller = self.page_pool.lock().unwrap();
+        controller.last_lock_id = self.id;
+        NotifierGuard{guard: controller}
     }
 
     pub fn clone_page_pool_mutex(&self) -> Arc<Mutex<PagePoolController>>{
@@ -100,7 +103,14 @@ impl PagePoolNotifier{
 
     pub fn create_controller_guard<'a, T>(&'a self, data: T) -> ControllerGuard<'a, T> {
         ControllerGuard{
-            _guard: self.page_pool.lock().unwrap(),
+            _guard: self.get_page_pool(),
+            data: data,
+        }
+    }
+
+    pub fn new_controller_guard<'a, T>(guard: NotifierGuard<'a>, data: T) -> ControllerGuard<'a, T> {
+        ControllerGuard{
+            _guard: guard,
             data: data,
         }
     }
@@ -111,6 +121,15 @@ impl PagePoolNotifier{
 
 pub struct NotifierGuard<'a>{
     guard: MutexGuard<'a, PagePoolController>
+}
+
+impl<'a> NotifierGuard<'a>{
+    pub unsafe fn from_raw(mut guard: MutexGuard<'a, PagePoolController>, notifier: &PagePoolNotifier) -> Self{
+        guard.last_lock_id = notifier.id;
+        Self{
+            guard,
+        }
+    }
 }
 
 impl<'a> Drop for NotifierGuard<'a>{
@@ -362,8 +381,12 @@ impl PagePoolController{
                 self.unlock()?;
             },
         }
-
-        Result::Ok(self.page_pool.pool.get_mut(self.page_pool.address_mapping.iter().position(|val|  {*val >= addr}).unwrap()).unwrap().into())
+        
+        Result::Ok(self.page_pool.pool.get_mut(
+            self.page_pool.address_mapping.iter().position(|val|  
+                {
+                    *val >= addr
+                }).unwrap()).unwrap().into())
     }
 
     #[inline(always)]

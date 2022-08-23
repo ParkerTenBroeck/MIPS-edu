@@ -2,7 +2,7 @@
 
 use std::{io::Read};
 
-use mips_emulator::{cpu::{MipsCpu, DefaultExternalHandler}, memory::page_pool::MemoryDefault};
+use mips_emulator::{cpu::{MipsCpu, DefaultExternalHandler}, memory::{page_pool::MemoryDefault, single_cached_memory::SingleCachedMemory}};
 
 
 fn main(){
@@ -38,7 +38,7 @@ fn main(){
                         } 
                         //
                         unsafe{
-                            cpu.get_mem().copy_into_raw(0, &test_prog);
+                            cpu.get_mem::<SingleCachedMemory>().copy_into_raw(0, &test_prog);
                         }
                     });
                     println!("reset CPU");

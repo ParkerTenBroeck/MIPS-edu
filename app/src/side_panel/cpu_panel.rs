@@ -4,7 +4,7 @@ use eframe::{egui::{WidgetText}};
 use mips_emulator::{memory::page_pool::MemoryDefault};
 
 
-use crate::{platform::{sync::PlatSpecificLocking}};
+use crate::{platform::{sync::PlatSpecificLocking}, emulator::single_cached_spinlock_memory::{SingleCachedPlatSpinMemory}};
 
 use super::side_tabbed_panel::SideTab;
 
@@ -319,7 +319,7 @@ impl SideTab for CPUSidePanel {
                     *mem = mem.to_be();
                 }
                 unsafe{
-                    cpu.get_mem().copy_into_raw(0, test_prog.as_slice());
+                    cpu.get_mem::<SingleCachedPlatSpinMemory>().copy_into_raw(0, test_prog.as_slice());
                 }
                 log::info!("Loaded Demo 1 CPU");
             });
@@ -332,7 +332,7 @@ impl SideTab for CPUSidePanel {
 
                 let test_prog = include_bytes!("../../res/tmp.bin");
                 unsafe{
-                    cpu.get_mem().copy_into_raw(0, test_prog);
+                    cpu.get_mem::<SingleCachedPlatSpinMemory>().copy_into_raw(0, test_prog);
                 }
                 log::info!("Loaded Demo 2 CPU");
             });
@@ -348,7 +348,7 @@ impl SideTab for CPUSidePanel {
 
                 let test_prog = buf.as_slice();
                 unsafe{
-                    cpu.get_mem().copy_into_raw(0, test_prog);
+                    cpu.get_mem::<SingleCachedPlatSpinMemory>().copy_into_raw(0, test_prog);
                 }
                 log::info!("Loaded Demo 2 CPU");
             });
