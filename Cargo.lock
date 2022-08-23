@@ -759,7 +759,7 @@ dependencies = [
 [[package]]
 name = "egui_dock"
 version = "0.1.0"
-source = "git+https://github.com/ParkerTenBroeck/egui_dock.git?branch=closing_tabs#ae8a43e86cd17426034c1dfc4ba96950de778471"
+source = "git+https://github.com/ParkerTenBroeck/egui_dock.git#c07baf9d173dbe7b6143410be02de5fed042d294"
 dependencies = [
  "egui",
 ]

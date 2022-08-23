@@ -100,6 +100,9 @@ impl HexEditor {
 
 impl Tab for HexEditor {
     fn ui(&mut self, ui: &mut egui::Ui) {
+
+        let max_width = ui.max_rect().width();
+
         ui.vertical(|ui| unsafe {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
@@ -264,19 +267,8 @@ impl Tab for HexEditor {
                 }
                 // -------------------------------------------------------------------------------------------------
                 
-                //egui::Area::new("test").show(ui.ctx(), |ui|{
-                    //egui::SidePanel::new(egui::panel::Side::Left, "asd").show(ui.ctx(), |ui|{
                 ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui|{
-                    //egui::ScrollArea::horizontal().show(ui, |ui| {
-                    
-    
-                    //let response = ui.allocate_exact_size(ui.max_rect().size(), egui::Sense{click: true, drag: false, focusable: true});
-                    
-                    // ui.painter().rect_stroke(ui.max_rect(), 0.0, eframe::epaint::Stroke{
-                    //    width: 2.0,
-                    //    color: Color32::GREEN,
-                    // });
-                    //ui.label(label);
+
                     //-------------------------------------------------------
                     
                     if self.scroll_to_pc{
@@ -293,17 +285,10 @@ impl Tab for HexEditor {
                             },
                         };
                     }
-                    //let layout = LayoutJob::default();
-                    // layout.append(text, leading_space, TextFormat{ 
-                    //     font_id: todo!(), 
-                    //     color: todo!(), 
-                    //     background: todo!(), 
-                    //     italics: todo!(), 
-                    //     underline: todo!(), 
-                    //     strikethrough: todo!(), 
-                    //     valign: todo!() 
-                    // });
-                    let clip = ui.available_rect_before_wrap();
+
+                    let mut clip = ui.max_rect();
+                    //hack
+                    clip.max.x = f32::min(clip.max.x, clip.min.x + max_width);
                     ui.set_clip_rect(clip);
                     ui.vertical(|ui|{
                         
