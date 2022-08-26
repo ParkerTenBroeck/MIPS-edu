@@ -1,19 +1,23 @@
 use egui_dock::Tab;
 
 #[derive(Debug)]
-pub struct DummyTab{
+pub struct DummyTab {
     title: String,
     force_close: bool,
     on_close: bool,
 }
 
-impl DummyTab{
-    pub fn new(title: impl Into<String>, force_close: bool, on_close: bool) -> Self{
-        Self { title: title.into(), force_close, on_close }
+impl DummyTab {
+    pub fn new(title: impl Into<String>, force_close: bool, on_close: bool) -> Self {
+        Self {
+            title: title.into(),
+            force_close,
+            on_close,
+        }
     }
 }
 
-impl Tab for DummyTab{
+impl Tab for DummyTab {
     fn ui(&mut self, ui: &mut eframe::egui::Ui) {
         ui.label(format!("{:#?}", self));
     }

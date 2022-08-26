@@ -13,9 +13,11 @@ pub struct ElfHeader {
     pub(crate) flags: u32,
 }
 
-impl ElfHeader{
-    pub fn from_external_header<T: num_traits::PrimInt + num_traits::Unsigned + Into<u128>>(header: &impl crate::external::header::ExternalElfHeaderTrait<T>) -> Self{
-        Self{
+impl ElfHeader {
+    pub fn from_external_header<T: num_traits::PrimInt + num_traits::Unsigned + Into<u128>>(
+        header: &impl crate::external::header::ExternalElfHeaderTrait<T>,
+    ) -> Self {
+        Self {
             class: ElfClass::try_from(header.class()).unwrap(),
             endianness: ElfEndian::try_from(header.endianness()).unwrap(),
             abi: ElfAbi::try_from(header.abi()).unwrap(),

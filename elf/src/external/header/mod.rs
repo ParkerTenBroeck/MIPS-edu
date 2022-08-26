@@ -1,5 +1,5 @@
 use core::ptr::read_unaligned;
-use num_traits::{Unsigned, PrimInt};
+use num_traits::{PrimInt, Unsigned};
 
 use super::GenericExternalElf;
 
@@ -28,13 +28,13 @@ pub struct ExternalElfHeader<T: PrimInt + Unsigned> {
     shstrndx: u16,
 }
 
-impl<T: PrimInt + Unsigned> ExternalElfHeader<T>{
-    pub fn read_int_type<N:PrimInt>(&self, val: *const N) -> N{
-       unsafe { read_unaligned(val) }
+impl<T: PrimInt + Unsigned> ExternalElfHeader<T> {
+    pub fn read_int_type<N: PrimInt>(&self, val: *const N) -> N {
+        unsafe { read_unaligned(val) }
     }
 }
 
-impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeader<T>{
+impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeader<T> {
     fn class(&self) -> u8 {
         self.class
     }
@@ -96,7 +96,7 @@ impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeader<T>{
     }
 
     fn section_header_entry_size(&self) -> u16 {
-        self.read_int_type(&self.shentsize) 
+        self.read_int_type(&self.shentsize)
     }
 
     fn section_header_entry_num(&self) -> u16 {
@@ -108,7 +108,7 @@ impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeader<T>{
     }
 }
 
-pub trait ExternalElfHeaderTrait<T: PrimInt + Unsigned>{
+pub trait ExternalElfHeaderTrait<T: PrimInt + Unsigned> {
     fn class(&self) -> u8;
     fn endianness(&self) -> u8;
     fn header_version(&self) -> u8;
@@ -134,41 +134,38 @@ pub type ExternalElf64Header = ExternalElfHeader<u64>;
 
 //---------------------------------------------------------------------------------------------------------
 
-pub struct ExternalElfHeaderWrapper<'a, T: PrimInt + Unsigned>{
-    header: &'a dyn ExternalElfHeaderTrait<T>
+pub struct ExternalElfHeaderWrapper<'a, T: PrimInt + Unsigned> {
+    header: &'a dyn ExternalElfHeaderTrait<T>,
 }
 
-impl<'a, T: PrimInt + Unsigned> ExternalElfHeaderWrapper<'a, T>{
-    fn fix_endian<I: PrimInt>(&self, val: I) -> I{
-        match self.header.endianness(){
-            1 => {
-                val
-            }
-            2 => {
-                val.to_be()
-            }
+impl<'a, T: PrimInt + Unsigned> ExternalElfHeaderWrapper<'a, T> {
+    fn fix_endian<I: PrimInt>(&self, val: I) -> I {
+        match self.header.endianness() {
+            1 => val,
+            2 => val.to_be(),
             _ => {
                 panic!();
             }
         }
     }
 
-    pub fn new<R: super::ExternalElfTrait>(gen_elf: &'a GenericExternalElf<'a, R>) -> Self where <R as super::ExternalElfTrait>::ElfHeader: ExternalElfHeaderTrait<T>{
-        unsafe{
-            Self{
+    pub fn new<R: super::ExternalElfTrait>(gen_elf: &'a GenericExternalElf<'a, R>) -> Self
+    where
+        <R as super::ExternalElfTrait>::ElfHeader: ExternalElfHeaderTrait<T>,
+    {
+        unsafe {
+            Self {
                 header: gen_elf.elf_header_raw(),
             }
         }
     }
 
-    pub fn from_raw_parts(header: & impl ExternalElfHeaderTrait<T>) -> ExternalElfHeaderWrapper<T>{
-        ExternalElfHeaderWrapper::<T>{
-            header
-        }
+    pub fn from_raw_parts(header: &impl ExternalElfHeaderTrait<T>) -> ExternalElfHeaderWrapper<T> {
+        ExternalElfHeaderWrapper::<T> { header }
     }
 }
 
-impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeaderWrapper<'_, T>{
+impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeaderWrapper<'_, T> {
     fn class(&self) -> u8 {
         self.header.class()
     }

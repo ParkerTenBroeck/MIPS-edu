@@ -1,6 +1,6 @@
 use core::ptr::read_unaligned;
 
-use num_traits::{Unsigned, PrimInt};
+use num_traits::{PrimInt, Unsigned};
 
 use super::{header::ExternalElfHeaderTrait, GenericExternalElf};
 
@@ -98,7 +98,6 @@ impl ExternalProgramHeaderTrait<u32> for ExternalProgramHeader32 {
     }
 }
 
-
 pub trait ExternalProgramHeaderTrait<T: PrimInt + Unsigned> {
     fn ph_type(&self) -> u32;
     fn flags(&self) -> u32;
@@ -112,50 +111,53 @@ pub trait ExternalProgramHeaderTrait<T: PrimInt + Unsigned> {
 
 //---------------------------------------------------------------------------------------------------------
 
-pub struct ExternalProgramHeaderWrapper<'a, T: PrimInt + Unsigned>{
+pub struct ExternalProgramHeaderWrapper<'a, T: PrimInt + Unsigned> {
     elf_header: &'a dyn ExternalElfHeaderTrait<T>,
-    program_header: &'a dyn ExternalProgramHeaderTrait<T>
+    program_header: &'a dyn ExternalProgramHeaderTrait<T>,
 }
 
-impl<'a, T: PrimInt + Unsigned> ExternalProgramHeaderWrapper<'a, T>{
-    fn fix_endian<I: PrimInt>(&self, val: I) -> I{
-        match self.elf_header.endianness(){
-            1 => {
-                val
-            }
-            2 => {
-                val.to_be()
-            }
+impl<'a, T: PrimInt + Unsigned> ExternalProgramHeaderWrapper<'a, T> {
+    fn fix_endian<I: PrimInt>(&self, val: I) -> I {
+        match self.elf_header.endianness() {
+            1 => val,
+            2 => val.to_be(),
             _ => {
                 panic!();
             }
         }
     }
 
-    pub fn new<R: super::ExternalElfTrait>(index: usize, gen_elf: &'a GenericExternalElf<'a, R>) -> Option<Self> where <R as super::ExternalElfTrait>::ElfHeader: ExternalElfHeaderTrait<T>, <R as super::ExternalElfTrait>::ProgramHeader: ExternalProgramHeaderTrait<T>{
-        unsafe{
-            match gen_elf.program_headers_raw().get(index){
-                Some(program_header) => {
-                    Option::Some(Self{
-                        elf_header: gen_elf.elf_header_raw(),
-                        program_header,
-                    })
-                },
+    pub fn new<R: super::ExternalElfTrait>(
+        index: usize,
+        gen_elf: &'a GenericExternalElf<'a, R>,
+    ) -> Option<Self>
+    where
+        <R as super::ExternalElfTrait>::ElfHeader: ExternalElfHeaderTrait<T>,
+        <R as super::ExternalElfTrait>::ProgramHeader: ExternalProgramHeaderTrait<T>,
+    {
+        unsafe {
+            match gen_elf.program_headers_raw().get(index) {
+                Some(program_header) => Option::Some(Self {
+                    elf_header: gen_elf.elf_header_raw(),
+                    program_header,
+                }),
                 None => Option::None,
             }
         }
     }
 
-    pub fn from_components(elf_header: &'a impl ExternalElfHeaderTrait<T>, program_header: &'a impl ExternalProgramHeaderTrait<T>) -> ExternalProgramHeaderWrapper<'a, T>{
-        ExternalProgramHeaderWrapper::<T>{
+    pub fn from_components(
+        elf_header: &'a impl ExternalElfHeaderTrait<T>,
+        program_header: &'a impl ExternalProgramHeaderTrait<T>,
+    ) -> ExternalProgramHeaderWrapper<'a, T> {
+        ExternalProgramHeaderWrapper::<T> {
             elf_header,
             program_header,
         }
     }
 }
 
-impl<T: PrimInt + Unsigned> ExternalProgramHeaderTrait<T> for ExternalProgramHeaderWrapper<'_, T>{
-
+impl<T: PrimInt + Unsigned> ExternalProgramHeaderTrait<T> for ExternalProgramHeaderWrapper<'_, T> {
     fn ph_type(&self) -> u32 {
         self.fix_endian(self.program_header.ph_type())
     }

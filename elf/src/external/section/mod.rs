@@ -3,8 +3,7 @@ use std::fmt::Display;
 
 use num_traits::{PrimInt, Unsigned};
 
-use super::{header::ExternalElfHeaderTrait, GenericExternalElf, ExternalElfTrait};
-
+use super::{header::ExternalElfHeaderTrait, ExternalElfTrait, GenericExternalElf};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -63,7 +62,7 @@ impl<T: PrimInt + Unsigned + Display> ExternalSectionHeaderTrait<T> for External
     }
 }
 
-pub trait ExternalSectionHeaderTrait<T: PrimInt + Unsigned + Display>{
+pub trait ExternalSectionHeaderTrait<T: PrimInt + Unsigned + Display> {
     fn name_off(&self) -> u32;
     fn sh_type(&self) -> u32;
     fn flags(&self) -> T;
@@ -76,65 +75,58 @@ pub trait ExternalSectionHeaderTrait<T: PrimInt + Unsigned + Display>{
     fn entsize(&self) -> T;
 }
 
-
-
 pub type ExternalSectionHeader32 = ExternalSectionHeader<u32>;
 pub type ExternalSectionHeader64 = ExternalSectionHeader<u64>;
 
 //---------------------------------------------------------------------------------------------------------
 
-pub struct ExternalSectionHeaderWrapper<'a, T: ExternalElfTrait>{
+pub struct ExternalSectionHeaderWrapper<'a, T: ExternalElfTrait> {
     elf_header: &'a dyn ExternalElfHeaderTrait<T::Size>,
     section_header: &'a dyn ExternalSectionHeaderTrait<T::Size>,
-    gen_elf: &'a GenericExternalElf<'a, T>
+    gen_elf: &'a GenericExternalElf<'a, T>,
 }
 
-impl<'a, T: ExternalElfTrait> ExternalSectionHeaderWrapper<'a, T>{
-    fn fix_endian<I: PrimInt>(&self, val: I) -> I{
-        match self.elf_header.endianness(){
-            1 => {
-                val
-            }
-            2 => {
-                val.to_be()
-            }
+impl<'a, T: ExternalElfTrait> ExternalSectionHeaderWrapper<'a, T> {
+    fn fix_endian<I: PrimInt>(&self, val: I) -> I {
+        match self.elf_header.endianness() {
+            1 => val,
+            2 => val.to_be(),
             _ => {
                 panic!();
             }
         }
     }
 
-    pub fn new(index: usize, gen_elf: &'a GenericExternalElf<'a, T>) -> Option<Self>{
-        unsafe{
-            match gen_elf.section_headers_raw().get(index){
-                Some(section_header) => {
-                    Option::Some(Self{
-                        elf_header: gen_elf.elf_header_raw(),
-                        section_header,
-                        gen_elf,
-                    })
-                },
+    pub fn new(index: usize, gen_elf: &'a GenericExternalElf<'a, T>) -> Option<Self> {
+        unsafe {
+            match gen_elf.section_headers_raw().get(index) {
+                Some(section_header) => Option::Some(Self {
+                    elf_header: gen_elf.elf_header_raw(),
+                    section_header,
+                    gen_elf,
+                }),
                 None => Option::None,
             }
         }
     }
 
-    pub fn get_data(&self) -> &'a [u8]{
+    pub fn get_data(&self) -> &'a [u8] {
         let start = self.offset().try_into().unwrap();
         let end = self.offset().try_into().unwrap() + self.size().try_into().unwrap();
         &self.gen_elf.data[start..end]
     }
 
-    pub fn get_name(&self) -> &'a str{
-        
-        match self.gen_elf.section_header(self.gen_elf.elf_header().shstr_index() as usize){
+    pub fn get_name(&self) -> &'a str {
+        match self
+            .gen_elf
+            .section_header(self.gen_elf.elf_header().shstr_index() as usize)
+        {
             Some(val) => {
-                
                 let start = self.name_off() as usize;
                 let mut end = self.name_off() as usize;
                 let tmp = &val.get_data()[start..];
-                for char in core::str::from_utf8(tmp).unwrap().chars(){
-                    if char == '\0'{
+                for char in core::str::from_utf8(tmp).unwrap().chars() {
+                    if char == '\0' {
                         break;
                     }
                     end += char.len_utf8();
@@ -142,13 +134,15 @@ impl<'a, T: ExternalElfTrait> ExternalSectionHeaderWrapper<'a, T>{
 
                 let tmp = &val.get_data()[start..end];
                 core::str::from_utf8(tmp).unwrap()
-            },
+            }
             None => "",
         }
     }
 }
 
-impl<T: ExternalElfTrait> ExternalSectionHeaderTrait<T::Size> for ExternalSectionHeaderWrapper<'_, T>{
+impl<T: ExternalElfTrait> ExternalSectionHeaderTrait<T::Size>
+    for ExternalSectionHeaderWrapper<'_, T>
+{
     fn name_off(&self) -> u32 {
         self.fix_endian(self.section_header.name_off())
     }

@@ -1,26 +1,21 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
-
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
-
-
-
-
 
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     use app::create_app;
 
-    if !app::app_init(){
+    if !app::app_init() {
         std::process::exit(0);
     }
 
-    let icon = match image::open("./app/docs/icon-256.png"){
+    let icon = match image::open("./app/docs/icon-256.png") {
         Result::Ok(val) => {
             let icon = val.to_rgba8();
             let (icon_width, icon_height) = icon.dimensions();
-            Some(eframe::IconData{
+            Some(eframe::IconData {
                 rgba: icon.into_raw(),
                 width: icon_width,
                 height: icon_height,
@@ -32,78 +27,75 @@ fn main() {
         }
     };
 
-    let native_options = eframe::NativeOptions{
+    let native_options = eframe::NativeOptions {
         icon_data: icon,
-        
+
         ..Default::default()
     };
 
-    #[cfg(target_os= "linux")]
-    match create_linux_app(){
-        Ok(_) => {},
+    #[cfg(target_os = "linux")]
+    match create_linux_app() {
+        Ok(_) => {}
         Err(err) => {
             log::info!("Failed to create .desktop file: {}", err)
-        },
+        }
     }
 
-    eframe::run_native("Mips Edu", native_options, Box::new(|cc|{
-        create_app(cc)
-    }));
+    eframe::run_native("Mips Edu", native_options, Box::new(|cc| create_app(cc)));
 }
 
-#[cfg(target_os= "linux")]    
-fn create_linux_app() -> Result<(), Box<dyn std::error::Error>>{
+#[cfg(target_os = "linux")]
+fn create_linux_app() -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
     let path = format!("{}/.local/share/applications/mips-edu.desktop", home);
     let app = std::fs::File::create(path.clone());
     match app {
         Ok(mut val) => {
-
-            let ec = (std::env::current_exe()?)
-                        .into_os_string().into_string();
-            let ec = match ec{
+            let ec = (std::env::current_exe()?).into_os_string().into_string();
+            let ec = match ec {
                 Ok(val) => val,
                 Err(err) => {
-                    return Result::Err(
-                        Box::new(
-                            std::io::Error::new(
-                                std::io::ErrorKind::InvalidInput,
-                                format!("Failed to get path {:?}", err))))
-                },
+                    return Result::Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Failed to get path {:?}", err),
+                    )))
+                }
             };
             let mut tmp = std::env::current_exe()?;
-            if !tmp.pop() || !tmp.pop() || !tmp.pop(){
+            if !tmp.pop() || !tmp.pop() || !tmp.pop() {
                 log::error!("failed to get icon path: {:?}", tmp);
-                return Result::Err(
-                    Box::new(
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!("Failed to get path {:?}", tmp))))
-            } 
+                return Result::Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Failed to get path {:?}", tmp),
+                )));
+            }
             tmp.push("app/docs/icon-256.png");
-            
+
             //log::info!("{}", std::fs::canonicalize(std::path::Path::new(".")).unwrap().as_os_str().to_str().unwrap());
-            let ic:String = match tmp.as_os_str().to_str(){
+            let ic: String = match tmp.as_os_str().to_str() {
                 Some(val) => val,
                 None => {
                     log::error!("failed to get icon path: {:?}", tmp);
-                    return Result::Err(
-                        Box::new(
-                            std::io::Error::new(
-                                std::io::ErrorKind::InvalidInput,
-                                format!("Failed to get path {:?}", tmp))))
-                },
-            }.into();
+                    return Result::Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Failed to get path {:?}", tmp),
+                    )));
+                }
+            }
+            .into();
 
-            let data = format!("[Desktop Entry]\nName=MIPS\nExec={}\nIcon={}\nTerminal=false\nType=Application",ec, ic);
-             
+            let data = format!(
+                "[Desktop Entry]\nName=MIPS\nExec={}\nIcon={}\nTerminal=false\nType=Application",
+                ec, ic
+            );
+
             use std::io::Write;
             let _ = val.write(data.as_bytes())?;
-            return Result::Ok(())
-        },
+            return Result::Ok(());
+        }
         Err(val) => {
-            log::error!("failed to create application entry {}: {}",path, val);
+            log::error!("failed to create application entry {}: {}", path, val);
             Result::Err(Box::new(val))
-        },
+        }
     }
 }

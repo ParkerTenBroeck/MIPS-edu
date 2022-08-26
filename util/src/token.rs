@@ -1,17 +1,24 @@
-
 #[derive(Debug, Clone)]
-pub struct Token<T>{
+pub struct Token<T> {
     pub t_type: T,
     pub t_data: TokenData,
 }
 
 #[allow(unused)]
 impl<T> Token<T> {
-    pub fn get_token_type(&self) -> &T { &self.t_type }
-    pub fn get_token_type_mut(&mut self) -> &mut T { &mut self.t_type }
-    
-    pub fn get_token_data(&self) -> &TokenData { &self.t_data }
-    pub fn get_token_data_mut(&mut self) -> &mut TokenData { &mut self.t_data }
+    pub fn get_token_type(&self) -> &T {
+        &self.t_type
+    }
+    pub fn get_token_type_mut(&mut self) -> &mut T {
+        &mut self.t_type
+    }
+
+    pub fn get_token_data(&self) -> &TokenData {
+        &self.t_data
+    }
+    pub fn get_token_data_mut(&mut self) -> &mut TokenData {
+        &mut self.t_data
+    }
     pub fn get_real_size(&self) -> usize {
         self.t_data.size_real
     }
@@ -35,40 +42,45 @@ impl<T> Token<T> {
     }
 }
 
-use std::fmt::Formatter;
 use std::fmt::Display;
+use std::fmt::Formatter;
 use std::str::FromStr;
 
-impl<T: Display> Display for Token<T>{
+impl<T: Display> Display for Token<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "line:{}, size:{}, column:{} type: {}",self.get_line() + 1, self.get_size(),self.get_column(), self.t_type)
+        write!(
+            f,
+            "line:{}, size:{}, column:{} type: {}",
+            self.get_line() + 1,
+            self.get_size(),
+            self.get_column(),
+            self.t_type
+        )
     }
 }
 
 #[derive(Debug)]
-pub struct TokenizerError{
+pub struct TokenizerError {
     pub part: Option<TokenData>,
     pub error: String,
 }
-impl TokenizerError{
-    pub fn at_pos(error: String, pos: TokenData) -> Self{
-        Self{
+impl TokenizerError {
+    pub fn at_pos(error: String, pos: TokenData) -> Self {
+        Self {
             error,
-            part: Option::Some(pos)
+            part: Option::Some(pos),
         }
     }
-    pub fn error(error: String) -> Self{
-        Self{
+    pub fn error(error: String) -> Self {
+        Self {
             error,
             part: Option::None,
         }
     }
 }
 
-impl std::error::Error for TokenizerError{
-
-}
-impl std::fmt::Display for TokenizerError{
+impl std::error::Error for TokenizerError {}
+impl std::fmt::Display for TokenizerError {
     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
     }
@@ -78,8 +90,8 @@ impl std::fmt::Display for TokenizerError{
 pub struct TokenData {
     pub size: usize,
     pub index: usize,
-    pub index_real:usize,
-    pub size_real:usize,
+    pub index_real: usize,
+    pub size_real: usize,
     pub line: usize,
     pub column: usize,
     pub file: Option<u16>,
@@ -87,8 +99,8 @@ pub struct TokenData {
 
 #[allow(unused)]
 impl TokenData {
-    pub fn new()-> Self{
-        TokenData{
+    pub fn new() -> Self {
+        TokenData {
             size: 0,
             index: 0,
             index_real: 0,
@@ -115,7 +127,7 @@ impl TokenData {
     }
     pub fn get_column(&self) -> usize {
         self.column
-    }    
+    }
     pub fn get_file(&self) -> Option<u16> {
         self.file
     }

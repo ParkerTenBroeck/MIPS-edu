@@ -1,4 +1,4 @@
-use std::{fs::File};
+use std::fs::File;
 
 use self::assembler::{Assembler, AssemblerReport};
 
@@ -8,6 +8,9 @@ pub mod symbol;
 
 #[allow(dead_code)]
 #[allow(unused)]
-pub fn assemble(input: impl Into<String>, output:&mut  File) -> Result<AssemblerReport, AssemblerReport>{
+pub fn assemble(
+    input: impl Into<String>,
+    output: &mut File,
+) -> Result<AssemblerReport, AssemblerReport> {
     Assembler::new().assemble(input.into(), output)
 }

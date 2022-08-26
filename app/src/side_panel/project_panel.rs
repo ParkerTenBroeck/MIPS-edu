@@ -4,9 +4,9 @@ use super::side_tabbed_panel::SideTab;
 
 pub struct ProjectSidePanel {}
 
-impl ProjectSidePanel{
-    pub fn new() -> Self{
-        Self {  }
+impl ProjectSidePanel {
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -15,7 +15,6 @@ impl From<ProjectSidePanel> for Box<dyn SideTab> {
         Box::new(panel)
     }
 }
-
 
 impl SideTab for ProjectSidePanel {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, app: &mut crate::Application) {
@@ -45,7 +44,9 @@ impl SideTab for ProjectSidePanel {
                                         .to_ascii_lowercase()
                                         .to_str()
                                         .unwrap()
-                                        .cmp(t2.file_name().to_ascii_lowercase().to_str().unwrap());
+                                        .cmp(
+                                            t2.file_name().to_ascii_lowercase().to_str().unwrap(),
+                                        );
                                 } else if t1d {
                                     return std::cmp::Ordering::Less;
                                 } else if t2d {
@@ -56,7 +57,9 @@ impl SideTab for ProjectSidePanel {
                                         .to_ascii_lowercase()
                                         .to_str()
                                         .unwrap()
-                                        .cmp(t2.file_name().to_ascii_lowercase().to_str().unwrap());
+                                        .cmp(
+                                            t2.file_name().to_ascii_lowercase().to_str().unwrap(),
+                                        );
                                 }
                             }
                         }
@@ -74,12 +77,10 @@ impl SideTab for ProjectSidePanel {
                                     .clicked()
                                 {
                                     if let Result::Ok(str) = std::fs::read_to_string(val.path()) {
-                                        t.add_tab(
-                                            crate::tabs::code_editor::CodeEditor::new(
-                                                val.file_name().into_string().unwrap(),
-                                                str,
-                                            ),
-                                        );
+                                        t.add_tab(crate::tabs::code_editor::CodeEditor::new(
+                                            val.file_name().into_string().unwrap(),
+                                            str,
+                                        ));
                                     }
                                     log::info!("loaded file: {}", val.path().display());
                                 }

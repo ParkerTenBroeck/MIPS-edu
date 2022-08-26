@@ -1,6 +1,6 @@
 //------------------------------------------------------------------------
 
-pub struct Symbol{
+pub struct Symbol {
     pub name: String,
     pub value: u32,
     pub size: u32,
@@ -10,24 +10,22 @@ pub struct Symbol{
     pub vis: SymVis,
 }
 
-impl Default for Symbol{
+impl Default for Symbol {
     fn default() -> Self {
-        Self { 
-            name: Default::default(), 
-            value: Default::default(), 
-            size: Default::default(), 
-            section_index: Default::default(), 
-            s_type: SymType::STT_NOTYPE, 
+        Self {
+            name: Default::default(),
+            value: Default::default(),
+            size: Default::default(),
+            section_index: Default::default(),
+            s_type: SymType::STT_NOTYPE,
             binding: SymBind::STB_LOCAL,
             vis: SymVis::STV_DEFUALT,
         }
     }
 }
 
-
-
 #[allow(non_camel_case_types)]
-pub enum SymBind{
+pub enum SymBind {
     STB_LOCAL,
     STB_GLOBAL,
     STB_WEAK,
@@ -38,7 +36,7 @@ pub enum SymBind{
 }
 
 #[allow(non_camel_case_types)]
-pub enum SymType{
+pub enum SymType {
     STT_NOTYPE,
     STT_OBJECT,
     STT_FUNC,
@@ -50,12 +48,11 @@ pub enum SymType{
     STT_HIOS,
     STT_LOPROC,
     STT_SPARC_REGISTER,
-    STT_HIPROC
+    STT_HIPROC,
 }
 
-
 #[allow(non_camel_case_types)]
-pub enum SymVis{
+pub enum SymVis {
     STV_DEFUALT,
     STV_INTERNAL,
     STV_HIDDNE,

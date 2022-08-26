@@ -21,7 +21,6 @@ pub fn chars_from_u8(byte: &[u8]) -> std::str::Chars {
     core::str::from_utf8(byte).unwrap().chars()
 }
 
-
 // struct BaseLexer<'a, T, E, S, L: Lexer<T, E>>{
 //     bytes: &'a [u8],
 //     iterator: Chars<'a>,

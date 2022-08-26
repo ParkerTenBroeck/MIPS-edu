@@ -1,12 +1,23 @@
 use core::marker::PhantomData;
-use std::{num::TryFromIntError, fmt::{Display, UpperHex}};
+use std::{
+    fmt::{Display, UpperHex},
+    num::TryFromIntError,
+};
 
 use num_traits::{PrimInt, Unsigned};
 
 use self::{
-    header::{ExternalElf32Header, ExternalElf64Header, ExternalElfHeaderTrait, ExternalElfHeaderWrapper},
-    program::{ExternalProgramHeader32, ExternalProgramHeader64, ExternalProgramHeaderTrait, ExternalProgramHeaderWrapper},
-    section::{ExternalSectionHeader32, ExternalSectionHeader64, ExternalSectionHeaderTrait, ExternalSectionHeaderWrapper},
+    header::{
+        ExternalElf32Header, ExternalElf64Header, ExternalElfHeaderTrait, ExternalElfHeaderWrapper,
+    },
+    program::{
+        ExternalProgramHeader32, ExternalProgramHeader64, ExternalProgramHeaderTrait,
+        ExternalProgramHeaderWrapper,
+    },
+    section::{
+        ExternalSectionHeader32, ExternalSectionHeader64, ExternalSectionHeaderTrait,
+        ExternalSectionHeaderWrapper,
+    },
 };
 
 pub mod header;
@@ -14,7 +25,12 @@ pub mod program;
 pub mod section;
 
 pub trait ExternalElfTrait {
-    type Size: PrimInt + Unsigned + Display + UpperHex + Into<u128> + TryInto<usize, Error = TryFromIntError>;
+    type Size: PrimInt
+        + Unsigned
+        + Display
+        + UpperHex
+        + Into<u128>
+        + TryInto<usize, Error = TryFromIntError>;
     type ElfHeader: ExternalElfHeaderTrait<Self::Size>;
     type ProgramHeader: ExternalProgramHeaderTrait<Self::Size>;
     type SectionHeader: ExternalSectionHeaderTrait<Self::Size>;
@@ -50,52 +66,58 @@ pub struct GenericExternalElf<'a, ET> {
 }
 
 impl<'a, T: ExternalElfTrait> GenericExternalElf<'a, T> {
-
-    pub unsafe fn elf_header_raw(&self) -> &T::ElfHeader{
+    pub unsafe fn elf_header_raw(&self) -> &T::ElfHeader {
         &*(self.data.as_ptr() as *const T::ElfHeader)
     }
 
-    pub unsafe fn section_headers_raw(&'a self) -> &'a [T::SectionHeader]{
-        let sh_off: usize = match self.elf_header().section_header_offset().try_into(){
-            Ok(val) => {val}
-            Err(_err) => {panic!()}
+    pub unsafe fn section_headers_raw(&'a self) -> &'a [T::SectionHeader] {
+        let sh_off: usize = match self.elf_header().section_header_offset().try_into() {
+            Ok(val) => val,
+            Err(_err) => {
+                panic!()
+            }
         };
-        let sh_num: usize = match self.elf_header().section_header_entry_num().try_into(){
-            Ok(val) => {val}
-            Err(_err) => {panic!()}
+        let sh_num: usize = match self.elf_header().section_header_entry_num().try_into() {
+            Ok(val) => val,
+            Err(_err) => {
+                panic!()
+            }
         };
         let sh_ptr = self.data.as_ptr().add(sh_off);
         core::slice::from_raw_parts(sh_ptr as *const T::SectionHeader, sh_num)
     }
 
-    pub unsafe fn program_headers_raw(&'a self) -> &'a [T::ProgramHeader]{
-        let ph_off: usize = match self.elf_header().program_header_offset().try_into(){
-            Ok(val) => {val}
-            Err(_err) => {panic!()}
+    pub unsafe fn program_headers_raw(&'a self) -> &'a [T::ProgramHeader] {
+        let ph_off: usize = match self.elf_header().program_header_offset().try_into() {
+            Ok(val) => val,
+            Err(_err) => {
+                panic!()
+            }
         };
-        let ph_num: usize = match self.elf_header().program_header_entry_num().try_into(){
-            Ok(val) => {val}
-            Err(_err) => {panic!()}
+        let ph_num: usize = match self.elf_header().program_header_entry_num().try_into() {
+            Ok(val) => val,
+            Err(_err) => {
+                panic!()
+            }
         };
         let sh_ptr = self.data.as_ptr().add(ph_off);
         core::slice::from_raw_parts(sh_ptr as *const T::ProgramHeader, ph_num)
     }
 
-    pub fn elf_header(&'a self) -> ExternalElfHeaderWrapper<T::Size>{
+    pub fn elf_header(&'a self) -> ExternalElfHeaderWrapper<T::Size> {
         ExternalElfHeaderWrapper::new(self)
     }
-    pub fn section_header(&'a self, index: usize) -> Option<ExternalSectionHeaderWrapper<T>>{
+    pub fn section_header(&'a self, index: usize) -> Option<ExternalSectionHeaderWrapper<T>> {
         ExternalSectionHeaderWrapper::new(index, self)
     }
-    pub fn program_header(&'a self, index: usize) -> Option<ExternalProgramHeaderWrapper<T::Size>>{
+    pub fn program_header(&'a self, index: usize) -> Option<ExternalProgramHeaderWrapper<T::Size>> {
         ExternalProgramHeaderWrapper::new(index, self)
     }
 }
 
 pub fn from_bytes<'a>(
     buf: &'a [u8],
-) -> TernaryResult<GenericExternalElf<ExternalElf32>, GenericExternalElf<ExternalElf64>, ()>
-{
+) -> TernaryResult<GenericExternalElf<ExternalElf32>, GenericExternalElf<ExternalElf64>, ()> {
     match buf.get(0x04) {
         Option::Some(val) => match val {
             0x1 => {
@@ -124,45 +146,47 @@ pub fn from_bytes<'a>(
     }
 }
 
-
 #[allow(unused_imports)]
-pub mod tests{
+pub mod tests {
+    use crate::external::{
+        from_bytes, header::ExternalElfHeaderTrait, section::ExternalSectionHeaderTrait,
+    };
     use std::{fs::File, io::Read};
-    use crate::external::{from_bytes, section::ExternalSectionHeaderTrait, header::ExternalElfHeaderTrait};
 
-    use super::{GenericExternalElf, ExternalElfTrait};
+    use super::{ExternalElfTrait, GenericExternalElf};
 
-
-    
     #[test]
-    pub fn test1(){
+    pub fn test1() {
         println!("current dir: {:?}", std::env::current_dir());
-        let mut elf_file = File::open("res/mips_elf_test.o").unwrap_or_else(|_|{
-            File::open("./elf/res/mips_elf_test.o").unwrap()
-        });
+        let mut elf_file = File::open("res/mips_elf_test.o")
+            .unwrap_or_else(|_| File::open("./elf/res/mips_elf_test.o").unwrap());
         let mut elf_buf = Vec::<u8>::new();
-        elf_file.read_to_end(&mut elf_buf).expect("read file failed");
+        elf_file
+            .read_to_end(&mut elf_buf)
+            .expect("read file failed");
         let buf = elf_buf.as_slice();
 
-        match from_bytes(buf){
+        match from_bytes(buf) {
             super::TernaryResult::Ok1(mut e32) => {
                 println!("Elf 32");
                 print_elf(&mut e32);
-            },
+            }
             super::TernaryResult::Ok2(mut e64) => {
                 println!("Elf 64");
                 print_elf(&mut e64);
-            },
+            }
             super::TernaryResult::Err(_err) => {
                 println!("Invalid elf file!");
-            },
+            }
         }
     }
 
-    pub fn print_elf<T: ExternalElfTrait>(elf: &mut GenericExternalElf<T>){
-
+    pub fn print_elf<T: ExternalElfTrait>(elf: &mut GenericExternalElf<T>) {
         println!("Elf Header");
-        println!("\tClass(big or little endian): {}", elf.elf_header().class());
+        println!(
+            "\tClass(big or little endian): {}",
+            elf.elf_header().class()
+        );
         println!("\tABI: 0x{:X}", elf.elf_header().abi());
         println!("\tABI Version: {}", elf.elf_header().abi_version());
         println!("\tType: 0x{:X}", elf.elf_header().elftype());
@@ -173,7 +197,7 @@ pub mod tests{
 
         let mut index = 0;
         println!("Section Headers");
-        while let Option::Some(section) = elf.section_header(index){
+        while let Option::Some(section) = elf.section_header(index) {
             let name = section.get_name();
             println!("\tSection header: {} -> {}", index, name);
             println!("\t\tAddress:       {}", section.addr());
@@ -185,8 +209,6 @@ pub mod tests{
             index += 1;
         }
         index = 0;
-        while let Option::Some(_program) = elf.program_header(index){
-
-        }
+        while let Option::Some(_program) = elf.program_header(index) {}
     }
 }

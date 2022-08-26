@@ -1,8 +1,7 @@
-
-use eframe::egui::plot::{PlotPoints};
+use eframe::egui::plot::PlotPoints;
 use eframe::egui::{ComboBox, Slider};
 use egui_dock::Tab;
-use rodio::source::{Source};
+use rodio::source::Source;
 use rodio::{OutputStream, OutputStreamHandle, Sink};
 use std::f64::consts::PI;
 use std::sync::{Arc, RwLock};
@@ -20,7 +19,7 @@ pub struct SoundTab {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum WaveType{
+enum WaveType {
     Square,
     Sine,
 }
@@ -44,27 +43,30 @@ impl SoundTab {
 
 impl Tab for SoundTab {
     fn ui(&mut self, ui: &mut eframe::egui::Ui) {
-        
         let mut lock = self.sound_state.write().unwrap();
         let sound_state = &mut *lock;
 
-        if ui.selectable_label(sound_state.mute, "Mute").clicked(){
+        if ui.selectable_label(sound_state.mute, "Mute").clicked() {
             sound_state.mute = !sound_state.mute;
         }
 
         ui.add(
             Slider::new(&mut sound_state.freq, 10.0..=2000.0)
-                    .max_decimals(2)
-                    .min_decimals(2)
-                    .show_value(true).prefix("Freq")
+                .max_decimals(2)
+                .min_decimals(2)
+                .show_value(true)
+                .prefix("Freq"),
         );
 
-        if ui.selectable_label(sound_state.use_filters, "Use Filters").clicked(){
+        if ui
+            .selectable_label(sound_state.use_filters, "Use Filters")
+            .clicked()
+        {
             sound_state.use_filters = !sound_state.use_filters;
         };
         ComboBox::from_label("WaveForm")
             .selected_text(format!("{:?}", sound_state.wave_type))
-            .show_ui(ui, |ui|{
+            .show_ui(ui, |ui| {
                 ui.selectable_value(&mut sound_state.wave_type, WaveType::Square, "Square");
                 ui.selectable_value(&mut sound_state.wave_type, WaveType::Sine, "Sin");
             });
@@ -73,26 +75,32 @@ impl Tab for SoundTab {
             Slider::new(&mut sound_state.volume, 0.0..=1.0)
                 .max_decimals(2)
                 .min_decimals(2)
-                .show_value(true).prefix("Volume")
-            );
+                .show_value(true)
+                .prefix("Volume"),
+        );
 
-        sound_state.wave_form.copy_to_slice(self.wave.len(), &mut self.wave);
-        let plot = eframe::egui::plot::Plot::new("sound wave").legend(eframe::egui::plot::Legend::default())
-                        //.data_aspect(500.0)
-                        //.view_aspect(500.0)
-                        .include_x(self.wave.len() as f64)
-                        .include_x(0)
-                        .include_y(1).include_y(-1)
-                        .allow_zoom(false)
-                        .allow_drag(false)
-                        .show_axes([false, false])
-                        .show_background(false)
-                        //.height(2.0)
-                        //.width(200.0)
-                        .center_y_axis(true);
-        plot.show(ui, |plot_ui|{
-            plot_ui.line(eframe::egui::plot::Line::new(
-                PlotPoints::from_ys_f32(&self.wave)));
+        sound_state
+            .wave_form
+            .copy_to_slice(self.wave.len(), &mut self.wave);
+        let plot = eframe::egui::plot::Plot::new("sound wave")
+            .legend(eframe::egui::plot::Legend::default())
+            //.data_aspect(500.0)
+            //.view_aspect(500.0)
+            .include_x(self.wave.len() as f64)
+            .include_x(0)
+            .include_y(1)
+            .include_y(-1)
+            .allow_zoom(false)
+            .allow_drag(false)
+            .show_axes([false, false])
+            .show_background(false)
+            //.height(2.0)
+            //.width(200.0)
+            .center_y_axis(true);
+        plot.show(ui, |plot_ui| {
+            plot_ui.line(eframe::egui::plot::Line::new(PlotPoints::from_ys_f32(
+                &self.wave,
+            )));
         });
 
         if sound_state.volume > 0.0 {
@@ -105,10 +113,10 @@ impl Tab for SoundTab {
     }
 }
 
-pub fn temp(reg: u16, _data: u8){
+pub fn temp(reg: u16, _data: u8) {
     //t = 1000000.0*1.789773/(16*fpulse) - 1
     //let freq = 1000000.0*1.789773/(16*(t+1))
-    match reg{
+    match reg {
         0x4000 => {
             //DDLCNNNN
             //D = duity cycle
@@ -131,54 +139,24 @@ pub fn temp(reg: u16, _data: u8){
             //bits 3-7 load the down-counter
         }
 
-        0x4004 => {
-            
-        }
-        0x4005 => {
-            
-        }
-        0x4006 => {
-            
-        }
-        0x4007 => {
-            
-        }
+        0x4004 => {}
+        0x4005 => {}
+        0x4006 => {}
+        0x4007 => {}
 
-        0x4008 => {
-            
-        }
-        0x4009 => {
-            
-        }
-        0x400A => {
-            
-        }
-        0x400B => {
-            
-        }
+        0x4008 => {}
+        0x4009 => {}
+        0x400A => {}
+        0x400B => {}
 
-        0x400C => {
-            
-        }
-        0x400D => {
-            
-        }
-        0x400E => {
-            
-        }
-        0x400F => {
-            
-        }
+        0x400C => {}
+        0x400D => {}
+        0x400E => {}
+        0x400F => {}
 
-        0x4010 => {
-            
-        }
-        0x4012 => {
-            
-        }
-        0x4013 => {
-            
-        }
+        0x4010 => {}
+        0x4012 => {}
+        0x4013 => {}
         0x4015 => {
             //bit 0 = square wave channel 1 enable
             //bit 1 = square wave channel 2 enable
@@ -187,31 +165,33 @@ pub fn temp(reg: u16, _data: u8){
             //bit 4 =  DMC/PCM playback channel
             //Bits 5-7 = unused
         }
-        _ => {panic!()}
-    }
-}
-
-const WAVE_FORM_SIZE: usize = 2048;
-struct WaveTest{
-    wave_form: [f32; WAVE_FORM_SIZE],
-    curr: usize,
-}
-
-impl Default for WaveTest{
-    fn default() -> Self {
-        Self { 
-            wave_form: [0.0; WAVE_FORM_SIZE], 
-            curr: Default::default()
+        _ => {
+            panic!()
         }
     }
 }
 
-impl WaveTest{
-    pub fn add(&mut self, val: f32){
+const WAVE_FORM_SIZE: usize = 2048;
+struct WaveTest {
+    wave_form: [f32; WAVE_FORM_SIZE],
+    curr: usize,
+}
+
+impl Default for WaveTest {
+    fn default() -> Self {
+        Self {
+            wave_form: [0.0; WAVE_FORM_SIZE],
+            curr: Default::default(),
+        }
+    }
+}
+
+impl WaveTest {
+    pub fn add(&mut self, val: f32) {
         self.add_last(1);
         self.wave_form[self.curr] = val;
     }
-    fn add_last(&mut self, amount: usize){
+    fn add_last(&mut self, amount: usize) {
         self.curr += amount;
         self.curr = self.curr % WAVE_FORM_SIZE;
     }
@@ -219,9 +199,9 @@ impl WaveTest{
         let mut tmp = self.curr.wrapping_sub(amount / 2) % WAVE_FORM_SIZE;
         let mut start = self.curr;
         let mut last = self.wave_form[tmp];
-        for _i in 0..WAVE_FORM_SIZE{
+        for _i in 0..WAVE_FORM_SIZE {
             let curr = self.wave_form[tmp];
-            if last <= 0.0 && curr > 0.0{
+            if last <= 0.0 && curr > 0.0 {
                 break;
             }
             last = curr;
@@ -229,7 +209,7 @@ impl WaveTest{
             start = start.wrapping_sub(1) % WAVE_FORM_SIZE;
         }
 
-        for i in (0..amount).rev(){
+        for i in (0..amount).rev() {
             slice[i] = self.wave_form[(start.wrapping_sub(i)) % WAVE_FORM_SIZE];
         }
     }
@@ -250,7 +230,7 @@ impl SoundState {
     pub fn new() -> SharedSoundState {
         Arc::new(RwLock::new(SoundState {
             freq: 440.0,
-            use_filters:true,
+            use_filters: true,
             wave_type: WaveType::Sine,
             volume: 0.15,
             wave_form: Default::default(),
@@ -291,28 +271,30 @@ impl Iterator for APU {
 
         let tmp = freq * self.num_sample as f64 / 44100.0;
 
-        let mut output = match sound_state.wave_type{
+        let mut output = match sound_state.wave_type {
             WaveType::Square => {
-                 if tmp % 1.0 > 0.5{
+                if tmp % 1.0 > 0.5 {
                     1.0
-                }else{
+                } else {
                     -1.0
                 }
-            },
-            WaveType::Sine => {
-                (tmp * 2.0 * PI).sin()
-            },
+            }
+            WaveType::Sine => (tmp * 2.0 * PI).sin(),
         };
 
-        if sound_state.use_filters{
+        if sound_state.use_filters {
             for filter in &mut self.filters {
                 output = filter.tick(output);
             }
-        }    
+        }
 
         let output = (output * sound_state.volume) as f32;
         lock.wave_form.add(output);
-        if lock.mute {Some(0.0)} else {Some(output)}
+        if lock.mute {
+            Some(0.0)
+        } else {
+            Some(output)
+        }
     }
 }
 

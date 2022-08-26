@@ -1,5 +1,6 @@
 #![allow(dead_code)]
-#[macro_use] extern crate lalrpop_util;
+#[macro_use]
+extern crate lalrpop_util;
 
 mod parsing_lexer;
 //use parsing_lexer::ast::PrintVisitor;
@@ -7,21 +8,20 @@ mod parsing_lexer;
 //use parsing_lexer::lexer::Lexer;
 //use parsing_lexer::tokenizer::Tokenizer;
 
-
 fn test_tokenizer() {
     use parsing_lexer::tokenizer::Tokenizer;
     let file = std::fs::read_to_string("res/tests/tokenizer_test.cl").unwrap();
 
     let mut tokenizer = Tokenizer::from_string(&file).include_whitespace(true);
     let t = tokenizer.tokenize();
-    for t in t{
+    for t in t {
         println!("token: {:?} string: {:?}", t, tokenizer.str_from_token(&t));
     }
 }
 
 fn main() {
     test_tokenizer();
-    
+
     /*
     let file = std::fs::read_to_string("test2.cl").expect("bruh");
     println!("\nPrinting tokenizer_test.cl");
@@ -50,5 +50,3 @@ fn main() {
     }
      */
 }
-
-

@@ -1,21 +1,26 @@
-use std::{str::Chars};
+use std::str::Chars;
 
-use eframe::{epaint::{text::{LayoutJob, TextWrapping}, FontId, Color32, Rounding, Stroke, self, FontFamily}, egui::{TextFormat, Sense, WidgetInfo, WidgetType}};
+use eframe::{
+    egui::{Sense, TextFormat, WidgetInfo, WidgetType},
+    epaint::{
+        self,
+        text::{LayoutJob, TextWrapping},
+        Color32, FontFamily, FontId, Rounding, Stroke,
+    },
+};
 use egui_dock::Tab;
 
 use crate::platform::time;
 
-
-
-pub enum TerminalMode{
-    Basic
+pub enum TerminalMode {
+    Basic,
 }
-pub struct TerminalTab{
+pub struct TerminalTab {
     data: String,
     #[allow(unused)]
     mode: TerminalMode,
     #[allow(unused)]
-    cursor: Option<usize>
+    cursor: Option<usize>,
 }
 
 const TEST_TEXT: &str =  "                 40m     41m     42m     43m     44m     45m     46m     47m
@@ -42,61 +47,72 @@ const TEST_TEXT: &str =  "                 40m     41m     42m     43m     44m  
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 👩🏿‍⚕️|0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\n\n1209387123987";
 
-impl TerminalTab{
-    pub fn new() -> Self{
-        Self { 
-            data: TEST_TEXT.into(),//"hello \x1b[4;33mYellow underlined text\x1b[0mtt\nthis is a test\n01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567895\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24".into(),
+impl TerminalTab {
+    pub fn new() -> Self {
+        Self {
+            data: TEST_TEXT.into(), //"hello \x1b[4;33mYellow underlined text\x1b[0mtt\nthis is a test\n01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567895\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24".into(),
             mode: TerminalMode::Basic,
             cursor: None,
         }
     }
-
 }
 
-mod terminal_formatter{
-    use eframe::{egui::TextFormat, epaint::{text::{LayoutJob, FontsImpl}}};
+mod terminal_formatter {
+    use eframe::{
+        egui::TextFormat,
+        epaint::text::{FontsImpl, LayoutJob},
+    };
 
-    pub struct Paragraph{
+    pub struct Paragraph {
         default_format: TextFormat,
         character_width: f32,
         target_line_width: f32,
         target_lines: u32,
-        lines: Vec<Line>
+        lines: Vec<Line>,
     }
 
-    impl Paragraph{
-        pub fn new(character_width: f32, characters_per_line: impl Into<f32>, target_lines: u32, default_format: TextFormat) -> Self{
-            Self { 
-                character_width, 
-                target_line_width: characters_per_line.into() * character_width, target_lines, 
+    impl Paragraph {
+        pub fn new(
+            character_width: f32,
+            characters_per_line: impl Into<f32>,
+            target_lines: u32,
+            default_format: TextFormat,
+        ) -> Self {
+            Self {
+                character_width,
+                target_line_width: characters_per_line.into() * character_width,
+                target_lines,
                 lines: Default::default(),
-                default_format, 
+                default_format,
             }
         }
 
-        fn last(&mut self) -> &mut Line{
-            if self.lines.is_empty(){
+        fn last(&mut self) -> &mut Line {
+            if self.lines.is_empty() {
                 self.lines.push(Line::new());
             }
-            match self.lines.last_mut(){
+            match self.lines.last_mut() {
                 Some(last) => return last,
-                None => {panic!("lines are empty? but pushed if empty IMPOSSIBLE")},
+                None => {
+                    panic!("lines are empty? but pushed if empty IMPOSSIBLE")
+                }
             }
         }
 
-        fn append_last(&mut self, section: impl Into<Section>){
+        fn append_last(&mut self, section: impl Into<Section>) {
             self.last().append(section.into());
         }
 
-        fn finish_current_last_line(&mut self){
-            let leading_space = ((self.target_line_width - self.last().width()) / self.character_width).round();
+        fn finish_current_last_line(&mut self) {
+            let leading_space =
+                ((self.target_line_width - self.last().width()) / self.character_width).round();
             let mut str = String::new();
-            for _ in 0..leading_space as usize{
+            for _ in 0..leading_space as usize {
                 str.push(' ');
             }
             str.push('\n');
-            
-            self.append_last(Section{
+
+            self.append_last(Section {
                 text_width: 0.0,
                 leading_space: 0.0,
                 text: str,
@@ -104,18 +120,18 @@ mod terminal_formatter{
             });
         }
 
-        fn new_line(&mut self){
+        fn new_line(&mut self) {
             self.finish_current_last_line();
             self.lines.push(Line::new());
         }
 
-        pub fn append_text(&mut self, str: &str, format: TextFormat, fonts: &mut FontsImpl){
+        pub fn append_text(&mut self, str: &str, format: TextFormat, fonts: &mut FontsImpl) {
             let mut tmp = Section::new(format.clone());
             let font = fonts.font(&format.font_id);
 
-            for char in str.chars(){
-                if char == '\n'{
-                    if !tmp.is_empty(){
+            for char in str.chars() {
+                if char == '\n' {
+                    if !tmp.is_empty() {
                         self.append_last(tmp.clone());
                         tmp = Section::new(format.clone());
                     }
@@ -124,107 +140,111 @@ mod terminal_formatter{
                     //     continue;
                     // }
                     self.new_line();
-                }else{
-                    if char == '\t'{
-                        for _ in 0..4{
+                } else {
+                    if char == '\t' {
+                        for _ in 0..4 {
                             let width = font.glyph_width(' ');
                             //let width = font.round_to_pixel(width);
-                            if font.round_to_pixel(self.last().width() + tmp.width() + width) > font.round_to_pixel(self.target_line_width){
-                                
-                            }else{
+                            if font.round_to_pixel(self.last().width() + tmp.width() + width)
+                                > font.round_to_pixel(self.target_line_width)
+                            {
+                            } else {
                                 tmp.append_char(' ', width);
                             }
                         }
-                    }else{
+                    } else {
                         let mut width = font.glyph_width(char);
                         let mut char = char;
-                        if width != self.character_width && width != 0.0{
+                        if width != self.character_width && width != 0.0 {
                             char = '�';
                             width = font.glyph_width(char);
                         }
-                        if font.round_to_pixel(self.last().width() + tmp.width() + width) > font.round_to_pixel(self.target_line_width){
+                        if font.round_to_pixel(self.last().width() + tmp.width() + width)
+                            > font.round_to_pixel(self.target_line_width)
+                        {
                             self.append_last(tmp);
                             self.new_line();
                             tmp = Section::new(format.clone());
                         }
                         tmp.append_char(char, width);
                     }
-                    
                 }
             }
-            if !tmp.is_empty(){
+            if !tmp.is_empty() {
                 self.append_last(tmp);
             }
         }
 
-        pub fn layout(&mut self, layout: &mut LayoutJob){
-            
-            while self.lines.len() < self.target_lines as usize{
+        pub fn layout(&mut self, layout: &mut LayoutJob) {
+            while self.lines.len() < self.target_lines as usize {
                 self.new_line();
             }
             self.finish_current_last_line();
             //removes last new line
             self.last().sections.last_mut().unwrap().text.pop();
 
-            for i in (self.lines.len() - self.target_lines as usize)..(self.lines.len()){
-                for section in &mut self.lines[i].sections{
+            for i in (self.lines.len() - self.target_lines as usize)..(self.lines.len()) {
+                for section in &mut self.lines[i].sections {
                     layout.append(&section.text, section.leading_space, section.format.clone());
                 }
             }
         }
     }
-    pub struct Line{
+    pub struct Line {
         width: f32,
-        sections: Vec<Section>
+        sections: Vec<Section>,
     }
 
-    impl Line{
-        fn width(&self) -> f32{
+    impl Line {
+        fn width(&self) -> f32 {
             self.width
         }
-        fn new() -> Self{
-            Self { width: 0.0, sections: Vec::new() }
+        fn new() -> Self {
+            Self {
+                width: 0.0,
+                sections: Vec::new(),
+            }
         }
-        fn append(&mut self, section: Section){
+        fn append(&mut self, section: Section) {
             self.width += section.width();
             self.sections.push(section);
         }
     }
     #[derive(Clone)]
-    pub struct Section{
+    pub struct Section {
         text_width: f32,
         leading_space: f32,
         text: String,
-        format: TextFormat
+        format: TextFormat,
     }
-    impl Section{
-        fn width(&self) -> f32{
+    impl Section {
+        fn width(&self) -> f32 {
             self.text_width + self.leading_space
         }
-        fn is_empty(&self) -> bool{
+        fn is_empty(&self) -> bool {
             self.text.is_empty()
         }
-        fn append_char(&mut self, char: char, width: f32){
+        fn append_char(&mut self, char: char, width: f32) {
             self.text.push(char);
             self.text_width += width;
         }
-        fn new(format: TextFormat) -> Self{
-            Self { 
-                text_width: 0.0, 
+        fn new(format: TextFormat) -> Self {
+            Self {
+                text_width: 0.0,
                 leading_space: 0.0,
-                text: String::new(), 
-                format, 
+                text: String::new(),
+                format,
             }
         }
     }
 }
 
-impl Tab for TerminalTab{
+impl Tab for TerminalTab {
     fn ui(&mut self, ui: &mut eframe::egui::Ui) {
         let mut layout = LayoutJob::default();
 
-        let font_family = FontFamily::Monospace;//FontFamily::Name("DroidSansMono".into());
-        
+        let font_family = FontFamily::Monospace; //FontFamily::Name("DroidSansMono".into());
+
         //font size calculation
         //max horizontal size
         let mut size = (ui.max_rect().width() * 1.8 / 80.0) as i32;
@@ -232,10 +252,10 @@ impl Tab for TerminalTab{
             size = 1;
         };
         //max vertical size
-        while size > 1{
-            if FontId::new(size as f32, font_family.clone()).size * 24.0 > ui.available_height(){
+        while size > 1 {
+            if FontId::new(size as f32, font_family.clone()).size * 24.0 > ui.available_height() {
                 size -= 1;
-            }else{
+            } else {
                 break;
             }
         }
@@ -243,42 +263,47 @@ impl Tab for TerminalTab{
 
         let font_id = FontId::new(size, font_family);
 
-
         let term_background = ui.style().visuals.extreme_bg_color;
 
-        let single_width = ui.ctx().fonts().lock().fonts.font(&font_id).glyph_width(' ');
+        let single_width = ui
+            .ctx()
+            .fonts()
+            .lock()
+            .fonts
+            .font(&font_id)
+            .glyph_width(' ');
 
-        let mut paragraph = 
-            terminal_formatter::Paragraph::new(
-                single_width, 
-                80.0, 24, 
-TextFormat{
+        let mut paragraph = terminal_formatter::Paragraph::new(
+            single_width,
+            80.0,
+            24,
+            TextFormat {
                 font_id: font_id.clone(),
                 background: term_background,
                 ..Default::default()
-                }
-            );
+            },
+        );
 
         let pre_colors = [
-            Color32::from_gray(0x00), //black
+            Color32::from_gray(0x00),            //black
             Color32::from_rgb(0xCD, 0x31, 0x31), //red
             Color32::from_rgb(0x0D, 0xDC, 0x79), //green
             Color32::from_rgb(0xE5, 0xE5, 0x10), //yellow
             Color32::from_rgb(0x24, 0x72, 0xC8), //blue
             Color32::from_rgb(0xBC, 0x3F, 0xBC), //purple
             Color32::from_rgb(0x11, 0xA8, 0xCD), //cyan
-            Color32::from_gray(0xE5), //white
-        ]; 
+            Color32::from_gray(0xE5),            //white
+        ];
 
         let pre_colors_vib = [
-            Color32::from_gray(0x66), //black
+            Color32::from_gray(0x66),            //black
             Color32::from_rgb(0xF1, 0x4C, 0x4C), //red
             Color32::from_rgb(0x23, 0xD1, 0x8B), //green
             Color32::from_rgb(0xF5, 0xF5, 0x43), //yellow
             Color32::from_rgb(0x3B, 0x8E, 0xEA), //blue
             Color32::from_rgb(0xD6, 0x70, 0xD6), //purple
             Color32::from_rgb(0x29, 0xB8, 0xDB), //cyan
-            Color32::from_gray(0xE5), //white
+            Color32::from_gray(0xE5),            //white
         ];
 
         let mut background: Option<Color32> = Option::None;
@@ -289,33 +314,33 @@ TextFormat{
         let mut italics = false;
         let mut strike = false;
 
-        fn color_code_parser(codes: &mut Vec<u8>) -> Result<Color32, ()>{
-            if codes.is_empty(){
-                return Err(())
+        fn color_code_parser(codes: &mut Vec<u8>) -> Result<Color32, ()> {
+            if codes.is_empty() {
+                return Err(());
             }
-            match codes.remove(0){
-                5 => {
-                    Err(())
-                }
+            match codes.remove(0) {
+                5 => Err(()),
                 2 => {
-                    if codes.len() < 3{
-                        return Err(())
+                    if codes.len() < 3 {
+                        return Err(());
                     }
-                    Ok(Color32::from_rgb(codes.remove(0), codes.remove(0), codes.remove(0)))
+                    Ok(Color32::from_rgb(
+                        codes.remove(0),
+                        codes.remove(0),
+                        codes.remove(0),
+                    ))
                 }
-                _ => {
-                    Err(())
-                }
+                _ => Err(()),
             }
         }
 
         let iter = TerminalParser::new(self.data.as_str());
 
-        let alpha = 255 * (1 & ((time::duration_since_epoch().as_millis()) * 120 / 60000))  as u8;
+        let alpha = 255 * (1 & ((time::duration_since_epoch().as_millis()) * 120 / 60000)) as u8;
 
-        for (str, mut num_codes) in iter{
-            while !num_codes.is_empty(){
-                match num_codes.remove(0){
+        for (str, mut num_codes) in iter {
+            while !num_codes.is_empty() {
+                match num_codes.remove(0) {
                     0 => {
                         forground = None;
                         background = None;
@@ -338,97 +363,105 @@ TextFormat{
                     29 => strike = false,
 
                     color @ 30..=37 => forground = Option::Some(pre_colors[color as usize - 30]),
-                    color @ 90..=97 => forground = Option::Some(pre_colors_vib[color as usize - 90]),
-                    38 => if let Ok(val) = color_code_parser(&mut num_codes){
+                    color @ 90..=97 => {
+                        forground = Option::Some(pre_colors_vib[color as usize - 90])
+                    }
+                    38 => {
+                        if let Ok(val) = color_code_parser(&mut num_codes) {
                             forground = Option::Some(val);
+                        }
                     }
                     39 => forground = None,
-                    
+
                     color @ 40..=47 => background = Option::Some(pre_colors[color as usize - 40]),
-                    color @ 100..=107 => background = Option::Some(pre_colors_vib[color as usize - 100]),
-                    48 => if let Ok(val) = color_code_parser(&mut num_codes){
-                        background = Option::Some(val);
+                    color @ 100..=107 => {
+                        background = Option::Some(pre_colors_vib[color as usize - 100])
+                    }
+                    48 => {
+                        if let Ok(val) = color_code_parser(&mut num_codes) {
+                            background = Option::Some(val);
+                        }
                     }
                     49 => background = None,
-                    _ => {
-
-                    }
+                    _ => {}
                 }
             }
-            
+
             let mut forground = forground.unwrap_or(ui.style().visuals.widgets.open.text_color());
-            if blink{
+            if blink {
                 ui.ctx().request_repaint();
-                if alpha > 0{
+                if alpha > 0 {
                     forground = Color32::TRANSPARENT
                 }
             }
             let background = background.unwrap_or(term_background);
             let stroke = Stroke::new(1.0, forground);
-                // fn generate_text_format(&self) -> TextFormat{
-            let format = TextFormat { 
-                font_id:  font_id.clone(), 
-                color: forground, 
-                background, 
-                italics: italics, 
-                underline: if underline {stroke} else{Stroke::none()}, 
-                strikethrough:  if strike {stroke} else{Stroke::none()}, 
+            // fn generate_text_format(&self) -> TextFormat{
+            let format = TextFormat {
+                font_id: font_id.clone(),
+                color: forground,
+                background,
+                italics: italics,
+                underline: if underline { stroke } else { Stroke::none() },
+                strikethrough: if strike { stroke } else { Stroke::none() },
                 ..Default::default()
             };
-            if bold{
+            if bold {
                 //lpol
             }
-            
+
             paragraph.append_text(str.as_str(), format, &mut ui.fonts().lock().fonts);
         }
 
         paragraph.layout(&mut layout);
 
-        layout.wrap = TextWrapping{
+        layout.wrap = TextWrapping {
             max_rows: 24,
             ..Default::default()
         };
 
         let gallery = ui.fonts().layout_job(layout);
-        
+
         let y_space = (ui.available_height() - gallery.rect.height()) / 2.0;
-        if y_space > 0.0{
+        if y_space > 0.0 {
             ui.add_space(y_space);
         }
 
-        ui.horizontal(|ui|{
-
+        ui.horizontal(|ui| {
             let x_space = (ui.available_width() - gallery.rect.width()) / 2.0;
-            if x_space > 0.0{
+            if x_space > 0.0 {
                 ui.add_space(x_space);
             }
-            
-            let (pos, response) = ui.allocate_exact_size(gallery.size(), Sense{ click: true, drag: true, focusable: true });
-            if response.hovered() && ui.input().pointer.any_pressed(){
+
+            let (pos, response) = ui.allocate_exact_size(
+                gallery.size(),
+                Sense {
+                    click: true,
+                    drag: true,
+                    focusable: true,
+                },
+            );
+            if response.hovered() && ui.input().pointer.any_pressed() {
                 ui.memory().request_focus(response.id);
             }
-            if ui.memory().has_focus(response.id){
+            if ui.memory().has_focus(response.id) {
                 ui.memory().lock_focus(response.id, true);
-
             }
             //ui.ctx().fonts().font(FontId::monospace(size));
-            
 
             //let data = UnsafeCell::new(Pin::new(&12));
-            
+
             response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, gallery.text()));
-            
+
             if ui.is_rect_visible(response.rect) {
-                
-                let stroke = if response.has_focus(){
+                let stroke = if response.has_focus() {
                     Stroke::new(5.0, Color32::RED)
-                }else{
+                } else {
                     ui.style().visuals.widgets.noninteractive.bg_stroke
                 };
-                ui.painter().rect_stroke(pos.expand(2.0), 
-                                        Rounding::same(5.0), 
-                                        stroke);
-            
+                ui.painter()
+                    .rect_stroke(pos.expand(2.0), Rounding::same(5.0), stroke);
+
                 ui.painter().add(epaint::TextShape {
                     pos: pos.left_top(),
                     galley: gallery,
@@ -438,7 +471,7 @@ TextFormat{
                 });
             }
         });
-        
+
         //ui.label(layout);
     }
 
@@ -447,8 +480,7 @@ TextFormat{
     }
 }
 
-
-struct TerminalParser<'a>{
+struct TerminalParser<'a> {
     iter: Chars<'a>,
     string: String,
     #[allow(unused)]
@@ -459,13 +491,13 @@ struct TerminalParser<'a>{
     // underline: bool,
     // italics: bool,
     // strike: bool,
-    state: usize, 
+    state: usize,
     // font_size: f32,
 }
 
-impl<'a> TerminalParser<'a>{
-    pub fn new(str: &'a str) -> Self{
-        Self{
+impl<'a> TerminalParser<'a> {
+    pub fn new(str: &'a str) -> Self {
+        Self {
             iter: str.chars(),
             // background: Option::None,
             // forground: Option::None,
@@ -481,40 +513,38 @@ impl<'a> TerminalParser<'a>{
     }
 }
 
-impl<'a> Iterator for TerminalParser<'a>{
+impl<'a> Iterator for TerminalParser<'a> {
     type Item = (String, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut send: bool = false;
-        let mut num_codes:Vec<u8> = Vec::new();
-        loop{
-            match self.iter.next(){
+        let mut num_codes: Vec<u8> = Vec::new();
+        loop {
+            match self.iter.next() {
                 Some(char) => {
-                    match self.state{
-                        0 => {
-                            match char{
-                                '\x1b' => {
-                                    self.state = 1;
-                                    send = true;
-                                }
-                                char =>{
-                                    self.string.push(char);
-                                }
+                    match self.state {
+                        0 => match char {
+                            '\x1b' => {
+                                self.state = 1;
+                                send = true;
                             }
-                        }
+                            char => {
+                                self.string.push(char);
+                            }
+                        },
                         1 => {
-                            match char{
+                            match char {
                                 '[' => {
                                     let mut code = String::new();
-                                    while let Option::Some(char) = self.iter.next(){
-                                        if char == 'm'{
+                                    while let Option::Some(char) = self.iter.next() {
+                                        if char == 'm' {
                                             break;
                                         }
                                         code.push(char);
                                     }
                                     let codes = code.split(';');
                                     num_codes.clear();
-                                    for code in codes{
+                                    for code in codes {
                                         let res = code.parse();
                                         match res {
                                             Ok(val) => num_codes.push(val),
@@ -522,7 +552,7 @@ impl<'a> Iterator for TerminalParser<'a>{
                                                 self.state = 0;
                                                 num_codes.clear();
                                                 continue;
-                                            },
+                                            }
                                         }
                                     }
                                     self.state = 0;
@@ -534,22 +564,24 @@ impl<'a> Iterator for TerminalParser<'a>{
                                 }
                             }
                         }
-                        _ => {panic!()}
+                        _ => {
+                            panic!()
+                        }
                     }
-                },
+                }
                 None => {
-                    if self.string.is_empty(){
-                        return None
-                    }else{
+                    if self.string.is_empty() {
+                        return None;
+                    } else {
                         send = true;
                     }
-                },
+                }
             }
-            if send{
-                if !self.string.is_empty(){
+            if send {
+                if !self.string.is_empty() {
                     let mut string = String::new();
                     std::mem::swap(&mut string, &mut self.string);
-                    return Option::Some((string, num_codes))
+                    return Option::Some((string, num_codes));
                 }
             }
         }

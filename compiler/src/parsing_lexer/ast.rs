@@ -1,6 +1,6 @@
+use crate::parsing_lexer::tokenizer::{Token, TokenType};
 use std::collections::LinkedList;
 use std::fmt::{Debug, Display, Formatter};
-use crate::parsing_lexer::tokenizer::{Token, TokenType};
 
 pub trait Visitor {
     fn visit_function_def(&mut self, _node: &FunctionDef) {}
@@ -36,7 +36,7 @@ impl Visitor for PrintVisitor {
         self.indent += 1;
         println!("Visited Function Definition");
         self.visit_terminal(&node.ident);
-        for i in node.statements.iter(){
+        for i in node.statements.iter() {
             i.accept(Box::new(self));
         }
     }
@@ -84,14 +84,10 @@ pub trait TreeNode: Debug + Display {
 }
 
 #[derive(Debug)]
-pub struct Program {
-
-}
+pub struct Program {}
 
 impl TreeNode for Program {
-    fn accept(&self, _visitor: Box<&mut dyn Visitor>) {
-
-    }
+    fn accept(&self, _visitor: Box<&mut dyn Visitor>) {}
 }
 
 impl Display for Program {
@@ -101,21 +97,18 @@ impl Display for Program {
 }
 
 #[derive(Debug)]
-pub struct FunctionDef{
+pub struct FunctionDef {
     ident: Token,
     statements: LinkedList<Box<dyn TreeNode>>,
 }
 
-impl FunctionDef{
-    pub fn new(ident: Token, statements: LinkedList<Box<dyn TreeNode>>) -> Self{
-        FunctionDef{
-            ident,
-            statements,
-        }
+impl FunctionDef {
+    pub fn new(ident: Token, statements: LinkedList<Box<dyn TreeNode>>) -> Self {
+        FunctionDef { ident, statements }
     }
 }
 
-impl TreeNode for FunctionDef{
+impl TreeNode for FunctionDef {
     fn accept(&self, visitor: Box<&mut dyn Visitor>) {
         visitor.visit_function_def(self);
     }
@@ -134,11 +127,11 @@ pub struct UnaryOperator {
     expression: Box<dyn TreeNode>,
 }
 
-impl UnaryOperator{
-    pub fn new(operator: Token,expression: Box<dyn TreeNode>) -> Self{
+impl UnaryOperator {
+    pub fn new(operator: Token, expression: Box<dyn TreeNode>) -> Self {
         UnaryOperator {
             operator,
-            expression
+            expression,
         }
     }
 }
@@ -158,7 +151,7 @@ impl TreeNode for UnaryOperator {
 
 //Function Call
 #[derive(Debug)]
-pub struct FunctionCall{
+pub struct FunctionCall {
     ident: Token,
 }
 
@@ -172,16 +165,17 @@ pub struct BinaryOperator {
     right_size: Box<dyn TreeNode>,
 }
 
-impl BinaryOperator{
-    pub fn new(left_size: Box<dyn TreeNode>,
-               operator: Token,
-               right_size: Box<dyn TreeNode>) -> Self{
-        BinaryOperator{
+impl BinaryOperator {
+    pub fn new(
+        left_size: Box<dyn TreeNode>,
+        operator: Token,
+        right_size: Box<dyn TreeNode>,
+    ) -> Self {
+        BinaryOperator {
             left_size,
             operator,
-            right_size
+            right_size,
         }
-
     }
 }
 
@@ -204,19 +198,19 @@ impl TreeNode for BinaryOperator {
 
 //Assignment
 #[derive(Debug)]
-pub struct Assignment{
+pub struct Assignment {
     ident: Token,
     operator: Token,
     right_side: Box<dyn TreeNode>,
 }
 
-impl Assignment{
-    pub fn assignment(ident: Token, operator: Token, right_side: Box<dyn TreeNode>) -> Self{
-         Assignment{
-             ident,
-             operator,
-             right_side,
-         }
+impl Assignment {
+    pub fn assignment(ident: Token, operator: Token, right_side: Box<dyn TreeNode>) -> Self {
+        Assignment {
+            ident,
+            operator,
+            right_side,
+        }
     }
 }
 
@@ -226,7 +220,7 @@ impl Display for Assignment {
     }
 }
 
-impl TreeNode for Assignment{
+impl TreeNode for Assignment {
     fn accept(&self, visitor: Box<&mut dyn Visitor>) {
         visitor.visit_assignment(self);
     }
@@ -240,11 +234,9 @@ pub struct Terminal {
     constant: Token,
 }
 
-impl Terminal{
-    pub fn new(constant: Token) -> Self{
-        Terminal{
-            constant
-        }
+impl Terminal {
+    pub fn new(constant: Token) -> Self {
+        Terminal { constant }
     }
 }
 

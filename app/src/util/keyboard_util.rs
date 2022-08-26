@@ -2,12 +2,12 @@ use eframe::egui::{self, Modifiers};
 
 // -------------------------------------------------------------------
 
-pub struct KeyboardMemory{
-    pressed: Vec<Key>
+pub struct KeyboardMemory {
+    pressed: Vec<Key>,
 }
 
 #[derive(Debug)]
-struct Key{
+struct Key {
     key_code: char,
     consumed: bool,
     shift: bool,
@@ -15,9 +15,9 @@ struct Key{
     command: bool,
 }
 
-impl Key{
-    fn new(char: char, mods: &egui::Modifiers) -> Self{
-        Self{
+impl Key {
+    fn new(char: char, mods: &egui::Modifiers) -> Self {
+        Self {
             key_code: char,
             consumed: false,
             shift: mods.shift,
@@ -27,29 +27,31 @@ impl Key{
     }
 }
 
-impl PartialEq for Key{
+impl PartialEq for Key {
     fn eq(&self, other: &Self) -> bool {
-        self.key_code == other.key_code && self.consumed == other.consumed && self.shift == other.shift && self.alt == other.alt && self.command == other.command
+        self.key_code == other.key_code
+            && self.consumed == other.consumed
+            && self.shift == other.shift
+            && self.alt == other.alt
+            && self.command == other.command
     }
 }
 
-impl KeyboardMemory{
-    pub fn new() -> Self{
-        Self{
-            pressed: Vec::new()
+impl KeyboardMemory {
+    pub fn new() -> Self {
+        Self {
+            pressed: Vec::new(),
         }
     }
 
-    pub fn is_pressed(&self, key_code: char) -> bool{
-        self.pressed.iter().any(|x|{
-            x.key_code == key_code
-        })
+    pub fn is_pressed(&self, key_code: char) -> bool {
+        self.pressed.iter().any(|x| x.key_code == key_code)
     }
 
-    pub fn consume(&mut self, key_code: char) -> bool{
-        self.pressed.iter_mut().any(|x|{
-            if x.key_code == key_code{
-                if !x.consumed{
+    pub fn consume(&mut self, key_code: char) -> bool {
+        self.pressed.iter_mut().any(|x| {
+            if x.key_code == key_code {
+                if !x.consumed {
                     x.consumed = true;
                     return true;
                 }
@@ -58,14 +60,17 @@ impl KeyboardMemory{
         })
     }
 
-    pub fn update(&mut self, context: &egui::Context){
+    pub fn update(&mut self, context: &egui::Context) {
         let input = context.input();
 
-        
-        for event in input.events.iter(){
-            match event{
-                egui::Event::Key { key, pressed, modifiers } => {
-                    let key = match key{
+        for event in input.events.iter() {
+            match event {
+                egui::Event::Key {
+                    key,
+                    pressed,
+                    modifiers,
+                } => {
+                    let key = match key {
                         egui::Key::ArrowLeft => 37u8 as char,
                         egui::Key::ArrowUp => 38u8 as char,
                         egui::Key::ArrowRight => 39u8 as char,
@@ -138,31 +143,30 @@ impl KeyboardMemory{
                         egui::Key::F19 => todo!(),
                         egui::Key::F20 => todo!(),
                     };
-                    if *pressed{
-                        self.pressed.retain(|x| {x.key_code != key});
+                    if *pressed {
+                        self.pressed.retain(|x| x.key_code != key);
                         self.pressed.push(Key::new(key, modifiers));
-                    }else{
-                        self.pressed.retain(|x| {x.key_code != key});
+                    } else {
+                        self.pressed.retain(|x| x.key_code != key);
                     }
-                },
+                }
                 _ => {}
             }
-            self.pressed.retain(|x| {x.key_code != '\x11'}); 
-            
-            if input.raw.modifiers.command{
-                self.pressed.push(Key::new('\x11', &Modifiers::new()));    
+            self.pressed.retain(|x| x.key_code != '\x11');
+
+            if input.raw.modifiers.command {
+                self.pressed.push(Key::new('\x11', &Modifiers::new()));
             }
-            self.pressed.retain(|x| {x.key_code != '\x10'});
-            if input.raw.modifiers.shift{
+            self.pressed.retain(|x| x.key_code != '\x10');
+            if input.raw.modifiers.shift {
                 self.pressed.push(Key::new('\x10', &Modifiers::new()));
             }
-            self.pressed.retain(|x| {x.key_code != '\x12'});
-            if input.raw.modifiers.alt{
+            self.pressed.retain(|x| x.key_code != '\x12');
+            if input.raw.modifiers.alt {
                 self.pressed.push(Key::new('\x12', &Modifiers::new()));
             }
         }
     }
 }
-
 
 // -------------------------------------------------------------------
