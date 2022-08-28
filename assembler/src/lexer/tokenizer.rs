@@ -755,12 +755,9 @@ impl Iterator for Tokenizer<'_> {
                     State::CharLiteralNormal() => {
                         match self.c {
                             '\'' => {
-                                if self.char_literal == '\0' {
-                                    self.default_reset(
-                                        false,
-                                        TokenType::CharLiteral(self.char_literal),
-                                    )
-                                } else if self.char_literal.len_utf8() == self.string.len() {
+                                if self.char_literal == '\0'
+                                    || self.char_literal.len_utf8() == self.string.len()
+                                {
                                     self.default_reset(
                                         false,
                                         TokenType::CharLiteral(self.char_literal),
@@ -884,11 +881,10 @@ impl Iterator for Tokenizer<'_> {
                             if !self.stop_reset {
                                 self.start_curr = self.last;
                             }
-                        } else {
-                            if !self.stop_reset {
-                                self.start_curr = self.current;
-                            }
+                        } else if !self.stop_reset {
+                            self.start_curr = self.current;
                         }
+
                         let mut new = Option::None;
                         mem::swap(&mut self.new_token, &mut new);
                         match new {
@@ -937,10 +933,10 @@ impl<'a> Tokenizer<'a> {
             iterations: 0,
             state: State::Default,
 
-            current: BufferIndex::new(),
-            last: BufferIndex::new(),
-            start_curr: BufferIndex::new(),
-            escape_start: BufferIndex::new(),
+            current: BufferIndex::default(),
+            last: BufferIndex::default(),
+            start_curr: BufferIndex::default(),
+            escape_start: BufferIndex::default(),
 
             matching: false,
             stop_reset: false,
@@ -965,10 +961,10 @@ impl<'a> Tokenizer<'a> {
             iterations: 0,
             state: State::Default,
 
-            current: BufferIndex::new(),
-            last: BufferIndex::new(),
-            start_curr: BufferIndex::new(),
-            escape_start: BufferIndex::new(),
+            current: BufferIndex::default(),
+            last: BufferIndex::default(),
+            start_curr: BufferIndex::default(),
+            escape_start: BufferIndex::default(),
 
             matching: false,
             stop_reset: false,
@@ -1024,10 +1020,10 @@ impl<'a> Tokenizer<'a> {
         self.state = State::Default;
         self.iterator = util::tokenizer::chars_from_u8(self.bytes);
 
-        self.current = BufferIndex::new();
-        self.last = BufferIndex::new();
-        self.start_curr = BufferIndex::new();
-        self.escape_start = BufferIndex::new();
+        self.current = BufferIndex::default();
+        self.last = BufferIndex::default();
+        self.start_curr = BufferIndex::default();
+        self.escape_start = BufferIndex::default();
 
         self.matching = false;
         self.stop_reset = false;

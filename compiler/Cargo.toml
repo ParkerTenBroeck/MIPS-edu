@@ -11,7 +11,7 @@ lalrpop = "0.19.7"
 
 
 [dependencies]
-lalrpop-util = "0.19.7"
+lalrpop-util = "0.19.8"
 util = { path = "../util" }
 unicode-xid = "0.2.2"
 regex = "1"

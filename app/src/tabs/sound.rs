@@ -24,6 +24,12 @@ enum WaveType {
     Sine,
 }
 
+impl Default for SoundTab {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SoundTab {
     pub fn new() -> Self {
         let (stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -193,7 +199,7 @@ impl WaveTest {
     }
     fn add_last(&mut self, amount: usize) {
         self.curr += amount;
-        self.curr = self.curr % WAVE_FORM_SIZE;
+        self.curr %= WAVE_FORM_SIZE;
     }
     pub fn copy_to_slice(&mut self, amount: usize, slice: &mut [f32]) {
         let mut tmp = self.curr.wrapping_sub(amount / 2) % WAVE_FORM_SIZE;
@@ -239,6 +245,7 @@ impl SoundState {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 struct APU {
     sound_state: SharedSoundState,
     num_sample: usize,

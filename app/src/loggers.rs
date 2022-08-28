@@ -28,16 +28,14 @@ fn get_logger_data() -> &'static Mutex<LogData> {
     }
 }
 
-pub fn get_last_record(level: log::Level, num: u32) -> LinkedList<Record> {
+pub fn get_last_record(level: log::Level, num: usize) -> LinkedList<Record> {
     let mut list = LinkedList::new();
-    let mut i = 0;
     let test = get_logger_data().plat_lock().unwrap();
-    for record in test.records.iter().filter(|t1| t1.0.lt(&level)) {
+    for (i, record) in test.records.iter().filter(|t1| t1.0.lt(&level)).enumerate() {
         list.push_back(record.clone());
         if i >= num {
             break;
         }
-        i += 1;
     }
     list
 }
@@ -187,7 +185,7 @@ impl log::Log for Logger {
                 std::mem::swap(&mut file, &mut data.log_file);
                 match &mut file {
                     Some(file) => {
-                        let res = file.write_all(full_msg(record, &*data).as_bytes());
+                        let res = file.write_all(full_msg(record, &data).as_bytes());
                         match res {
                             Ok(_) => {}
                             Err(_err) => {}

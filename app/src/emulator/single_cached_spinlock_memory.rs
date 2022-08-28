@@ -53,7 +53,7 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedPlatSpinMemory {
 
         *tmp = Option::Some((page_id, page_ref));
         match *tmp {
-            Some((_page_id, page)) => return PagePoolNotifier::new_controller_guard(guard, page),
+            Some((_page_id, page)) => PagePoolNotifier::new_controller_guard(guard, page),
             None => std::hint::unreachable_unchecked(),
         }
     }

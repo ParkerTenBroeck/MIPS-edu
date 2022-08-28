@@ -175,7 +175,7 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                         Ok(val) => {
                             match val.1 {
                                 val @ Token {
-                                    t_type: TokenType::ERROR(_),
+                                    t_type: TokenType::Error(_),
                                     ..
                                 } => {
                                     self.add_to_err(err_from_tok(val));

@@ -76,24 +76,21 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
         {
             let p = self.page_table.get_unchecked_mut(addr);
             match *p {
-                Some(mut val) => return val.as_mut(),
+                Some(mut val) => val.as_mut(),
                 None => {
                     match &self.page_pool {
                         Some(val) => {
                             let mut val = val.get_page_pool();
                             let val = val.create_page(addr as u16);
-                            match val {
-                                Ok(ok) => {
-                                    *p = Option::Some(ok);
-                                }
-                                Err(_) => {}
+                            if let Ok(ok) = val {
+                                *p = Option::Some(ok);
                             }
                         }
                         None => todo!(),
                     }
 
                     match *p {
-                        Some(mut val) => return val.as_mut(),
+                        Some(mut val) => val.as_mut(),
                         None => std::hint::unreachable_unchecked(),
                     }
                 }
@@ -114,9 +111,9 @@ impl FullyCachedMemory {
                     page_table: [INIT; SEG_SIZE],
                     listener: Option::None,
                 };
-                return lock.add_holder(mem);
+                lock.add_holder(mem)
             }
-            Err(_err) => todo!(),
+            Err(err) => panic!("{err}"),
         }
     }
 
@@ -142,9 +139,9 @@ impl FullyCachedMemory {
             Some(val) => {
                 let _ = val.get_page_pool().remove_all_pages();
 
-                for i in 0..(1 << 16 - 1) {
-                    self.page_table[i] = Option::None;
-                }
+                self.page_table.iter_mut().for_each(|page| {
+                    *page = None;
+                });
             }
             None => todo!(),
         }

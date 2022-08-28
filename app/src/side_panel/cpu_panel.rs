@@ -35,6 +35,12 @@ pub struct CPUSidePanel {
     //thing: Vec<(u128, u64)>
 }
 
+impl Default for CPUSidePanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CPUSidePanel {
     pub fn new() -> Self {
         Self {
@@ -267,8 +273,8 @@ impl SideTab for CPUSidePanel {
                     register_lable!(ui, 31);
                 });
                 ui.collapsing("All", |ui| {
-                    for i in 0..32 {
-                        ui.label(format!(" {}: {}", self.fmt_reg(i), self.u32_to_str(reg[i])));
+                    for (i, reg) in reg.iter().enumerate() {
+                        ui.label(format!(" {}: {}", self.fmt_reg(i), self.u32_to_str(*reg)));
                     }
                 });
             });

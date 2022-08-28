@@ -110,7 +110,7 @@ impl ExternalHandler {
             last_106: time,
             rand_seed: time,
             image_sender,
-            access_info: access_info,
+            access_info,
         }
     }
 }
@@ -201,12 +201,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                         Err(_) => match string.parse::<u32>() {
                             Ok(val) => cpu.reg_mut()[2] = val,
                             Err(_) => {
-                                self.system_call_error(
-                                    cpu,
-                                    call_id,
-                                    0,
-                                    "unable to parse integer".into(),
-                                );
+                                self.system_call_error(cpu, call_id, 0, "unable to parse integer");
                             }
                         },
                     }
@@ -233,8 +228,8 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                 102 => {
                     let mut string = String::new();
                     let _ = std::io::stdin().read_line(&mut string);
-                    string = string.replace("\n", "");
-                    string = string.replace("\r", "");
+                    string = string.replace('\n', "");
+                    string = string.replace('\r', "");
                     if string.len() != 1 {
                         cpu.reg_mut()[2] = string.chars().next().unwrap() as u32;
                     } else {
@@ -306,7 +301,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                     self.image.pixels[cpu.reg_mut()[4] as usize] = u32_to_color32(cpu.reg_mut()[5]);
                 }
                 153 => {
-                    (*self.image_sender.lock().unwrap()).1 = Option::Some(self.image.clone());
+                    self.image_sender.lock().unwrap().1 = Option::Some(self.image.clone());
                     self.access_info
                         .lock()
                         .unwrap()

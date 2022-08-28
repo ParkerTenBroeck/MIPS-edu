@@ -314,7 +314,7 @@ impl AssemblerState {
 
         let rc = Rc::new(FileInfo {
             data: input_buf,
-            file: file,
+            file,
         });
 
         self.files.push_back(rc);

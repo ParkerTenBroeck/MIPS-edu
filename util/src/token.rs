@@ -86,7 +86,7 @@ impl std::fmt::Display for TokenizerError {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Default, Eq, Debug)]
 pub struct TokenData {
     pub size: usize,
     pub index: usize,
@@ -99,17 +99,6 @@ pub struct TokenData {
 
 #[allow(unused)]
 impl TokenData {
-    pub fn new() -> Self {
-        TokenData {
-            size: 0,
-            index: 0,
-            index_real: 0,
-            size_real: 0,
-            line: 0,
-            column: 0,
-            file: Option::None,
-        }
-    }
     pub fn get_real_size(&self) -> usize {
         self.size_real
     }

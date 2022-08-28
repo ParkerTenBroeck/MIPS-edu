@@ -109,7 +109,7 @@ impl PagePoolNotifier {
     pub fn create_controller_guard<'a, T>(&'a self, data: T) -> ControllerGuard<'a, T> {
         ControllerGuard {
             _guard: self.get_page_pool(),
-            data: data,
+            data,
         }
     }
 
@@ -119,7 +119,7 @@ impl PagePoolNotifier {
     ) -> ControllerGuard<'a, T> {
         ControllerGuard {
             _guard: guard,
-            data: data,
+            data,
         }
     }
 }
@@ -285,7 +285,7 @@ impl PagePoolController {
         let ppref = PagePoolRef {
             inner: ptr,
             page_pool: self.myself.upgrade().unwrap(),
-            id: id,
+            id,
         };
 
         unsafe { ptr.as_mut() }.init_holder(ppref.get_page_pool());
@@ -511,9 +511,9 @@ macro_rules! get_mem_alligned_o {
                 Option::Some(val) => {
                     return Option::Some(
                         (mem::transmute::<
-                            &mut [u8; crate::memory::page_pool::SEG_SIZE],
+                            &mut [u8; $crate::memory::page_pool::SEG_SIZE],
                             &mut [$fn_type;
-                                     crate::memory::page_pool::SEG_SIZE
+                                     $crate::memory::page_pool::SEG_SIZE
                                          / mem::size_of::<$fn_type>()],
                         >(&mut *val.page_raw())[tmp])
                             .to_be(),
@@ -539,9 +539,9 @@ macro_rules! get_mem_alligned_o {
                     Option::Some(val) => {
                         return Option::Some(
                             mem::transmute::<
-                                &mut [u8; crate::memory::page_pool::SEG_SIZE],
+                                &mut [u8; $crate::memory::page_pool::SEG_SIZE],
                                 &mut [$fn_type;
-                                         crate::memory::page_pool::SEG_SIZE
+                                         $crate::memory::page_pool::SEG_SIZE
                                              / mem::size_of::<$fn_type>()],
                             >(&mut val.page)[tmp],
                         );
@@ -567,9 +567,9 @@ macro_rules! set_mem_alligned_o {
             match self.get_page(address) {
                 Option::Some(mut val) => {
                     mem::transmute::<
-                        &mut [u8; crate::memory::page_pool::SEG_SIZE],
+                        &mut [u8; $crate::memory::page_pool::SEG_SIZE],
                         &mut [$fn_type;
-                                 crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()],
+                                 $crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()],
                     >(&mut *val.page_raw())[tmp] = data.to_be();
 
                     return Result::Ok(());
@@ -595,9 +595,9 @@ macro_rules! set_mem_alligned_o {
                 Option::Some(mut val) => {
                     unsafe {
                         mem::transmute::<
-                            &mut [u8; crate::memory::page_pool::SEG_SIZE],
+                            &mut [u8; $crate::memory::page_pool::SEG_SIZE],
                             &mut [$fn_type;
-                                     crate::memory::page_pool::SEG_SIZE
+                                     $crate::memory::page_pool::SEG_SIZE
                                          / mem::size_of::<$fn_type>()],
                         >(&mut val.page)[tmp] = data;
                     }

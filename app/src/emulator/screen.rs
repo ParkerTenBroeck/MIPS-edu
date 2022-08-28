@@ -276,10 +276,8 @@ impl Layer {
 
                         let mut mesh = Mesh::default();
                         for y in 0..new_height {
-                            if {
-                                let range = bounding.min.y..=bounding.max.y;
-                                range.contains(&rect.min.y) || range.contains(&rect.max.y)
-                            } {
+                            let range = bounding.min.y..=bounding.max.y;
+                            if range.contains(&rect.min.y) || range.contains(&rect.max.y) {
                                 let y = y as f32 + 0.5 - bb_height / 2.0;
 
                                 let tmp_x = 0.0 - y * sin - 0.5 + sprite_width as f32 / 2.0;

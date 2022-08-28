@@ -99,14 +99,14 @@ impl<'a, T: ExternalElfTrait> ExternalSectionHeaderWrapper<'a, T> {
 
     pub fn new(index: usize, gen_elf: &'a GenericExternalElf<'a, T>) -> Option<Self> {
         unsafe {
-            match gen_elf.section_headers_raw().get(index) {
-                Some(section_header) => Option::Some(Self {
+            gen_elf
+                .section_headers_raw()
+                .get(index)
+                .map(|section_header| Self {
                     elf_header: gen_elf.elf_header_raw(),
                     section_header,
                     gen_elf,
-                }),
-                None => Option::None,
-            }
+                })
         }
     }
 

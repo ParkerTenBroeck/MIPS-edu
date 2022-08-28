@@ -111,7 +111,7 @@ pub enum TokenType {
     OuterDocumentation(String),
     InnerDocumentation(String),
 
-    ERROR(String),
+    Error(String),
 }
 
 pub enum IdentifierMode {
@@ -191,7 +191,7 @@ enum State {
 
     Whitespace,
 
-    EOF,
+    Eof,
 }
 
 impl Iterator for Tokenizer<'_> {
@@ -200,13 +200,13 @@ impl Iterator for Tokenizer<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match (&self.state, self.c) {
-                (State::EOF, '\0') => {
+                (State::Eof, '\0') => {
                     return Option::None;
                 }
                 (State::Default, '\0') => {}
                 (_, '\0') => {
                     self.matching = true;
-                    let tmp = self.create_token(TokenType::ERROR(format!(
+                    let tmp = self.create_token(TokenType::Error(format!(
                         "Reached EOF while in state: {:?}",
                         self.state
                     )));
@@ -248,7 +248,7 @@ impl Iterator for Tokenizer<'_> {
                 match &self.state {
                     State::Default => match self.c {
                         '\0' => {
-                            self.state = State::EOF;
+                            self.state = State::Eof;
                         }
 
                         ' ' | '\t' | '\r' | '\n' => {
@@ -296,7 +296,7 @@ impl Iterator for Tokenizer<'_> {
                                 self.state = State::Whitespace;
                             } else {
                                 let message = format!("Unexpected Char: {}", self.c);
-                                self.new_token = self.create_token(TokenType::ERROR(message));
+                                self.new_token = self.create_token(TokenType::Error(message));
                             }
                         }
                     },
@@ -509,9 +509,9 @@ impl Iterator for Tokenizer<'_> {
                         } else {
                             self.default_reset(
                                 true,
-                                TokenType::ERROR(format!(
-                                    "Raw identifier must be one or more characters"
-                                )),
+                                TokenType::Error(
+                                    "Raw identifier must be one or more characters".into(),
+                                ),
                             );
                         }
                     }
@@ -536,7 +536,7 @@ impl Iterator for Tokenizer<'_> {
                             } else {
                                 self.default_reset(
                                     true,
-                                    TokenType::ERROR("unknown character r".into()),
+                                    TokenType::Error("unknown character r".into()),
                                 );
                             }
                             self.matching = true;
@@ -622,9 +622,10 @@ impl Iterator for Tokenizer<'_> {
                         }
                         _ => {
                             self.matching = true;
-                            self.new_token = self.create_token(TokenType::ERROR(
-                                format!("Incorrect number of dots: {}", val + 1).into(),
-                            ));
+                            self.new_token = self.create_token(TokenType::Error(format!(
+                                "Incorrect number of dots: {}",
+                                val + 1
+                            )));
                             self.state = State::Default;
                         }
                     },
@@ -729,7 +730,7 @@ impl Iterator for Tokenizer<'_> {
                                     self.escape_start.index_real - 1,
                                     self.escape_start.line,
                                     self.escape_start.column - 1,
-                                    TokenType::ERROR(format!(
+                                    TokenType::Error(format!(
                                         "Invalid character in escape sequence: {}",
                                         self.c
                                     )),
@@ -740,19 +741,16 @@ impl Iterator for Tokenizer<'_> {
                     State::CharLiteralNormal() => {
                         match self.c {
                             '\'' => {
-                                if self.char_literal == '\0' {
-                                    self.default_reset(
-                                        false,
-                                        TokenType::CharLiteral(self.char_literal),
-                                    )
-                                } else if self.char_literal.len_utf8() == self.string.len() {
+                                if self.char_literal == '\0'
+                                    || self.char_literal.len_utf8() == self.string.len()
+                                {
                                     self.default_reset(
                                         false,
                                         TokenType::CharLiteral(self.char_literal),
                                     )
                                 } else {
                                     self.stop_reset = true;
-                                    self.new_token = self.create_token(TokenType::ERROR(
+                                    self.new_token = self.create_token(TokenType::Error(
                                         "Char literal cannot contain more than one character"
                                             .into(),
                                     ));
@@ -768,7 +766,7 @@ impl Iterator for Tokenizer<'_> {
                             '\n' | '\r' => {
                                 self.default_reset(
                                     true,
-                                    TokenType::ERROR("Cannot have new line in char literal".into()),
+                                    TokenType::Error("Cannot have new line in char literal".into()),
                                 );
                             }
                             char => {
@@ -786,7 +784,7 @@ impl Iterator for Tokenizer<'_> {
                     }
                     State::CharLiteralStart => match self.c {
                         '\'' => {
-                            self.default_reset(false, TokenType::ERROR("Empty Char Literal".into()))
+                            self.default_reset(false, TokenType::Error("Empty Char Literal".into()))
                         }
                         _ => {
                             self.string = String::new();
@@ -873,7 +871,7 @@ impl Iterator for Tokenizer<'_> {
                             self.state = State::Default;
                         }
                     },
-                    State::EOF => {}
+                    State::Eof => {}
                 }
                 match &self.new_token {
                     None => match self.state {
@@ -885,11 +883,10 @@ impl Iterator for Tokenizer<'_> {
                             if !self.stop_reset {
                                 self.start_curr = self.last;
                             }
-                        } else {
-                            if !self.stop_reset {
-                                self.start_curr = self.current;
-                            }
+                        } else if !self.stop_reset {
+                            self.start_curr = self.current;
                         }
+
                         let mut new = Option::None;
                         mem::swap(&mut self.new_token, &mut new);
                         match new {
@@ -938,10 +935,10 @@ impl<'a> Tokenizer<'a> {
             iterations: 0,
             state: State::Default,
 
-            current: BufferIndex::new(),
-            last: BufferIndex::new(),
-            start_curr: BufferIndex::new(),
-            escape_start: BufferIndex::new(),
+            current: BufferIndex::default(),
+            last: BufferIndex::default(),
+            start_curr: BufferIndex::default(),
+            escape_start: BufferIndex::default(),
 
             matching: false,
             stop_reset: false,
@@ -966,10 +963,10 @@ impl<'a> Tokenizer<'a> {
             iterations: 0,
             state: State::Default,
 
-            current: BufferIndex::new(),
-            last: BufferIndex::new(),
-            start_curr: BufferIndex::new(),
-            escape_start: BufferIndex::new(),
+            current: BufferIndex::default(),
+            last: BufferIndex::default(),
+            start_curr: BufferIndex::default(),
+            escape_start: BufferIndex::default(),
 
             matching: false,
             stop_reset: false,
@@ -993,22 +990,10 @@ impl<'a> Tokenizer<'a> {
         self.is_ident_continue(self.c)
     }
     fn is_ident_start(&self, c: char) -> bool {
-        return match self.ident_mode {
-            IdentifierMode::Ascii => match c {
-                'A'..='Z' | 'a'..='z' | '_' => true,
-                _ => false,
-            },
-            IdentifierMode::Unicode => unicode_xid::UnicodeXID::is_xid_start(c) || c == '_',
-        };
+        matches!(c, 'A'..='Z' | 'a'..='z' | '_')
     }
     fn is_ident_continue(&self, c: char) -> bool {
-        return match self.ident_mode {
-            IdentifierMode::Ascii => match c {
-                '0'..='9' | 'A'..='Z' | 'a'..='z' | '_' => true,
-                _ => false,
-            },
-            IdentifierMode::Unicode => unicode_xid::UnicodeXID::is_xid_continue(c),
-        };
+        matches!(c, '0'..='9' | 'A'..='Z' | 'a'..='z' | '_')
     }
 
     #[allow(unused)]
@@ -1017,10 +1002,10 @@ impl<'a> Tokenizer<'a> {
         self.state = State::Default;
         self.iterator = util::tokenizer::chars_from_u8(self.bytes);
 
-        self.current = BufferIndex::new();
-        self.last = BufferIndex::new();
-        self.start_curr = BufferIndex::new();
-        self.escape_start = BufferIndex::new();
+        self.current = BufferIndex::default();
+        self.last = BufferIndex::default();
+        self.start_curr = BufferIndex::default();
+        self.escape_start = BufferIndex::default();
 
         self.matching = false;
         self.stop_reset = false;
@@ -1098,14 +1083,13 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        num = num.replace("_", "");
+        num = num.replace('_', "");
 
-        let base;
-        match prefix {
-            "0x" => base = 16,
-            "0b" => base = 2,
-            _ => base = 10,
-        }
+        let base = match prefix {
+            "0x" => 16,
+            "0b" => 2,
+            _ => 10,
+        };
 
         let mut t_type: TokenType;
 
@@ -1113,7 +1097,7 @@ impl<'a> Tokenizer<'a> {
             ($a: path, $b: ident) => {
                 match num.parse::<$a>() {
                     Ok(val) => t_type = TokenType::$b(val),
-                    Err(val) => t_type = TokenType::ERROR(val.to_string()),
+                    Err(val) => t_type = TokenType::Error(val.to_string()),
                 }
             };
         }
@@ -1122,7 +1106,7 @@ impl<'a> Tokenizer<'a> {
             ($a: ident, $b: ident, $c: ident) => {
                 match $a::from_str_radix(num.as_str(), $c) {
                     Ok(val) => t_type = TokenType::$b(val),
-                    Err(val) => t_type = TokenType::ERROR(val.to_string()),
+                    Err(val) => t_type = TokenType::Error(val.to_string()),
                 }
             };
         }
@@ -1141,11 +1125,11 @@ impl<'a> Tokenizer<'a> {
             ("f32", 10) => parse_to_token!(f32, F32Literal),
             ("f64", 10) => parse_to_token!(f64, F64Literal),
             ("f32" | "f64", _) => {
-                t_type = TokenType::ERROR("Cannot have non base 10 floating point literal".into())
+                t_type = TokenType::Error("Cannot have non base 10 floating point literal".into())
             }
             (_, base) => {
                 if base == 10 {
-                    if num.contains("e") || num.contains("E") || num.contains(".") {
+                    if num.contains('e') || num.contains('E') || num.contains('.') {
                         parse_to_token!(f32, F32Literal)
                     } else {
                         parse_to_token_base!(i32, I32Literal, base)
@@ -1155,60 +1139,42 @@ impl<'a> Tokenizer<'a> {
                 }
             }
         }
-        match t_type {
-            TokenType::ERROR(string) => {
-                t_type = TokenType::ERROR(format!("{} for: {}", string, original))
-            }
-            _ => {}
+        if let TokenType::Error(string) = t_type {
+            t_type = TokenType::Error(format!("{} for: {}", string, original))
         }
 
         self.create_token(t_type)
     }
 
     fn create_identifier_or_keyword(&self, ident: String) -> Option<Token> {
-        let t_type: TokenType;
-        match ident.as_str() {
-            "void" => t_type = TokenType::VoidKeyword,
-            "struct" => t_type = TokenType::StructKeyword,
-            "asm" => t_type = TokenType::AsmKeyword,
-            "const" => t_type = TokenType::ConstKeyword,
-            "static" => t_type = TokenType::StaticKeyword,
-            "sizeof" => t_type = TokenType::SizeofKeyword,
-            "enum" => t_type = TokenType::EnumKeyword,
-            "fn" => t_type = TokenType::FnKeyword,
-            "pub" => t_type = TokenType::PubKeyword,
-            "self" => t_type = TokenType::SelfKeyword,
-            "super" => t_type = TokenType::SuperKeyword,
-            "let" => t_type = TokenType::LetKeyword,
-            "if" => t_type = TokenType::IfKeyword,
-            "else" => t_type = TokenType::ElseKeyword,
-            "while" => t_type = TokenType::WhileKeyword,
-            "do" => t_type = TokenType::DoKeyword,
-            "for" => t_type = TokenType::ForKeyword,
-            "return" => t_type = TokenType::ReturnKeyword,
-            "break" => t_type = TokenType::BreakKeyword,
-            "switch" => t_type = TokenType::SwitchKeyword,
-            "case" => t_type = TokenType::CaseKeyword,
-            "goto" => t_type = TokenType::GotoKeyword,
-            "restrict" => t_type = TokenType::RestrictKeyword,
-            //"usize" => t_type = TokenType::USizeKeyword,
-            //"isize" => t_type = TokenType::ISizeKeyword,
-            //"i8" => t_type = TokenType::I8Keyword,
-            //"i16" => t_type = TokenType::I16Keyword,
-            //"i32" => t_type = TokenType::I32Keyword,
-            //"i64" => t_type = TokenType::I64Keyword,
-            //"i128" => t_type = TokenType::I128Keyword,
-            //"u8" => t_type = TokenType::U8Keyword,
-            //"u16" => t_type = TokenType::U16Keyword,
-            //"u32" => t_type = TokenType::U32Keyword,
-            //"u64" => t_type = TokenType::U64Keyword,
-            //"u128" => t_type = TokenType::U128Keyword,
-            //"char" => t_type = TokenType::CharKeyword,
-            //"bool" => t_type = TokenType::BoolKeyword,
-            "true" => t_type = TokenType::BoolLiteral(true),
-            "false" => t_type = TokenType::BoolLiteral(false),
-            _ => t_type = TokenType::Identifier(ident),
-        }
+        let t_type = match ident.as_str() {
+            "void" => TokenType::VoidKeyword,
+            "struct" => TokenType::StructKeyword,
+            "asm" => TokenType::AsmKeyword,
+            "const" => TokenType::ConstKeyword,
+            "static" => TokenType::StaticKeyword,
+            "sizeof" => TokenType::SizeofKeyword,
+            "enum" => TokenType::EnumKeyword,
+            "fn" => TokenType::FnKeyword,
+            "pub" => TokenType::PubKeyword,
+            "self" => TokenType::SelfKeyword,
+            "super" => TokenType::SuperKeyword,
+            "let" => TokenType::LetKeyword,
+            "if" => TokenType::IfKeyword,
+            "else" => TokenType::ElseKeyword,
+            "while" => TokenType::WhileKeyword,
+            "do" => TokenType::DoKeyword,
+            "for" => TokenType::ForKeyword,
+            "return" => TokenType::ReturnKeyword,
+            "break" => TokenType::BreakKeyword,
+            "switch" => TokenType::SwitchKeyword,
+            "case" => TokenType::CaseKeyword,
+            "goto" => TokenType::GotoKeyword,
+            "restrict" => TokenType::RestrictKeyword,
+            "true" => TokenType::BoolLiteral(true),
+            "false" => TokenType::BoolLiteral(false),
+            _ => TokenType::Identifier(ident),
+        };
 
         self.create_token(t_type)
     }

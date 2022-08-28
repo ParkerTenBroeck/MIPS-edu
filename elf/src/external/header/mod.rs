@@ -29,8 +29,11 @@ pub struct ExternalElfHeader<T: PrimInt + Unsigned> {
 }
 
 impl<T: PrimInt + Unsigned> ExternalElfHeader<T> {
-    pub fn read_int_type<N: PrimInt>(&self, val: *const N) -> N {
-        unsafe { read_unaligned(val) }
+    /// # Safety
+    ///
+    /// `val` must be a valid pointer to type N  
+    pub unsafe fn read_int_type<N: PrimInt>(&self, val: *const N) -> N {
+        read_unaligned(val)
     }
 }
 
@@ -56,55 +59,55 @@ impl<T: PrimInt + Unsigned> ExternalElfHeaderTrait<T> for ExternalElfHeader<T> {
     }
 
     fn elftype(&self) -> u16 {
-        self.read_int_type(&self.elftype)
+        unsafe { self.read_int_type(&self.elftype) }
     }
 
     fn machine(&self) -> u16 {
-        self.read_int_type(&self.machine)
+        unsafe { self.read_int_type(&self.machine) }
     }
 
     fn elf_version(&self) -> u32 {
-        self.read_int_type(&self.elf_version)
+        unsafe { self.read_int_type(&self.elf_version) }
     }
 
     fn entry_point(&self) -> T {
-        self.read_int_type(&self.entry)
+        unsafe { self.read_int_type(&self.entry) }
     }
 
     fn program_header_offset(&self) -> T {
-        self.read_int_type(&self.phoff)
+        unsafe { self.read_int_type(&self.phoff) }
     }
 
     fn section_header_offset(&self) -> T {
-        self.read_int_type(&self.shoff)
+        unsafe { self.read_int_type(&self.shoff) }
     }
 
     fn flags(&self) -> u32 {
-        self.read_int_type(&self.flags)
+        unsafe { self.read_int_type(&self.flags) }
     }
 
     fn elf_header_size(&self) -> u16 {
-        self.read_int_type(&self.ehsize)
+        unsafe { self.read_int_type(&self.ehsize) }
     }
 
     fn program_header_entry_size(&self) -> u16 {
-        self.read_int_type(&self.phentsize)
+        unsafe { self.read_int_type(&self.phentsize) }
     }
 
     fn program_header_entry_num(&self) -> u16 {
-        self.read_int_type(&self.phnum)
+        unsafe { self.read_int_type(&self.phnum) }
     }
 
     fn section_header_entry_size(&self) -> u16 {
-        self.read_int_type(&self.shentsize)
+        unsafe { self.read_int_type(&self.shentsize) }
     }
 
     fn section_header_entry_num(&self) -> u16 {
-        self.read_int_type(&self.shnum)
+        unsafe { self.read_int_type(&self.shnum) }
     }
 
     fn shstr_index(&self) -> u16 {
-        self.read_int_type(&self.shstrndx)
+        unsafe { self.read_int_type(&self.shstrndx) }
     }
 }
 

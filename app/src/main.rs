@@ -91,7 +91,7 @@ fn create_linux_app() -> Result<(), Box<dyn std::error::Error>> {
 
             use std::io::Write;
             let _ = val.write(data.as_bytes())?;
-            return Result::Ok(());
+            Result::Ok(())
         }
         Err(val) => {
             log::error!("failed to create application entry {}: {}", path, val);

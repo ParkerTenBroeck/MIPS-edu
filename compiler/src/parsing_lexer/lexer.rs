@@ -20,7 +20,7 @@ impl<'input> Iterator for Lexer<'input> {
             None => None,
             Some(
                 val @ Token {
-                    t_type: TokenType::ERROR(_),
+                    t_type: TokenType::Error(_),
                     ..
                 },
             ) => Option::Some(Err(val)),

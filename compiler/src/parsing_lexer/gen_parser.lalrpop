@@ -1,4 +1,4 @@
-use super::ast::*;
+use crate::parsing_lexer::ast::*;
 use crate::parsing_lexer::tokenizer::*;
 use std::collections::LinkedList;
 

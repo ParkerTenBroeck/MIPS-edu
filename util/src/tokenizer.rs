@@ -1,20 +1,9 @@
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub struct BufferIndex {
     pub index: usize,
     pub index_real: usize,
     pub line: usize,
     pub column: usize,
-}
-
-impl BufferIndex {
-    pub fn new() -> Self {
-        BufferIndex {
-            index: 0,
-            index_real: 0,
-            line: 0,
-            column: 0,
-        }
-    }
 }
 
 pub fn chars_from_u8(byte: &[u8]) -> std::str::Chars {

@@ -2,6 +2,7 @@
 #[macro_use]
 extern crate lalrpop_util;
 
+mod gen_parsers;
 mod parsing_lexer;
 //use parsing_lexer::ast::PrintVisitor;
 //use parsing_lexer::gen_parser;

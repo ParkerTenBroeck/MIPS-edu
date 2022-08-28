@@ -63,11 +63,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
     #[inline(always)]
     unsafe fn get_page(&mut self, address: u32) -> Option<NonNull<Page>> {
         let addr = (address >> 16) as usize;
-        let p = *self.page_table.get_unchecked_mut(addr);
-        match p {
-            Some(val) => Option::Some(val),
-            None => Option::None,
-        }
+        *self.page_table.get_unchecked_mut(addr)
     }
 
     #[inline(never)]
@@ -78,18 +74,15 @@ impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
             let p = self.page_table.get_unchecked_mut(addr);
 
             match p {
-                Some(val) => return *val,
+                Some(val) => *val,
                 None => {
                     set_thing(&mut self.going_to_lock);
                     match &self.page_pool {
                         Some(val) => {
                             let mut val = val.get_page_pool();
                             let val = val.create_page(addr as u16);
-                            match val {
-                                Ok(ok) => {
-                                    *p = Option::Some(ok);
-                                }
-                                Err(_) => {}
+                            if let Ok(ok) = val {
+                                *p = Option::Some(ok);
                             }
                         }
                         None => todo!(),
@@ -97,7 +90,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
                     unset_thing(&mut self.going_to_lock);
 
                     match p {
-                        Some(val) => return *val,
+                        Some(val) => *val,
                         None => std::hint::unreachable_unchecked(),
                     }
                 }
@@ -121,9 +114,9 @@ impl Memory {
                     page_table: [INIT; SEG_SIZE],
                     listener: Option::None,
                 };
-                return lock.add_holder(mem);
+                lock.add_holder(mem)
             }
-            Err(_err) => todo!(),
+            Err(err) => panic!("{err}"),
         }
     }
 
@@ -158,9 +151,9 @@ impl Memory {
                 set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_all_pages();
                 unset_thing(&mut self.going_to_lock);
-                for i in 0..(1 << 16 - 1) {
-                    self.page_table[i] = Option::None;
-                }
+                self.page_table.iter_mut().for_each(|page| {
+                    *page = None;
+                });
             }
             None => todo!(),
         }

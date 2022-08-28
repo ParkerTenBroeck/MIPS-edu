@@ -47,6 +47,12 @@ const TEST_TEXT: &str =  "                 40m     41m     42m     43m     44m  
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 👩🏿‍⚕️|0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\n\n1209387123987";
 
+impl Default for TerminalTab {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerminalTab {
     pub fn new() -> Self {
         Self {
@@ -92,7 +98,7 @@ mod terminal_formatter {
                 self.lines.push(Line::new());
             }
             match self.lines.last_mut() {
-                Some(last) => return last,
+                Some(last) => last,
                 None => {
                     panic!("lines are empty? but pushed if empty IMPOSSIBLE")
                 }
@@ -140,34 +146,32 @@ mod terminal_formatter {
                     //     continue;
                     // }
                     self.new_line();
-                } else {
-                    if char == '\t' {
-                        for _ in 0..4 {
-                            let width = font.glyph_width(' ');
-                            //let width = font.round_to_pixel(width);
-                            if font.round_to_pixel(self.last().width() + tmp.width() + width)
-                                > font.round_to_pixel(self.target_line_width)
-                            {
-                            } else {
-                                tmp.append_char(' ', width);
-                            }
-                        }
-                    } else {
-                        let mut width = font.glyph_width(char);
-                        let mut char = char;
-                        if width != self.character_width && width != 0.0 {
-                            char = '�';
-                            width = font.glyph_width(char);
-                        }
+                } else if char == '\t' {
+                    for _ in 0..4 {
+                        let width = font.glyph_width(' ');
+                        //let width = font.round_to_pixel(width);
                         if font.round_to_pixel(self.last().width() + tmp.width() + width)
                             > font.round_to_pixel(self.target_line_width)
                         {
-                            self.append_last(tmp);
-                            self.new_line();
-                            tmp = Section::new(format.clone());
+                        } else {
+                            tmp.append_char(' ', width);
                         }
-                        tmp.append_char(char, width);
                     }
+                } else {
+                    let mut width = font.glyph_width(char);
+                    let mut char = char;
+                    if width != self.character_width && width != 0.0 {
+                        char = '�';
+                        width = font.glyph_width(char);
+                    }
+                    if font.round_to_pixel(self.last().width() + tmp.width() + width)
+                        > font.round_to_pixel(self.target_line_width)
+                    {
+                        self.append_last(tmp);
+                        self.new_line();
+                        tmp = Section::new(format.clone());
+                    }
+                    tmp.append_char(char, width);
                 }
             }
             if !tmp.is_empty() {
@@ -387,7 +391,8 @@ impl Tab for TerminalTab {
                 }
             }
 
-            let mut forground = forground.unwrap_or(ui.style().visuals.widgets.open.text_color());
+            let mut forground =
+                forground.unwrap_or_else(|| ui.style().visuals.widgets.open.text_color());
             if blink {
                 ui.ctx().request_repaint();
                 if alpha > 0 {
@@ -401,7 +406,7 @@ impl Tab for TerminalTab {
                 font_id: font_id.clone(),
                 color: forground,
                 background,
-                italics: italics,
+                italics,
                 underline: if underline { stroke } else { Stroke::none() },
                 strikethrough: if strike { stroke } else { Stroke::none() },
                 ..Default::default()
@@ -536,7 +541,7 @@ impl<'a> Iterator for TerminalParser<'a> {
                             match char {
                                 '[' => {
                                     let mut code = String::new();
-                                    while let Option::Some(char) = self.iter.next() {
+                                    for char in self.iter.by_ref() {
                                         if char == 'm' {
                                             break;
                                         }
@@ -577,12 +582,10 @@ impl<'a> Iterator for TerminalParser<'a> {
                     }
                 }
             }
-            if send {
-                if !self.string.is_empty() {
-                    let mut string = String::new();
-                    std::mem::swap(&mut string, &mut self.string);
-                    return Option::Some((string, num_codes));
-                }
+            if send && !self.string.is_empty() {
+                let mut string = String::new();
+                std::mem::swap(&mut string, &mut self.string);
+                return Option::Some((string, num_codes));
             }
         }
     }

@@ -339,7 +339,7 @@ impl Default for SideTabbedPanel {
             tabs: Default::default(),
         };
         tmp.tabs.push(CPUSidePanel::new().into());
-        tmp.tabs.push(ProjectSidePanel::new().into());
+        tmp.tabs.push(ProjectSidePanel::default().into());
         tmp
     }
 }

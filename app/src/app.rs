@@ -243,7 +243,7 @@ impl App for Application {
             Ok(mut side_panel) => {
                 egui::SidePanel::left("side_panel")
                     .min_width(0.0)
-                    .frame(frame_no_marg.clone())
+                    .frame(frame_no_marg)
                     .resizable(side_panel.is_visible())
                     .show(ctx, |ui| {
                         side_panel.ui(ui, self);
@@ -296,7 +296,7 @@ impl App for Application {
                     });
             });
 
-        let frame = frame_no_marg.clone();
+        let frame = frame_no_marg;
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             //self.tabbed_area.ui(ui);

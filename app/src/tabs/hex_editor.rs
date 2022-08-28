@@ -52,13 +52,13 @@ impl HexEditor {
     }
 
     fn u8_to_display_char(input: u8) -> char {
-        //let input = input as char;
         if !input.is_ascii_control() {
             return input as char;
         }
-        match input {
-            _ => '.',
-        }
+        // match input {
+        //     _ => '.',
+        // }
+        '.'
     }
 
     fn align_address_to_row(&self, val: u32) -> u32 {
@@ -213,15 +213,13 @@ impl Tab for HexEditor {
                             let val = self.mem.get_u8(*offset);
                             let val = val & 0b1111u8;
                             self.mem.set_u8(*offset, val);
-                        } else {
-                            if let Option::Some(new) = offset.checked_sub(1) {
-                                *offset = new;
-                                *middle = true;
-                                let val = self.mem.get_u8(*offset);
-                                let val = val & 0b11110000u8;
-                                self.mem.set_u8(*offset, val);
-                                moved = true;
-                            }
+                        } else if let Option::Some(new) = offset.checked_sub(1) {
+                            *offset = new;
+                            *middle = true;
+                            let val = self.mem.get_u8(*offset);
+                            let val = val & 0b11110000u8;
+                            self.mem.set_u8(*offset, val);
+                            moved = true;
                         }
                     }
 
@@ -431,9 +429,9 @@ impl Tab for HexEditor {
                                     //ui.horizontal(add_contents)
                                     if exit {
                                         if partial {
-                                            self.last_height = h.checked_sub(2).unwrap_or(0);
+                                            self.last_height = h.saturating_sub(2);
                                         } else {
-                                            self.last_height = h.checked_sub(1).unwrap_or(0);
+                                            self.last_height = h.saturating_sub(1);
                                         }
                                         break;
                                     }

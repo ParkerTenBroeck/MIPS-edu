@@ -140,8 +140,8 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
     fn lock<R>(&mut self, fn_once: impl FnOnce(&mut Self) -> R) -> R {
         loop {
             let item = self.inner.1.load(std::sync::atomic::Ordering::Relaxed);
-            if item < usize::MAX - 1 {
-                if self
+            if item < usize::MAX - 1
+                && self
                     .inner
                     .1
                     .compare_exchange(
@@ -151,13 +151,12 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
                         std::sync::atomic::Ordering::Relaxed,
                     )
                     .is_ok()
-                {
-                    let ret = fn_once(self);
-                    self.inner
-                        .1
-                        .fetch_sub(1, std::sync::atomic::Ordering::Release);
-                    return ret;
-                }
+            {
+                let ret = fn_once(self);
+                self.inner
+                    .1
+                    .fetch_sub(1, std::sync::atomic::Ordering::Release);
+                return ret;
             }
             std::hint::spin_loop()
         }
@@ -211,7 +210,7 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
     }
     pub fn start(
         &mut self,
-        runner: impl FnOnce(Box<dyn FnOnce() -> () + Sync + Send>),
+        runner: impl FnOnce(Box<dyn FnOnce() + Sync + Send>),
     ) -> Result<(), ()> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
@@ -233,10 +232,7 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
             }
         })
     }
-    pub fn step(
-        &mut self,
-        runner: impl FnOnce(Box<dyn FnOnce() -> () + Sync + Send>),
-    ) -> Result<(), ()> {
+    pub fn step(&mut self, runner: impl FnOnce(Box<dyn FnOnce() + Sync + Send>)) -> Result<(), ()> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
                 Result::Err(())
@@ -310,8 +306,8 @@ pub struct CP0 {
     _registers: [u32; 32],
 }
 
-impl CP0 {
-    pub fn new() -> Self {
+impl Default for CP0 {
+    fn default() -> Self {
         CP0 {
             _registers: [0; 32],
         }
@@ -327,8 +323,8 @@ pub struct CP1 {
     _registers: CP1Reg,
 }
 
-impl CP1 {
-    pub fn new() -> Self {
+impl Default for CP1 {
+    fn default() -> Self {
         CP1 {
             _registers: CP1Reg { single: [0.0; 32] },
         }
@@ -583,8 +579,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             //instructions_ran: 0,
             pc: 0,
             reg: [0; 32],
-            _cp0: CP0::new(),
-            _cp1: CP1::new(),
+            _cp0: CP0::default(),
+            _cp1: CP1::default(),
             lo: 0,
             hi: 0,
             i_check: !false,
