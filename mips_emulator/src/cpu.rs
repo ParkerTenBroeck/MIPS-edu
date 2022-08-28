@@ -9,7 +9,7 @@ use std::{
 use crate::memory::{
     emulator_memory::Memory,
     page_pool::{
-        MemoryDefault, MemoryDefaultAccess, PagePoolController, PagePoolHolder, PagePoolListener,
+        PagedMemoryInterface, MemoryDefaultAccess, PagePoolController, PagedMemoryImpl, PagePoolListener,
         PagePoolRef,
     },
 };
@@ -640,7 +640,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     }
 
     #[allow(unused)]
-    pub fn get_mem<M: PagePoolHolder + Default + Send + Sync + 'static>(
+    pub fn get_mem<M: PagedMemoryImpl + Default + Send + Sync + 'static>(
         &mut self,
     ) -> PagePoolRef<M> {
         self.get_mem_controller()

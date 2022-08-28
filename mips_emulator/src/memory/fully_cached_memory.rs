@@ -3,7 +3,7 @@
 use std::{error::Error, ptr::NonNull};
 
 use super::page_pool::{
-    Page, PagePool, PagePoolController, PagePoolHolder, PagePoolListener, PagePoolNotifier,
+    Page, PagePool, PagePoolController, PagedMemoryImpl, PagePoolListener, PagePoolNotifier,
     PagePoolRef, SEG_SIZE,
 };
 
@@ -19,8 +19,8 @@ pub struct FullyCachedMemory {
 unsafe impl Send for FullyCachedMemory {}
 unsafe impl Sync for FullyCachedMemory {}
 
-impl PagePoolHolder for FullyCachedMemory {
-    fn init_holder(&mut self, notifier: PagePoolNotifier) {
+impl PagedMemoryImpl for FullyCachedMemory {
+    fn init_notifier(&mut self, notifier: PagePoolNotifier) {
         self.page_pool = Option::Some(notifier);
     }
 
@@ -59,9 +59,12 @@ impl Default for PagePoolRef<FullyCachedMemory> {
     }
 }
 
-impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory {
+impl<'a> super::page_pool::PagedMemoryInterface<'a> for FullyCachedMemory {
+    
+    type Page = &'a mut Page;
+    
     #[inline(always)]
-    unsafe fn get_page(&mut self, address: u32) -> Option<&mut Page> {
+    unsafe fn get_page(&mut self, address: u32) -> Option<&'a mut Page> {
         let addr = (address >> 16) as usize;
         match *self.page_table.get_unchecked_mut(addr) {
             Some(mut val) => Option::Some(val.as_mut()),
@@ -70,7 +73,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, &'a mut Page> for FullyCachedMemory
     }
 
     #[inline(always)]
-    unsafe fn get_or_make_page(&mut self, address: u32) -> &mut Page {
+    unsafe fn get_or_make_page(&mut self, address: u32) -> &'a mut Page {
         let addr = (address >> 16) as usize;
         //we dont need to check if the addr is in bounds since it is always below 2^16
         {

@@ -4,7 +4,7 @@ use std::{
 };
 
 use eframe::egui::WidgetText;
-use mips_emulator::memory::page_pool::MemoryDefault;
+use mips_emulator::memory::page_pool::PagedMemoryInterface;
 
 use crate::{
     emulator::single_cached_spinlock_memory::SingleCachedPlatSpinMemory,

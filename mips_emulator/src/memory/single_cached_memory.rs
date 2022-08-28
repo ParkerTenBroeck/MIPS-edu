@@ -3,7 +3,7 @@ use std::{error::Error, ops::DerefMut, ptr::NonNull, sync::Mutex};
 //use crate::{set_mem_alligned, get_mem_alligned, get_mem_alligned_o, set_mem_alligned_o};
 
 use super::page_pool::{
-    MemoryDefault, MemoryDefaultAccess, Page, PageGuard, PagePool, PagePoolHolder, PagePoolNotifier,
+    PagedMemoryInterface, MemoryDefaultAccess, Page, PageGuard, PagePool, PagedMemoryImpl, PagePoolNotifier,
 };
 
 #[derive(Default)]
@@ -28,7 +28,10 @@ macro_rules! page_pool {
     };
 }
 
-impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory {
+impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
+
+    type Page = PageGuard<'a>;
+
     unsafe fn get_or_make_page(&'a mut self, page_id: u32) -> PageGuard<'a> {
         let page_id = (page_id >> 16) as u16;
 
@@ -38,7 +41,9 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory {
         //let unsafe_guard = (&mut guard) as *mut MutexGuard<'_, Option<(u16, &'static mut Page)>>;
         if let Option::Some((page_id_cache, page)) = *self.cache.lock().unwrap() {
             if page_id == page_id_cache {
-                return page_pool!(self).create_controller_guard(page);
+                let tmp = page_pool!(self);
+                let tmp = tmp.create_controller_guard(page);
+                return tmp;
             }
         }
 
@@ -55,7 +60,9 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory {
 
                 *tmp = Option::Some((page_id, page_ref));
                 match *tmp {
-                    Some((_page_id, page)) => page_pool!(self).create_controller_guard(page),
+                    Some((_page_id, page)) => {
+                        page_pool!(self).create_controller_guard(page)
+                    },
                     None => std::hint::unreachable_unchecked(),
                 }
             }
@@ -110,7 +117,7 @@ impl SingleCachedMemory {
     }
 }
 
-impl PagePoolHolder for SingleCachedMemory {
+impl PagedMemoryImpl for SingleCachedMemory {
     fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier> {
         self.page_pool.as_mut()
     }
@@ -130,7 +137,7 @@ impl PagePoolHolder for SingleCachedMemory {
         Result::Ok(())
     }
 
-    fn init_holder(&mut self, notifier: PagePoolNotifier) {
+    fn init_notifier(&mut self, notifier: PagePoolNotifier) {
         self.page_pool = Option::Some(notifier);
     }
 }

@@ -44,8 +44,8 @@ impl PageImpl for &mut Page {
     }
 }
 
-pub trait PagePoolHolder {
-    fn init_holder(&mut self, _notifier: PagePoolNotifier) {}
+pub trait PagedMemoryImpl {
+    fn init_notifier(&mut self, _notifier: PagePoolNotifier) {}
     fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier>;
     fn lock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
     fn unlock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
@@ -106,7 +106,7 @@ impl PagePoolNotifier {
         self.page_pool.clone()
     }
 
-    pub fn create_controller_guard<'a, T>(&'a self, data: T) -> ControllerGuard<'a, T> {
+    pub fn create_controller_guard<T>(&self, data: T) -> ControllerGuard<'_, T> {
         ControllerGuard {
             _guard: self.get_page_pool(),
             data,
@@ -160,17 +160,17 @@ impl<'a> DerefMut for NotifierGuard<'a> {
 
 //------------------------------------------------------------------------------------------------------
 
-pub struct PagePoolRef<T: PagePoolHolder + Send + Sync> {
+pub struct PagePoolRef<T: PagedMemoryImpl + Send + Sync> {
     inner: NonNull<T>,
     page_pool: Arc<Mutex<PagePoolController>>,
     id: usize,
 }
 
-unsafe impl<T: PagePoolHolder + Send + Sync> Send for PagePoolRef<T> {}
+unsafe impl<T: PagedMemoryImpl + Send + Sync> Send for PagePoolRef<T> {}
 
-unsafe impl<T: PagePoolHolder + Send + Sync> Sync for PagePoolRef<T> {}
+unsafe impl<T: PagedMemoryImpl + Send + Sync> Sync for PagePoolRef<T> {}
 
-impl<T: PagePoolHolder + Send + Sync> Drop for PagePoolRef<T> {
+impl<T: PagedMemoryImpl + Send + Sync> Drop for PagePoolRef<T> {
     fn drop(&mut self) {
         self.page_pool
             .lock()
@@ -180,7 +180,7 @@ impl<T: PagePoolHolder + Send + Sync> Drop for PagePoolRef<T> {
     }
 }
 
-impl<T: PagePoolHolder + Send + Sync> PagePoolRef<T> {
+impl<T: PagedMemoryImpl + Send + Sync> PagePoolRef<T> {
     fn get_inner_mut<'a>(&'a mut self) -> &'a mut T {
         unsafe { self.inner.as_mut() }
     }
@@ -197,7 +197,7 @@ impl<T: PagePoolHolder + Send + Sync> PagePoolRef<T> {
     }
 }
 
-impl<T: PagePoolHolder + Send + Sync> Deref for PagePoolRef<T> {
+impl<T: PagedMemoryImpl + Send + Sync> Deref for PagePoolRef<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -205,7 +205,7 @@ impl<T: PagePoolHolder + Send + Sync> Deref for PagePoolRef<T> {
     }
 }
 
-impl<T: PagePoolHolder + Send + Sync> DerefMut for PagePoolRef<T> {
+impl<T: PagedMemoryImpl + Send + Sync> DerefMut for PagePoolRef<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.get_inner_mut()
     }
@@ -223,7 +223,7 @@ pub struct PagePool {
 
 pub struct PagePoolController {
     page_pool: PagePool,
-    holders: Vec<(usize, NonNull<dyn PagePoolHolder + Send + Sync>)>,
+    holders: Vec<(usize, NonNull<dyn PagedMemoryImpl + Send + Sync>)>,
     myself: Weak<Mutex<PagePoolController>>,
     last_lock_id: usize,
 }
@@ -266,7 +266,7 @@ impl PagePoolController {
         arc
     }
 
-    pub fn add_holder<T: PagePoolHolder + Send + Sync + 'static>(
+    pub fn add_holder<T: PagedMemoryImpl + Send + Sync + 'static>(
         &mut self,
         holder: Box<T>,
     ) -> PagePoolRef<T> {
@@ -288,7 +288,7 @@ impl PagePoolController {
             id,
         };
 
-        unsafe { ptr.as_mut() }.init_holder(ppref.get_page_pool());
+        unsafe { ptr.as_mut() }.init_notifier(ppref.get_page_pool());
 
         ppref
     }
@@ -612,12 +612,14 @@ macro_rules! set_mem_alligned_o {
 }
 
 //------------------------------------------------------------------------------------------------------
-pub trait MemoryDefault<'a, P>
-where
-    P: PageImpl,
+
+pub trait PagedMemoryInterface<'a>: PagedMemoryImpl
 {
-    unsafe fn get_or_make_page(&'a mut self, page: u32) -> P; //&mut Page;
-    unsafe fn get_page(&'a mut self, page: u32) -> Option<P>; //Option<&mut Page>;
+    type Page: PageImpl;
+
+
+    unsafe fn get_or_make_page(&'a mut self, page: u32) -> Self::Page; //&mut Page;
+    unsafe fn get_page(&'a mut self, page: u32) -> Option<Self::Page>; //Option<&mut Page>;
 
     unsafe fn copy_into_raw<T: Copy>(&'a mut self, address: u32, data: &[T]) {
         let size: usize = data.len() * mem::size_of::<T>();
@@ -633,7 +635,7 @@ where
     unsafe fn copy_into(&'a mut self, address: u32, data: &[u8], start: usize, end: usize) {
         let mut id = start;
 
-        let mut tmp: Option<P> = Option::None;
+        let mut tmp: Option<Self::Page> = Option::None;
         let ptr = self as *mut Self;
 
         for im in address..address + (end - start) as u32 {
@@ -658,10 +660,14 @@ where
     }
 }
 
+/// # Safety
+/// 
+/// All methods in this trait are accessor methods to `PagedMemoryInterface`.
+/// Since `PagedMemoryInterface` is a shared between threads any data accessed to written through these methods can cause race conditions
 pub unsafe trait MemoryDefaultAccess<'a, P>
 where
     P: PageImpl,
-    Self: MemoryDefault<'a, P>,
+    Self: PagedMemoryInterface<'a>,
 {
     get_mem_alligned!(get_i64_alligned, i64);
     set_mem_alligned!(set_i64_alligned, i64);

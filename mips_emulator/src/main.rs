@@ -2,7 +2,7 @@ use std::io::Read;
 
 use mips_emulator::{
     cpu::{DefaultExternalHandler, MipsCpu},
-    memory::{page_pool::MemoryDefault, single_cached_memory::SingleCachedMemory},
+    memory::{page_pool::PagedMemoryInterface, single_cached_memory::SingleCachedMemory},
 };
 
 fn main() {

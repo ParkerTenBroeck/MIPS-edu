@@ -3,7 +3,7 @@ use std::{error::Error, ptr::NonNull};
 //use crate::{set_mem_alligned, get_mem_alligned, set_mem_alligned_o, get_mem_alligned_o};
 
 use super::page_pool::{
-    Page, PagePool, PagePoolController, PagePoolHolder, PagePoolListener, PagePoolNotifier,
+    Page, PagePool, PagePoolController, PagedMemoryImpl, PagePoolListener, PagePoolNotifier,
     PagePoolRef, SEG_SIZE,
 };
 
@@ -19,8 +19,8 @@ pub struct Memory {
 unsafe impl Sync for Memory {}
 unsafe impl Send for Memory {}
 
-impl PagePoolHolder for Memory {
-    fn init_holder(&mut self, notifier: PagePoolNotifier) {
+impl PagedMemoryImpl for Memory {
+    fn init_notifier(&mut self, notifier: PagePoolNotifier) {
         self.page_pool = Option::Some(notifier);
     }
 
@@ -84,7 +84,10 @@ impl Memory {
     }
 }
 
-impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
+impl<'a> super::page_pool::PagedMemoryInterface<'a> for Memory {
+
+    type Page = NonNull<Page>;
+
     #[inline(always)]
     unsafe fn get_page(&mut self, address: u32) -> Option<NonNull<Page>> {
         let addr = (address >> 16) as usize;

@@ -1,7 +1,7 @@
 use std::{error::Error, ops::DerefMut, ptr::NonNull, sync::Mutex};
 
 use mips_emulator::memory::page_pool::{
-    MemoryDefault, MemoryDefaultAccess, NotifierGuard, Page, PageGuard, PagePool, PagePoolHolder,
+    PagedMemoryInterface, MemoryDefaultAccess, NotifierGuard, Page, PageGuard, PagePool, PagedMemoryImpl,
     PagePoolNotifier,
 };
 
@@ -31,7 +31,10 @@ macro_rules! page_pool {
     };
 }
 
-impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedPlatSpinMemory {
+impl<'a> PagedMemoryInterface<'a> for SingleCachedPlatSpinMemory {
+
+    type Page = PageGuard<'a>;
+
     unsafe fn get_or_make_page(&'a mut self, page_id: u32) -> PageGuard<'a> {
         let page_id = (page_id >> 16) as u16;
 
@@ -98,7 +101,7 @@ impl SingleCachedPlatSpinMemory {
     }
 }
 
-impl PagePoolHolder for SingleCachedPlatSpinMemory {
+impl PagedMemoryImpl for SingleCachedPlatSpinMemory {
     fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier> {
         self.page_pool.as_mut()
     }
@@ -118,7 +121,7 @@ impl PagePoolHolder for SingleCachedPlatSpinMemory {
         Result::Ok(())
     }
 
-    fn init_holder(&mut self, notifier: PagePoolNotifier) {
+    fn init_notifier(&mut self, notifier: PagePoolNotifier) {
         self.page_pool = Option::Some(notifier);
     }
 }
