@@ -211,10 +211,10 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
     pub fn start(
         &mut self,
         runner: impl FnOnce(Box<dyn FnOnce() + Sync + Send>),
-    ) -> Result<(), ()> {
+    ) -> Result<(), &str> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
-                Result::Err(())
+                Result::Err("Cannot start, emulator is already running")
             } else {
                 let mut cpy = inner.clone();
                 runner(Box::new(move || (*cpy.raw_cpu_mut()).start_local()));
@@ -222,20 +222,23 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
             }
         })
     }
-    pub fn start_new_thread(&mut self) -> Result<(), ()> {
+    pub fn start_new_thread(&mut self) -> Result<(), &str> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
-                Result::Err(())
+                Result::Err("Cannot start, emulator is already running")
             } else {
                 (*inner.raw_cpu_mut()).start_new_thread();
                 Result::Ok(())
             }
         })
     }
-    pub fn step(&mut self, runner: impl FnOnce(Box<dyn FnOnce() + Sync + Send>)) -> Result<(), ()> {
+    pub fn step(
+        &mut self,
+        runner: impl FnOnce(Box<dyn FnOnce() + Sync + Send>),
+    ) -> Result<(), &str> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
-                Result::Err(())
+                Result::Err("Cannot step, emulator is already running")
             } else {
                 let mut cpy = inner.clone();
                 runner(Box::new(move || (*cpy.raw_cpu_mut()).step_local()));
@@ -243,30 +246,30 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
             }
         })
     }
-    pub fn step_new_thread(&mut self) -> Result<(), ()> {
+    pub fn step_new_thread(&mut self) -> Result<(), &str> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
-                Result::Err(())
+                Result::Err("Cannot start, emulator is already running")
             } else {
                 (*inner.raw_cpu_mut()).step_new_thread();
                 Result::Ok(())
             }
         })
     }
-    pub fn stop(&mut self) -> Result<(), ()> {
+    pub fn stop(&mut self) -> Result<(), &str> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
                 (*inner.raw_cpu_mut()).stop_and_wait();
                 Result::Ok(())
             } else {
-                Result::Err(())
+                Result::Err("Emulator is already stopped")
             }
         })
     }
-    pub fn restart(&mut self) -> Result<(), ()> {
+    pub fn restart(&mut self) -> Result<(), &str> {
         self.lock_mut(|inner| unsafe {
             if (*inner.raw_cpu_mut()).is_running() {
-                Result::Err(())
+                Result::Err("Cannot reset while emulator is running")
             } else {
                 (*inner.raw_cpu_mut()).reset();
                 Result::Ok(())
@@ -276,25 +279,64 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
     unsafe fn raw_cpu_mut(&mut self) -> *mut MipsCpu<T> {
         &self.inner.0 as *const MipsCpu<T> as *mut MipsCpu<T>
     }
+
+    /// # Safety
+    ///
+    /// This method ensures that the no other instance of `EmulatorInterface<T>` that holds this `*mut MipsCpu<T>` can mutate or access the pointer until `fn_once` returns.
+    ///
+    /// However this method does not ensure that `*mut MipsCpu<T>` isn't being accessed in another thread i.e the emulator is running in a separate thread.
+    ///
+    /// Be carful as mutating or dereferencing the pointer can still cause race conditions.
+    ///
+    /// Do not move the pointer outside of `fn_once`.
     pub unsafe fn lock_raw_cpu_mut<R>(&mut self, fn_once: impl FnOnce(*mut MipsCpu<T>) -> R) -> R {
         self.lock_mut(|inner| fn_once(inner.raw_cpu_mut()))
     }
+
+    /// # Safety
+    ///
+    /// There is no guarantee that the return value is not being accessed by other threads
+    ///
+    /// This can give rise to race conditions if dereferencing the pointer
     pub unsafe fn raw_cpu(&self) -> *const MipsCpu<T> {
         &self.inner.0 as *const MipsCpu<T>
     }
 
+    /// # Safety
+    ///
+    /// There is no guarantee that the data being accessed is being written to or accessed by other threads.
+    ///
+    /// The value returned can be mutated at any moment and can cause race conditions.
     #[inline(always)]
     pub unsafe fn pc(&self) -> u32 {
         (*self.raw_cpu()).pc
     }
+
+    /// # Safety
+    ///
+    /// There is no guarantee that the data being accessed is being written to or accessed by other threads.
+    ///
+    /// The value returned can be mutated at any moment and can cause race conditions.
     #[inline(always)]
     pub unsafe fn reg(&self) -> &[u32; 32] {
         &(*self.raw_cpu()).reg
     }
+
+    /// # Safety
+    ///
+    /// There is no guarantee that the data being accessed is being written to or accessed by other threads.
+    ///
+    /// The value returned can be mutated at any moment and can cause race conditions.
     #[inline(always)]
     pub unsafe fn lo(&self) -> u32 {
         (*self.raw_cpu()).lo
     }
+
+    /// # Safety
+    ///
+    /// There is no guarantee that the data being accessed is being written to or accessed by other threads.
+    ///
+    /// The value returned can be mutated at any moment and can cause race conditions.
     #[inline(always)]
     pub unsafe fn hi(&self) -> u32 {
         (*self.raw_cpu()).hi
@@ -379,6 +421,10 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     }
 }
 
+///
+/// # Safety
+///
+/// `cpu` contains the actual value of `&mut self`, misusing `cpu` can cause unintended mutations of `self`
 pub unsafe trait CpuExternalHandler: Sync + Send + Sized + 'static {
     fn arithmetic_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32);
     fn memory_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32);
@@ -1330,7 +1376,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                             let thing: &mut [u8; 4] =
                                 unsafe { core::mem::transmute(&mut self.reg[reg_num]) };
                             thing[3] = get_mem_alligned!(address, u8); //self.mem.get_u8(address);
-                            thing[2] = get_mem_alligned!(address.wrapping_add(1), u8); //self.mem.get_u8(address + 1);
+                            thing[2] = get_mem_alligned!(address.wrapping_add(1), u8);
+                            //self.mem.get_u8(address + 1);
                         }
                         0b100110 => {
                             //LWR
@@ -1341,7 +1388,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                             let thing: &mut [u8; 4] =
                                 unsafe { core::mem::transmute(&mut self.reg[reg_num]) };
                             thing[0] = get_mem_alligned!(address, u8); //self.mem.get_u8(address);
-                            thing[1] = get_mem_alligned!(address.wrapping_sub(1), u8); //self.mem.get_u8(address.wrapping_sub(1));
+                            thing[1] = get_mem_alligned!(address.wrapping_sub(1), u8);
+                            //self.mem.get_u8(address.wrapping_sub(1));
                         }
 
                         //save unaliged instructions

@@ -59,6 +59,31 @@ impl Default for PagePoolRef<Memory> {
     }
 }
 
+impl Memory {
+    #[inline(never)]
+    #[cold]
+    unsafe fn create_page(&mut self, addr: u32) -> NonNull<Page> {
+        let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
+        set_thing(&mut self.going_to_lock);
+        match &self.page_pool {
+            Some(val) => {
+                let mut val = val.get_page_pool();
+                let val = val.create_page((addr >> 16) as u16);
+                if let Ok(ok) = val {
+                    *p = Option::Some(ok);
+                }
+            }
+            None => todo!(),
+        }
+        unset_thing(&mut self.going_to_lock);
+
+        match p {
+            Some(val) => *val,
+            None => std::hint::unreachable_unchecked(),
+        }
+    }
+}
+
 impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
     #[inline(always)]
     unsafe fn get_page(&mut self, address: u32) -> Option<NonNull<Page>> {
@@ -68,33 +93,12 @@ impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
 
     #[inline(never)]
     unsafe fn get_or_make_page(&mut self, address: u32) -> NonNull<Page> {
+        //we don't need to check if the addr is in bounds since it is always below 2^16
         let addr = (address >> 16) as usize;
-        //we dont need to check if the addr is in bounds since it is always below 2^16
-        {
-            let p = self.page_table.get_unchecked_mut(addr);
 
-            match p {
-                Some(val) => *val,
-                None => {
-                    set_thing(&mut self.going_to_lock);
-                    match &self.page_pool {
-                        Some(val) => {
-                            let mut val = val.get_page_pool();
-                            let val = val.create_page(addr as u16);
-                            if let Ok(ok) = val {
-                                *p = Option::Some(ok);
-                            }
-                        }
-                        None => todo!(),
-                    }
-                    unset_thing(&mut self.going_to_lock);
-
-                    match p {
-                        Some(val) => *val,
-                        None => std::hint::unreachable_unchecked(),
-                    }
-                }
-            }
+        match self.page_table.get_unchecked_mut(addr) {
+            Some(val) => *val,
+            None => self.create_page(address),
         }
     }
 }
