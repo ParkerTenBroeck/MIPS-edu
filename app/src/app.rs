@@ -73,7 +73,7 @@ impl Application {
             egui::TextureFilter::LinearTiled,
         );
         let cpu_virtual_keyboard = Arc::new(Mutex::new(KeyboardMemory::new()));
-        let cpu = MipsCpu::new(ExternalHandler::new(
+        let cpu = MipsCpu::new_interface(ExternalHandler::new(
             access_info.clone(),
             cpu_screen_texture.clone(),
             cpu_virtual_keyboard.clone(),

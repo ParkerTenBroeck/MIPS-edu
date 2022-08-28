@@ -302,17 +302,12 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
 }
 
 //-------------------------------------------------------- co processors
+
+#[derive(Default)]
 pub struct CP0 {
     _registers: [u32; 32],
 }
 
-impl Default for CP0 {
-    fn default() -> Self {
-        CP0 {
-            _registers: [0; 32],
-        }
-    }
-}
 #[repr(C)]
 pub union CP1Reg {
     pub single: [f32; 32],
@@ -340,7 +335,7 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     _cp1: CP1,
     lo: u32,
     hi: u32,
-    i_check: bool,
+    check: bool,
     running: bool,
     finished: bool,
     is_paused: bool,
@@ -412,6 +407,7 @@ pub unsafe trait CpuExternalHandler: Sync + Send + Sized + 'static {
     fn cpu_stop(&mut self) {}
 }
 
+#[derive(Default)]
 pub struct DefaultExternalHandler {}
 
 impl DefaultExternalHandler {
@@ -421,12 +417,6 @@ impl DefaultExternalHandler {
 
     fn opcode(cpu: &mut MipsCpu<Self>) -> u32 {
         unsafe { cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4)) }
-    }
-}
-
-impl Default for DefaultExternalHandler {
-    fn default() -> Self {
-        Self {}
     }
 }
 
@@ -465,7 +455,7 @@ unsafe impl CpuExternalHandler for DefaultExternalHandler {
                     Err(_) => match string.parse::<u32>() {
                         Ok(val) => cpu.reg[2] = val,
                         Err(_) => {
-                            cpu.system_call_error(call_id, 0, "unable to parse integer".into());
+                            cpu.system_call_error(call_id, 0, "unable to parse integer");
                         }
                     },
                 }
@@ -478,8 +468,8 @@ unsafe impl CpuExternalHandler for DefaultExternalHandler {
             102 => {
                 let mut string = String::new();
                 let _ = std::io::stdin().read_line(&mut string);
-                string = string.replace("\n", "");
-                string = string.replace("\r", "");
+                string = string.replace('\n', "");
+                string = string.replace('\r', "");
                 if string.len() != 1 {
                     cpu.reg[2] = string.chars().next().unwrap() as u32;
                 } else {
@@ -574,7 +564,7 @@ impl<T: CpuExternalHandler> Drop for MipsCpu<T> {
 
 impl<T: CpuExternalHandler> MipsCpu<T> {
     #[allow(unused)]
-    pub fn new(handler: T) -> EmulatorInterface<T> {
+    pub fn new_interface(handler: T) -> EmulatorInterface<T> {
         let mut tmp = MipsCpu {
             //instructions_ran: 0,
             pc: 0,
@@ -583,7 +573,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             _cp1: CP1::default(),
             lo: 0,
             hi: 0,
-            i_check: !false,
+            check: false,
             running: false,
             finished: true,
             paused: 0.into(),
@@ -598,7 +588,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         EmulatorInterface::new(tmp)
     }
 
-    unsafe fn into_listener(&mut self) -> &'static mut (dyn PagePoolListener + Sync + Send) {
+    unsafe fn ref_into_listener(&mut self) -> &'static mut (dyn PagePoolListener + Sync + Send) {
         let test: &mut dyn PagePoolListener = self;
         std::mem::transmute(test)
     }
@@ -651,7 +641,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     pub fn stop(&mut self) {
         unsafe {
             core::ptr::write_volatile(&mut self.running, false);
-            core::ptr::write_volatile(&mut self.i_check, !true);
+            core::ptr::write_volatile(&mut self.check, true);
         }
     }
 
@@ -681,8 +671,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         while unsafe {
-            core::ptr::write_volatile(&mut self.i_check, !true);
-            !(self.is_paused() || !self.is_running())
+            core::ptr::write_volatile(&mut self.check, true);
+            !self.is_paused() && self.is_running()
         } {
             std::hint::spin_loop();
         }
@@ -692,7 +682,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.paused
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         while unsafe {
-            core::ptr::write_volatile(&mut self.i_check, !true);
+            core::ptr::write_volatile(&mut self.check, true);
             !(self.is_paused() || self.is_within_memory_event() || !self.is_running())
         } {
             std::hint::spin_loop();
@@ -709,7 +699,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     pub fn run_panic(&mut self) {
         self.running = false;
         self.finished = true;
-        self.i_check = !false;
+        self.check = false;
         self.paused.store(0, std::sync::atomic::Ordering::Relaxed);
         self.is_paused = true;
         self.clear();
@@ -790,7 +780,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         }
         self.running = false;
         self.finished = false;
-        self.i_check = !true;
+        self.check = true;
 
         let _handle = std::thread::Builder::new()
             .stack_size(32 * 1024 * 1024)
@@ -825,7 +815,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
 
         self.running = true;
         self.finished = false;
-        self.i_check = !true;
+        self.check = true;
 
         log::info!("CPU Started");
         //let start = std::time::SystemTime::now();
@@ -845,7 +835,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
 
         self.running = false;
         self.finished = false;
-        self.i_check = !true;
+        self.check = true;
 
         log::info!("CPU Step Started");
 
@@ -860,7 +850,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         //let result = std::panic::catch_unwind(||{
         //TODO ensure that the memory isnt currently locked beforehand
 
-        let listener = unsafe { self.into_listener() };
+        let listener = unsafe { self.ref_into_listener() };
         self.mem.add_listener(listener);
         self.mem
             .add_thing(unsafe { std::mem::transmute(&mut self.is_within_memory_event) });
@@ -1337,11 +1327,10 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
                             let reg_num = immediate_t!(op);
-                            let mut thing: [u8; 4] =
-                                unsafe { core::mem::transmute(self.reg[reg_num]) };
+                            let thing: &mut [u8; 4] =
+                                unsafe { core::mem::transmute(&mut self.reg[reg_num]) };
                             thing[3] = get_mem_alligned!(address, u8); //self.mem.get_u8(address);
                             thing[2] = get_mem_alligned!(address.wrapping_add(1), u8); //self.mem.get_u8(address + 1);
-                            self.reg[reg_num] = unsafe { core::mem::transmute(thing) };
                         }
                         0b100110 => {
                             //LWR
@@ -1349,11 +1338,10 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
                             let reg_num = immediate_t!(op);
-                            let mut thing: [u8; 4] =
-                                unsafe { core::mem::transmute(self.reg[reg_num]) };
+                            let thing: &mut [u8; 4] =
+                                unsafe { core::mem::transmute(&mut self.reg[reg_num]) };
                             thing[0] = get_mem_alligned!(address, u8); //self.mem.get_u8(address);
                             thing[1] = get_mem_alligned!(address.wrapping_sub(1), u8); //self.mem.get_u8(address.wrapping_sub(1));
-                            self.reg[reg_num] = unsafe { core::mem::transmute(thing) };
                         }
 
                         //save unaliged instructions
@@ -1363,7 +1351,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
                             let reg_num = immediate_t!(op);
-                            let thing: [u8; 4] = unsafe { core::mem::transmute(self.reg[reg_num]) };
+                            let thing: [u8; 4] = self.reg[reg_num].to_ne_bytes();
                             set_mem_alligned!(address, thing[3], u8);
                             set_mem_alligned!(address.wrapping_add(1), thing[2], u8);
                         }
@@ -1373,7 +1361,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
                             let reg_num = immediate_t!(op);
-                            let thing: [u8; 4] = unsafe { core::mem::transmute(self.reg[reg_num]) };
+                            let thing: [u8; 4] = self.reg[reg_num].to_ne_bytes();
 
                             set_mem_alligned!(address, thing[0], u8);
                             set_mem_alligned!(address.wrapping_sub(1), thing[1], u8);
@@ -1475,9 +1463,9 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 }
                 //self.run_opcode(op);
 
-                self.i_check
+                !self.check
             } {}
-            self.i_check = !false;
+            self.check = false;
 
             //TODO clear paused state and check states when CPU stops running
             self.running //do while self.running

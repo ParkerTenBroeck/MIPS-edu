@@ -15,6 +15,12 @@ pub struct PrintVisitor {
     indent: usize,
 }
 
+impl Default for PrintVisitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PrintVisitor {
     pub fn new() -> Self {
         PrintVisitor { indent: 0 }
@@ -37,7 +43,7 @@ impl Visitor for PrintVisitor {
         println!("Visited Function Definition");
         self.visit_terminal(&node.ident);
         for i in node.statements.iter() {
-            i.accept(Box::new(self));
+            i.accept(self);
         }
     }
     fn visit_assignment(&mut self, node: &Assignment) {
@@ -47,16 +53,16 @@ impl Visitor for PrintVisitor {
 
         self.visit_terminal(&node.ident);
         self.visit_terminal(&node.operator);
-        node.right_side.accept(Box::new(self));
+        node.right_side.accept(self);
         self.indent -= 1;
     }
     fn visit_binary_op(&mut self, node: &BinaryOperator) {
         self.print_indent();
         self.indent += 1;
         println!("Visited Binary");
-        node.left_size.accept(Box::new(self));
+        node.left_size.accept(self);
         self.visit_terminal(&node.operator);
-        node.right_size.accept(Box::new(self));
+        node.right_size.accept(self);
         self.indent -= 1;
     }
     fn visit_unary_op(&mut self, node: &UnaryOperator) {
@@ -64,7 +70,7 @@ impl Visitor for PrintVisitor {
         self.indent += 1;
         println!("Visited Unary");
         self.visit_terminal(&node.operator);
-        node.expression.accept(Box::new(self));
+        node.expression.accept(self);
         self.indent -= 1;
     }
     fn visit_terminal(&mut self, terminal: &Token) {
@@ -78,7 +84,7 @@ impl Visitor for PrintVisitor {
 }
 
 pub trait TreeNode: Debug + Display {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, visitor: &mut dyn Visitor) {
         visitor.visit_unknown();
     }
 }
@@ -87,7 +93,7 @@ pub trait TreeNode: Debug + Display {
 pub struct Program {}
 
 impl TreeNode for Program {
-    fn accept(&self, _visitor: Box<&mut dyn Visitor>) {}
+    fn accept(&self, _visitor: &mut dyn Visitor) {}
 }
 
 impl Display for Program {
@@ -109,7 +115,7 @@ impl FunctionDef {
 }
 
 impl TreeNode for FunctionDef {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, visitor: &mut dyn Visitor) {
         visitor.visit_function_def(self);
     }
 }
@@ -143,7 +149,7 @@ impl Display for UnaryOperator {
 }
 
 impl TreeNode for UnaryOperator {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, visitor: &mut dyn Visitor) {
         visitor.visit_unary_op(self);
     }
 }
@@ -190,7 +196,7 @@ impl Display for BinaryOperator {
 }
 
 impl TreeNode for BinaryOperator {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, visitor: &mut dyn Visitor) {
         visitor.visit_binary_op(self);
     }
 }
@@ -205,6 +211,7 @@ pub struct Assignment {
 }
 
 impl Assignment {
+    #[allow(clippy::self_named_constructors)]
     pub fn assignment(ident: Token, operator: Token, right_side: Box<dyn TreeNode>) -> Self {
         Assignment {
             ident,
@@ -221,7 +228,7 @@ impl Display for Assignment {
 }
 
 impl TreeNode for Assignment {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, visitor: &mut dyn Visitor) {
         visitor.visit_assignment(self);
     }
 }
@@ -253,7 +260,7 @@ impl Display for Terminal {
 }
 
 impl TreeNode for Terminal {
-    fn accept(&self, visitor: Box<&mut dyn Visitor>) {
+    fn accept(&self, visitor: &mut dyn Visitor) {
         visitor.visit_terminal(&self.constant);
     }
 }

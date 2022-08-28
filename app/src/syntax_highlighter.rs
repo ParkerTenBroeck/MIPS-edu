@@ -235,7 +235,7 @@ impl Highlighter {
         let mut job = LayoutJob::default();
         use clike::parsing_lexer::tokenizer::{TokenType, Tokenizer};
         let mut tokenizer = HighlighterTokenizer::new(
-            Tokenizer::from_str(text).ident_mode(IdentifierMode::Unicode),
+            Tokenizer::new_from_str(text).ident_mode(IdentifierMode::Unicode),
         );
 
         loop {

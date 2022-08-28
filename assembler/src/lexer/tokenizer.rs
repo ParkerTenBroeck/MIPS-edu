@@ -184,7 +184,7 @@ enum State {
     Whitespace,
     Backslash,
 
-    EOF,
+    Eof,
 }
 
 impl Iterator for Tokenizer<'_> {
@@ -193,7 +193,7 @@ impl Iterator for Tokenizer<'_> {
     fn next(&mut self) -> TokenizerItem {
         loop {
             match (&self.state, self.c) {
-                (State::EOF, '\0') => {
+                (State::Eof, '\0') => {
                     return Option::None;
                 }
                 (State::Default, '\0') => {}
@@ -240,7 +240,7 @@ impl Iterator for Tokenizer<'_> {
                     State::Default => {
                         match self.c {
                             '\0' => {
-                                self.state = State::EOF;
+                                self.state = State::Eof;
                             }
 
                             ' ' | '\t' | '\r' => {
@@ -320,7 +320,7 @@ impl Iterator for Tokenizer<'_> {
                         '\n' => {
                             self.matching = true;
                             self.create_token(TokenType::Comment(
-                                self.curr_str().replacen(";", "", 1),
+                                self.curr_str().replacen(';', "", 1),
                             ));
                             self.state = State::Default;
                         }
@@ -359,14 +359,14 @@ impl Iterator for Tokenizer<'_> {
                                         //    self.state = State::Default;
                                         //}
                                         '#' => {
-                                            let ident = ident.replacen("#", "", 1);
+                                            let ident = ident.replacen('#', "", 1);
                                             self.new_token = self.create_token(
                                                 TokenType::PreProcessorStatement(ident),
                                             );
                                             self.state = State::Default;
                                         }
                                         '$' => {
-                                            let ident = ident.replacen("$", "", 1);
+                                            let ident = ident.replacen('$', "", 1);
                                             self.new_token =
                                                 self.create_identifier_or_keyword(ident); //self.create_token(TokenType::Identifier(ident.to_string()));
                                                                                           //self.new_token = self.create_token(TokenType::Identifier(ident));
@@ -595,15 +595,9 @@ impl Iterator for Tokenizer<'_> {
                             self.state = State::LineComment(true);
                         }
                     },
-                    State::Colon => match self.c {
-                        _ => self.default_reset(true, TokenType::Colon),
-                    },
-                    State::ShiftLeft => match self.c {
-                        _ => self.default_reset(true, TokenType::ShiftLeft),
-                    },
-                    State::ShiftRight => match self.c {
-                        _ => self.default_reset(true, TokenType::ShiftRight),
-                    },
+                    State::Colon => self.default_reset(true, TokenType::BitwiseXor),
+                    State::ShiftLeft => self.default_reset(true, TokenType::BitwiseXor),
+                    State::ShiftRight => self.default_reset(true, TokenType::BitwiseXor),
                     State::GreaterThan => match self.c {
                         '>' => self.state = State::ShiftRight,
                         '=' => self.default_reset(false, TokenType::GreaterThanEq),
@@ -618,26 +612,16 @@ impl Iterator for Tokenizer<'_> {
                         '=' => self.default_reset(false, TokenType::NotEquals),
                         _ => self.default_reset(true, TokenType::LogicalNot),
                     },
-                    State::Plus => match self.c {
-                        _ => self.default_reset(true, TokenType::Plus),
-                    },
-                    State::Minus => match self.c {
-                        _ => self.default_reset(true, TokenType::Minus),
-                    },
-                    State::Star => match self.c {
-                        _ => self.default_reset(true, TokenType::Star),
-                    },
+                    State::Plus => self.default_reset(true, TokenType::BitwiseXor),
+                    State::Minus => self.default_reset(true, TokenType::BitwiseXor),
+                    State::Star => self.default_reset(true, TokenType::BitwiseXor),
                     State::Div => match self.c {
                         '/' => self.state = State::LineComment(false),
                         '*' => self.state = State::BlockComment(0, 0),
                         _ => self.default_reset(true, TokenType::Slash),
                     },
-                    State::Mod => match self.c {
-                        _ => self.default_reset(true, TokenType::Percent),
-                    },
-                    State::Xor => match self.c {
-                        _ => self.default_reset(true, TokenType::BitwiseXor),
-                    },
+                    State::Mod => self.default_reset(true, TokenType::BitwiseXor),
+                    State::Xor => self.default_reset(true, TokenType::BitwiseXor),
                     State::Or => match self.c {
                         '|' => self.default_reset(false, TokenType::LogicalOr),
                         _ => self.default_reset(true, TokenType::BitwiseOr),
@@ -869,7 +853,7 @@ impl Iterator for Tokenizer<'_> {
                             self.state = State::Default;
                         }
                     },
-                    State::EOF => {}
+                    State::Eof => {}
                 }
                 match &self.new_token {
                     None => match self.state {
@@ -926,7 +910,7 @@ impl Iterator for Tokenizer<'_> {
 
 impl<'a> Tokenizer<'a> {
     #[allow(unused)]
-    pub fn from_string(data: &'a String) -> Tokenizer<'a> {
+    pub fn new_from_string(data: &'a String) -> Tokenizer<'a> {
         Tokenizer {
             bytes: data.as_bytes(),
             iterator: data.chars(),
@@ -954,7 +938,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     #[allow(unused)]
-    pub fn from_str(data: &'a str) -> Tokenizer<'a> {
+    pub fn new_from_str(data: &'a str) -> Tokenizer<'a> {
         Tokenizer {
             bytes: data.as_bytes(),
             iterator: data.chars(),
@@ -988,30 +972,23 @@ impl<'a> Tokenizer<'a> {
         self.is_ident_continue(self.c)
     }
     fn is_ident_start(&self, c: char) -> bool {
-        return match self.ident_mode {
-            IdentifierMode::Ascii => match c {
-                'A'..='Z' | 'a'..='z' | '_' | '.' | '?' => true,
-                _ => false,
-            },
+        match self.ident_mode {
+            IdentifierMode::Ascii => matches!(c, 'A'..='Z' | 'a'..='z' | '_' | '.' | '?'),
             IdentifierMode::Unicode => {
                 unicode_xid::UnicodeXID::is_xid_start(c) || c == '_' || c == '.' || c == '?'
             }
-        };
+        }
     }
     fn is_ident_continue(&self, c: char) -> bool {
-        return match self.ident_mode {
-            IdentifierMode::Ascii => match c {
-                '0'..='9' | 'A'..='Z' | 'a'..='z' | '_' | '$' | '#' | '@' | '~' | '.' | '?' => true,
-                _ => false,
-            },
+        match self.ident_mode {
+            IdentifierMode::Ascii => {
+                matches!(c, '0'..='9' | 'A'..='Z' | 'a'..='z' | '_' | '$' | '#' | '@' | '~' | '.' | '?')
+            }
             IdentifierMode::Unicode => {
                 unicode_xid::UnicodeXID::is_xid_continue(c)
-                    || match c {
-                        '_' | '$' | '#' | '@' | '~' | '.' | '?' => true,
-                        _ => false,
-                    }
+                    || matches!(c, '_' | '$' | '#' | '@' | '~' | '.' | '?')
             }
-        };
+        }
     }
 
     #[allow(unused)]
@@ -1114,14 +1091,13 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        num = num.replace("_", "");
+        num = num.replace(' ', "");
 
-        let base;
-        match prefix {
-            "0x" => base = 16,
-            "0b" => base = 2,
-            _ => base = 10,
-        }
+        let base = match prefix {
+            "0x" => 16,
+            "0b" => 2,
+            _ => 10,
+        };
 
         let t_type: Result<TokenType, String>;
 
@@ -1161,7 +1137,7 @@ impl<'a> Tokenizer<'a> {
             }
             (_, base) => {
                 if base == 10 {
-                    if num.contains("e") || num.contains("E") || num.contains(".") {
+                    if num.contains('e') || num.contains('E') || num.contains('.') {
                         parse_to_token!(f32, F32Literal)
                     } else {
                         parse_to_token_base!(i32, I32Literal, base)
@@ -1178,45 +1154,44 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn create_identifier_or_keyword(&self, ident: String) -> TokenizerItem {
-        let t_type: TokenType;
-        match ident.as_str() {
-            "true" => t_type = TokenType::BoolLiteral(true),
-            "false" => t_type = TokenType::BoolLiteral(false),
-            "0" => t_type = TokenType::Register(0),
-            "1" => t_type = TokenType::Register(1),
-            "2" => t_type = TokenType::Register(2),
-            "3" => t_type = TokenType::Register(3),
-            "4" => t_type = TokenType::Register(4),
-            "5" => t_type = TokenType::Register(5),
-            "6" => t_type = TokenType::Register(6),
-            "7" => t_type = TokenType::Register(7),
-            "8" => t_type = TokenType::Register(8),
-            "9" => t_type = TokenType::Register(9),
-            "10" => t_type = TokenType::Register(10),
-            "11" => t_type = TokenType::Register(11),
-            "12" => t_type = TokenType::Register(12),
-            "13" => t_type = TokenType::Register(13),
-            "14" => t_type = TokenType::Register(14),
-            "15" => t_type = TokenType::Register(15),
-            "16" => t_type = TokenType::Register(16),
-            "17" => t_type = TokenType::Register(17),
-            "18" => t_type = TokenType::Register(18),
-            "19" => t_type = TokenType::Register(19),
-            "20" => t_type = TokenType::Register(20),
-            "21" => t_type = TokenType::Register(21),
-            "22" => t_type = TokenType::Register(22),
-            "23" => t_type = TokenType::Register(23),
-            "24" => t_type = TokenType::Register(24),
-            "25" => t_type = TokenType::Register(25),
-            "26" => t_type = TokenType::Register(26),
-            "27" => t_type = TokenType::Register(27),
-            "28" => t_type = TokenType::Register(28),
-            "29" => t_type = TokenType::Register(29),
-            "30" => t_type = TokenType::Register(30),
-            "31" => t_type = TokenType::Register(31),
+        let t_type: TokenType = match ident.as_str() {
+            "true" => TokenType::BoolLiteral(true),
+            "false" => TokenType::BoolLiteral(false),
+            "0" => TokenType::Register(0),
+            "1" => TokenType::Register(1),
+            "2" => TokenType::Register(2),
+            "3" => TokenType::Register(3),
+            "4" => TokenType::Register(4),
+            "5" => TokenType::Register(5),
+            "6" => TokenType::Register(6),
+            "7" => TokenType::Register(7),
+            "8" => TokenType::Register(8),
+            "9" => TokenType::Register(9),
+            "10" => TokenType::Register(10),
+            "11" => TokenType::Register(11),
+            "12" => TokenType::Register(12),
+            "13" => TokenType::Register(13),
+            "14" => TokenType::Register(14),
+            "15" => TokenType::Register(15),
+            "16" => TokenType::Register(16),
+            "17" => TokenType::Register(17),
+            "18" => TokenType::Register(18),
+            "19" => TokenType::Register(19),
+            "20" => TokenType::Register(20),
+            "21" => TokenType::Register(21),
+            "22" => TokenType::Register(22),
+            "23" => TokenType::Register(23),
+            "24" => TokenType::Register(24),
+            "25" => TokenType::Register(25),
+            "26" => TokenType::Register(26),
+            "27" => TokenType::Register(27),
+            "28" => TokenType::Register(28),
+            "29" => TokenType::Register(29),
+            "30" => TokenType::Register(30),
+            "31" => TokenType::Register(31),
 
-            _ => t_type = TokenType::Identifier(ident),
-        }
+            _ => TokenType::Identifier(ident),
+        };
 
         self.create_token(t_type)
     }

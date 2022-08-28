@@ -66,10 +66,16 @@ pub struct GenericExternalElf<'a, ET> {
 }
 
 impl<'a, T: ExternalElfTrait> GenericExternalElf<'a, T> {
+    /// # Safety
+    ///
+    /// self must point to a valid elf file in memory
     pub unsafe fn elf_header_raw(&self) -> &T::ElfHeader {
         &*(self.data.as_ptr() as *const T::ElfHeader)
     }
 
+    /// # Safety
+    ///
+    /// self must point to a valid elf file in memory
     pub unsafe fn section_headers_raw(&'a self) -> &'a [T::SectionHeader] {
         let sh_off: usize = match self.elf_header().section_header_offset().try_into() {
             Ok(val) => val,
@@ -87,6 +93,9 @@ impl<'a, T: ExternalElfTrait> GenericExternalElf<'a, T> {
         core::slice::from_raw_parts(sh_ptr as *const T::SectionHeader, sh_num)
     }
 
+    /// # Safety
+    ///
+    /// self must point to a valid elf file in memory
     pub unsafe fn program_headers_raw(&'a self) -> &'a [T::ProgramHeader] {
         let ph_off: usize = match self.elf_header().program_header_offset().try_into() {
             Ok(val) => val,

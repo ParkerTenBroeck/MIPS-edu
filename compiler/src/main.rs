@@ -13,7 +13,7 @@ fn test_tokenizer() {
     use parsing_lexer::tokenizer::Tokenizer;
     let file = std::fs::read_to_string("res/tests/tokenizer_test.cl").unwrap();
 
-    let mut tokenizer = Tokenizer::from_string(&file).include_whitespace(true);
+    let mut tokenizer = Tokenizer::new_from_string(&file).include_whitespace(true);
     let t = tokenizer.tokenize();
     for t in t {
         println!("token: {:?} string: {:?}", t, tokenizer.str_from_token(&t));

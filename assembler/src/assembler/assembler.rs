@@ -58,10 +58,7 @@ impl Report {
         Report {
             r#type: ReportType::Tokenizer,
             message: error,
-            cause_area: match part {
-                Some(part) => Option::Some(PPArea::from_t_data(part)),
-                None => Option::None,
-            },
+            cause_area: part.map(PPArea::from_t_data),
             level: ReportLevel::Error,
         }
     }
@@ -110,13 +107,13 @@ impl Report {
                 let mut new_start_fake = old_start_fake;
                 let mut new_end = area.get_real_index() + area.get_real_size();
                 let mut new_start = area.get_real_index();
-                for char in (&file[area.get_real_index() + area.get_real_size()..]).chars() {
+                for char in (file[area.get_real_index() + area.get_real_size()..]).chars() {
                     if char == '\n' {
                         break;
                     }
                     new_end += char.len_utf8();
                 }
-                for char in (&file[..area.get_real_index()]).chars().rev() {
+                for char in (file[..area.get_real_index()]).chars().rev() {
                     if char == '\n' {
                         break;
                     }
@@ -280,10 +277,9 @@ impl AssemblerState {
         self.errors.push_back(Report::os_error(error.into()))
     }
     pub fn has_encountered_error(&self) -> bool {
-        self.errors.iter().any(|x| match x.level {
-            ReportLevel::Error => true,
-            _ => false,
-        })
+        self.errors
+            .iter()
+            .any(|x| matches!(x.level, ReportLevel::Error))
     }
 
     pub fn get_from_scope<'b>(&'b mut self, ident: &String) -> Option<&'b mut Define> {
@@ -339,6 +335,12 @@ use super::{
     preprocessor::{PPArea, PPToken, PreProcessedLine, PreProcessor},
     symbol::Symbol,
 };
+
+impl Default for Assembler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Assembler {
     pub fn new() -> Self {

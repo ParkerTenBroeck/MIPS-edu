@@ -1,8 +1,8 @@
 use std::fs::File;
 
-use self::assembler::{Assembler, AssemblerReport};
-
-pub mod assembler;
+#[allow(clippy::module_inception)]
+mod assembler;
+pub use assembler::*;
 pub mod preprocessor;
 pub mod symbol;
 

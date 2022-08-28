@@ -187,7 +187,7 @@ impl<'input> Iterator for HighlighterTokenizer<'input> {
                                     } else {
                                         let peek = self.err.front().unwrap();
 
-                                        let pos = get_pos(get_data(&peek), &val.0);
+                                        let pos = get_pos(get_data(peek), &val.0);
 
                                         //println!("{:?}", pos);
                                         match pos {

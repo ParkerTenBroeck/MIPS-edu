@@ -10,7 +10,7 @@ fn main() {
     // let test = test as *mut ();
     // let val = test;
 
-    let mut emulator = MipsCpu::new(DefaultExternalHandler::default());
+    let mut emulator = MipsCpu::new_interface(DefaultExternalHandler::default());
 
     println!("s to start CPU, r to reset CPU, h to halt CPU and e to exit");
     'main_loop: loop {

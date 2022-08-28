@@ -928,7 +928,7 @@ impl Iterator for Tokenizer<'_> {
 
 impl<'a> Tokenizer<'a> {
     #[allow(unused)]
-    pub fn from_string(data: &'a String) -> Tokenizer<'a> {
+    pub fn new_from_string(data: &'a String) -> Tokenizer<'a> {
         Tokenizer {
             bytes: data.as_bytes(),
             iterator: data.chars(),
@@ -956,7 +956,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     #[allow(unused)]
-    pub fn from_str(data: &'a str) -> Tokenizer<'a> {
+    pub fn new_from_str(data: &'a str) -> Tokenizer<'a> {
         Tokenizer {
             bytes: data.as_bytes(),
             iterator: data.chars(),

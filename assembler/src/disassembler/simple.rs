@@ -139,14 +139,14 @@ fn register_encoding(opcode: u32, _add: u32) -> String {
             if tce != 0 {
                 format!("syscall  {:#x}", tce)
             } else {
-                format!("syscall")
+                "syscall".into()
             }
         }
         0b001101 => {
             if tce != 0 {
                 format!("break    {:#x}", tce)
             } else {
-                format!("break")
+                "break".into()
             }
         }
         //conditional traps

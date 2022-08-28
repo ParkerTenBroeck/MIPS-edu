@@ -136,13 +136,13 @@ impl<'a, T: PrimInt + Unsigned> ExternalProgramHeaderWrapper<'a, T> {
         <R as super::ExternalElfTrait>::ProgramHeader: ExternalProgramHeaderTrait<T>,
     {
         unsafe {
-            match gen_elf.program_headers_raw().get(index) {
-                Some(program_header) => Option::Some(Self {
+            gen_elf
+                .program_headers_raw()
+                .get(index)
+                .map(|program_header| Self {
                     elf_header: gen_elf.elf_header_raw(),
                     program_header,
-                }),
-                None => Option::None,
-            }
+                })
         }
     }
 

@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::LinkedList, rc::Rc};
 
 use util::token::TokenData;
 
-use super::assembler::{Assembler, AssemblerState, FileInfo};
+use super::{Assembler, AssemblerState, FileInfo};
 
 //-------------------------------------------------------------------------------------------------------------
 
@@ -105,10 +105,10 @@ pub struct PreProcessor {
 }
 
 impl PreProcessor {
-    pub fn new(assembler: &mut Assembler, input: String) -> Result<Self, ()> {
-        //let mut input_buf = String::new();
-        //let _size = input.read_to_string(&mut input_buf);
-
+    pub fn new(
+        assembler: &mut Assembler,
+        input: String,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let file = assembler.asm_state().add_file(input.clone());
         let file = match file {
             Result::Ok(val) => val,
@@ -116,7 +116,7 @@ impl PreProcessor {
                 assembler
                     .asm_state()
                     .report_os_error(format!("Failed to load file: {} ({})", input, err));
-                return Result::Err(());
+                return Result::Err(err);
             }
         };
         let mut token_strem = TokenStream::new(assembler.clone_asm_state());
@@ -151,7 +151,7 @@ impl PreProcessor {
                 Some(tok) => match &tok.tok {
                     TokenType::Identifier(ident) => {
                         let mut new_stream = Option::None;
-                        if let Option::Some(def) = self.asm_state().get_from_scope(&ident) {
+                        if let Option::Some(def) = self.asm_state().get_from_scope(ident) {
                             match def {
                                 super::assembler::Define::Replacement(replace) => {
                                     let mut stream = TokenVecStream::new(replace);
@@ -224,8 +224,8 @@ impl PreProcessor {
                     TokenType::Identifier(def_ident) => {
                         let mut values = Vec::new();
                         loop {
-                            match self.internal_next() {
-                                Option::Some(tok) => match &tok.tok {
+                            if let Option::Some(tok) = self.internal_next() {
+                                match &tok.tok {
                                     TokenType::Identifier(iden) => {
                                         if iden.eq(&def_ident) {
                                             self.asm_state().report_preprocessor_error("Cannot have identifiers with the same value as the defines identifier. This will create an infinite loop!", tok.location);
@@ -239,8 +239,7 @@ impl PreProcessor {
                                     _ => {
                                         values.push(tok);
                                     }
-                                },
-                                Option::None => {}
+                                }
                             }
                         }
                         if values.is_empty() {
@@ -267,10 +266,7 @@ impl PreProcessor {
                     );
                 }
             },
-            "undefine" => match self.internal_next() {
-                Some(_val) => {}
-                None => {}
-            },
+            "undefine" => if let Some(_val) = self.internal_next() {},
             _ => {
                 self.asm_state().report_preprocessor_error(
                     format!("Unknown preprocessor statement: {}", ident),
@@ -290,9 +286,9 @@ impl Iterator for PreProcessor {
             match self.internal_next() {
                 Some(PPToken { tok, location }) => {
                     match tok {
-                        TokenType::Identifier(_ident) => loop {
-                            match self.argument_next() {
-                                Option::Some(tok) => match tok.tok {
+                        TokenType::Identifier(_ident) => {
+                            while let Option::Some(tok) = self.argument_next() {
+                                match tok.tok {
                                     TokenType::NewLine => {
                                         break;
                                     }
@@ -300,12 +296,9 @@ impl Iterator for PreProcessor {
                                         format!("Unexpected token: {:?}", tok.tok),
                                         tok.location,
                                     ),
-                                },
-                                Option::None => {
-                                    break;
                                 }
                             }
-                        },
+                        }
                         TokenType::PreProcessorStatement(ident) => {
                             self.accept_pre_processor_statement(&ident, location);
                         }
@@ -399,7 +392,7 @@ struct TokenVecStream {
 }
 
 impl TokenVecStream {
-    pub fn new(data: &Vec<PPToken>) -> Self {
+    pub fn new(data: &[PPToken]) -> Self {
         let mut tokens = Vec::new();
         for tok in data.iter().rev() {
             tokens.push(tok.clone());
@@ -442,7 +435,7 @@ impl FileStream {
         let str = file.1.data.as_str();
         let str: &'static str = unsafe { std::mem::transmute(str) };
 
-        let tokenizer = Tokenizer::<'static>::from_str(str)
+        let tokenizer = Tokenizer::<'static>::new_from_str(str)
             .include_comments(false)
             .include_documentation(false)
             .include_whitespace(false);
@@ -462,36 +455,27 @@ impl Iterator for FileStream {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.tokenizer.next() {
-                Some(tok) => {
-                    match tok {
-                        Ok(mut token) => {
-                            token.get_token_data_mut().file = Option::Some(self.file_id as u16);
+                Some(tok) => match tok {
+                    Ok(mut token) => {
+                        token.get_token_data_mut().file = Option::Some(self.file_id as u16);
 
-                            let location = match &self.parent {
-                                // Some(parent) => {
-                                //     let mut parent = parent.clone();
-                                //     parent.add_area(token.t_data);
-                                //     parent
-                                // },
-                                _ => PPArea::from_t_data(token.t_data),
-                            };
+                        let location = PPArea::from_t_data(token.t_data);
 
-                            return Option::Some(PPToken {
-                                tok: token.t_type,
-                                location,
-                            });
-                        }
-                        Err(mut err) => {
-                            match &mut err.part {
-                                Some(val) => {
-                                    val.file = Option::Some(self.file_id as u16);
-                                }
-                                None => {}
-                            }
-                            self.state.as_ref().borrow_mut().report_tokenizer_error(err);
-                        }
+                        return Option::Some(PPToken {
+                            tok: token.t_type,
+                            location,
+                        });
                     }
-                }
+                    Err(mut err) => {
+                        match &mut err.part {
+                            Some(val) => {
+                                val.file = Option::Some(self.file_id as u16);
+                            }
+                            None => {}
+                        }
+                        self.state.as_ref().borrow_mut().report_tokenizer_error(err);
+                    }
+                },
                 None => return Option::None,
             }
         }
