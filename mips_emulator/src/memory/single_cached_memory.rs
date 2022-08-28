@@ -55,9 +55,7 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory {
 
                 *tmp = Option::Some((page_id, page_ref));
                 match *tmp {
-                    Some((_page_id, page)) => {
-                        return page_pool!(self).create_controller_guard(page)
-                    }
+                    Some((_page_id, page)) => page_pool!(self).create_controller_guard(page),
                     None => std::hint::unreachable_unchecked(),
                 }
             }
@@ -94,7 +92,7 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedMemory {
     }
 }
 
-impl<'a> MemoryDefaultAccess<'a, PageGuard<'a>> for SingleCachedMemory {}
+unsafe impl<'a> MemoryDefaultAccess<'a, PageGuard<'a>> for SingleCachedMemory {}
 
 impl SingleCachedMemory {
     pub fn get_page_pool(&mut self) -> &mut PagePoolNotifier {

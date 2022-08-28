@@ -11,7 +11,7 @@ pub mod syntax_highlighter;
 pub mod tabs;
 pub mod util;
 
-pub use app::Application;
+pub use crate::app::Application;
 
 // ----------------------------------------------------------------------------
 // When compiling for web:

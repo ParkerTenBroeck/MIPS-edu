@@ -115,8 +115,8 @@ impl<'a, T: ExternalElfTrait> GenericExternalElf<'a, T> {
     }
 }
 
-pub fn from_bytes<'a>(
-    buf: &'a [u8],
+pub fn from_bytes(
+    buf: &[u8],
 ) -> TernaryResult<GenericExternalElf<ExternalElf32>, GenericExternalElf<ExternalElf64>, ()> {
     match buf.get(0x04) {
         Option::Some(val) => match val {

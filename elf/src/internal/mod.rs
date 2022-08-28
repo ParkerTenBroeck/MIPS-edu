@@ -1,18 +1,11 @@
-use self::{
-    header::ElfHeader,
-    program::{InternalProgramHeader, ProgramHeaderType},
-    section::{
-        section_util::{SectionFlags, SectionType},
-        InternalSectionHeader,
-    },
-};
+use self::header::ElfHeader;
 
 pub mod header;
 pub mod program;
 pub mod section;
 
 pub struct InternalElf {
-    header: ElfHeader,
+    pub(crate) _header: ElfHeader,
 }
 
 // pub fn ELF_TBSS_SPECIAL(sectionHeader: InternalSectionHeader, segment: InternalProgramHeader) -> bool{

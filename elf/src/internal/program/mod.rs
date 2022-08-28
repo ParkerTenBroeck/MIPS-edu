@@ -1,10 +1,10 @@
 pub struct InternalProgramHeader {
-    pub(crate) p_type: ProgramHeaderType,
-    pub(crate) flags: ProgramHeaderFlags,
-    pub(crate) virtual_offset: u128,
-    pub(crate) physical_address_padding: u128,
-    pub(crate) idk_yet: u128,
-    pub(crate) memory_size: u128,
+    pub(crate) _p_type: ProgramHeaderType,
+    pub(crate) _flags: ProgramHeaderFlags,
+    pub(crate) _virtual_offset: u128,
+    pub(crate) _physical_address_padding: u128,
+    pub(crate) _idk_yet: u128,
+    pub(crate) _memory_size: u128,
 }
 
 //----------------------------------------------------------------------------------
@@ -58,9 +58,9 @@ impl ProgramHeaderType {
     }
 }
 
-impl Into<u32> for ProgramHeaderType {
-    fn into(self) -> u32 {
-        num_traits::ToPrimitive::to_u32(&self).unwrap()
+impl From<ProgramHeaderType> for u32 {
+    fn from(val: ProgramHeaderType) -> u32 {
+        num_traits::ToPrimitive::to_u32(&val).unwrap()
     }
 }
 

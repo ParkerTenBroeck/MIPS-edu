@@ -4,12 +4,12 @@ use self::section_util::*;
 use crate::external::{section::*, *};
 
 pub struct InternalSectionHeader {
-    name: String,
+    _name: String,
     sh_type: SectionType,
     flags: SectionFlags,
-    mem_addr: u128,
-    mem_addr_align: u128,
-    link: (),
+    _mem_addr: u128,
+    _mem_addr_align: u128,
+    _link: (),
 }
 
 impl InternalSectionHeader {
@@ -24,12 +24,12 @@ impl InternalSectionHeader {
 impl InternalSectionHeader {
     pub fn from_external<T: ExternalElfTrait>(external: &ExternalSectionHeaderWrapper<T>) -> Self {
         Self {
-            name: external.get_name().into(),
+            _name: external.get_name().into(),
             sh_type: SectionType::try_from(external.sh_type()).unwrap(),
             flags: unsafe { SectionFlags::from_bits_unchecked(external.flags().into() as u64) },
-            mem_addr: external.addr().into(),
-            mem_addr_align: external.addralign().into(),
-            link: (),
+            _mem_addr: external.addr().into(),
+            _mem_addr_align: external.addralign().into(),
+            _link: (),
         }
     }
 }

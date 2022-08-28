@@ -77,9 +77,9 @@ impl TryFrom<u32> for SectionType {
     }
 }
 
-impl Into<u32> for SectionType {
-    fn into(self) -> u32 {
-        match self {
+impl From<SectionType> for u32 {
+    fn from(val: SectionType) -> Self {
+        match val {
             SectionType::SHT_NULL => 0x0,
             SectionType::SHT_PROGBITS => 0x01,
             SectionType::SHT_SYMTAB => 0x02,
@@ -103,7 +103,6 @@ impl Into<u32> for SectionType {
         }
     }
 }
-
 //----------------------------------------------------------------------------
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive, num_derive::ToPrimitive)]

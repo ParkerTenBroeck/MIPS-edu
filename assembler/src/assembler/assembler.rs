@@ -37,7 +37,7 @@ struct Report {
     cause_area: Option<PPArea>,
 }
 #[derive(Debug)]
-enum ReportType {
+pub enum ReportType {
     Tokenizer,
     PreProcessor,
     Assembler,
@@ -46,7 +46,7 @@ enum ReportType {
 }
 
 #[derive(Debug)]
-enum ReportLevel {
+pub enum ReportLevel {
     Message,
     Warning,
     Error,
@@ -83,14 +83,15 @@ impl Report {
         }
     }
 
-    fn assembler_error_in_area(message: String, area: impl Into<PPArea>) -> Self {
-        Report {
-            r#type: ReportType::Assembler,
-            message,
-            cause_area: Option::Some(area.into()),
-            level: ReportLevel::Error,
-        }
-    }
+    // fn assembler_error_in_area(message: String, area: impl Into<PPArea>) -> Self {
+    //     Report {
+    //         r#type: ReportType::Assembler,
+    //         message,
+    //         cause_area: Option::Some(area.into()),
+    //         level: ReportLevel::Error,
+    //     }
+    // }
+
     fn os_error(message: String) -> Self {
         Report {
             r#type: ReportType::OS,

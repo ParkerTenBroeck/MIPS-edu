@@ -23,23 +23,23 @@ impl Page {
 }
 
 pub trait PageImpl {
-    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE];
+    unsafe fn page_raw(&mut self) -> *mut [u8; SEG_SIZE];
 }
 
 impl PageImpl for *mut Page {
-    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+    unsafe fn page_raw(&mut self) -> *mut [u8; SEG_SIZE] {
         &mut (**self).page
     }
 }
 
 impl PageImpl for NonNull<Page> {
-    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+    unsafe fn page_raw(&mut self) -> *mut [u8; SEG_SIZE] {
         &mut self.as_mut().page
     }
 }
 
 impl PageImpl for &mut Page {
-    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+    unsafe fn page_raw(&mut self) -> *mut [u8; SEG_SIZE] {
         &mut self.page
     }
 }
@@ -61,7 +61,7 @@ pub trait PagePoolListener {
 pub type PageGuard<'a> = ControllerGuard<'a, NonNull<Page>>;
 
 impl<'a> PageImpl for PageGuard<'a> {
-    unsafe fn page(&mut self) -> *mut [u8; SEG_SIZE] {
+    unsafe fn page_raw(&mut self) -> *mut [u8; SEG_SIZE] {
         &mut self.as_mut().page
     }
 }
@@ -439,7 +439,7 @@ macro_rules! get_mem_alligned {
         #[inline(always)]
         unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type {
             (core::mem::transmute::<&u8, &$fn_type>(
-                (*self.get_or_make_page(address).page())
+                (*self.get_or_make_page(address).page_raw())
                     .get_unchecked_mut((address & 0xFFFF) as usize),
             ))
             .to_be()
@@ -473,7 +473,7 @@ macro_rules! set_mem_alligned {
         #[inline(always)]
         unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) {
             (*core::mem::transmute::<&mut u8, &mut $fn_type>(
-                (*self.get_or_make_page(address).page())
+                (*self.get_or_make_page(address).page_raw())
                     .get_unchecked_mut((address & 0xFFFF) as usize),
             )) = data.to_be();
         }
@@ -515,7 +515,7 @@ macro_rules! get_mem_alligned_o {
                             &mut [$fn_type;
                                      crate::memory::page_pool::SEG_SIZE
                                          / mem::size_of::<$fn_type>()],
-                        >(&mut *val.page())[tmp])
+                        >(&mut *val.page_raw())[tmp])
                             .to_be(),
                     );
                 }
@@ -570,7 +570,7 @@ macro_rules! set_mem_alligned_o {
                         &mut [u8; crate::memory::page_pool::SEG_SIZE],
                         &mut [$fn_type;
                                  crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()],
-                    >(&mut *val.page())[tmp] = data.to_be();
+                    >(&mut *val.page_raw())[tmp] = data.to_be();
 
                     return Result::Ok(());
                 }
@@ -627,7 +627,7 @@ where
     }
 
     unsafe fn get_or_make_mut_ptr_to_address(&'a mut self, address: u32) -> *mut u8 {
-        &mut (*self.get_or_make_page(address).page())[(address & 0xFFFF) as usize]
+        &mut (*self.get_or_make_page(address).page_raw())[(address & 0xFFFF) as usize]
     }
 
     unsafe fn copy_into(&'a mut self, address: u32, data: &[u8], start: usize, end: usize) {
@@ -649,7 +649,7 @@ where
             }
             match &mut tmp {
                 Some(val) => {
-                    (*val.page())[(im & 0xFFFF) as usize] = data[id];
+                    (*val.page_raw())[(im & 0xFFFF) as usize] = data[id];
                 }
                 None => panic!(),
             }
@@ -658,7 +658,7 @@ where
     }
 }
 
-pub trait MemoryDefaultAccess<'a, P>
+pub unsafe trait MemoryDefaultAccess<'a, P>
 where
     P: PageImpl,
     Self: MemoryDefault<'a, P>,

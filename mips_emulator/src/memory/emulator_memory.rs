@@ -106,7 +106,7 @@ impl<'a> super::page_pool::MemoryDefault<'a, NonNull<Page>> for Memory {
     }
 }
 
-impl<'a> super::page_pool::MemoryDefaultAccess<'a, NonNull<Page>> for Memory {}
+unsafe impl<'a> super::page_pool::MemoryDefaultAccess<'a, NonNull<Page>> for Memory {}
 
 #[allow(dead_code)]
 impl Memory {

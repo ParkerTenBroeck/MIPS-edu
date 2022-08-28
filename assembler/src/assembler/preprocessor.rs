@@ -268,7 +268,7 @@ impl PreProcessor {
                 }
             },
             "undefine" => match self.internal_next() {
-                Some(val) => {}
+                Some(_val) => {}
                 None => {}
             },
             _ => {

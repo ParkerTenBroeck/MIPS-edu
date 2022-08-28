@@ -1,13 +1,8 @@
 use core::panic;
 use std::{
-    cell::UnsafeCell,
     panic::AssertUnwindSafe,
     pin::Pin,
-    ptr::NonNull,
-    sync::{
-        atomic::{AtomicU8, AtomicUsize},
-        Arc, Mutex,
-    },
+    sync::{atomic::AtomicUsize, Arc, Mutex},
     time::Duration,
 };
 
@@ -17,7 +12,6 @@ use crate::memory::{
         MemoryDefault, MemoryDefaultAccess, PagePoolController, PagePoolHolder, PagePoolListener,
         PagePoolRef,
     },
-    single_cached_memory::SingleCachedMemory,
 };
 
 //macros
@@ -97,32 +91,32 @@ macro_rules! register_a {
 }
 
 //Co processor macros
-macro_rules! cop1_function {
-    ($expr:expr) => {
-        ($expr as u32) & 0b111111
-    };
-}
+// macro_rules! cop1_function {
+//     ($expr:expr) => {
+//         ($expr as u32) & 0b111111
+//     };
+// }
 
-macro_rules! cop1_fd {
-    ($expr:expr) => {
-        (($expr as u32) >> 6) & 0b11111
-    };
-}
-macro_rules! cop1_fs {
-    ($expr:expr) => {
-        (($expr as u32) >> 11) & 0b11111
-    };
-}
-macro_rules! cop1_ft {
-    ($expr:expr) => {
-        (($expr as u32) >> 16) & 0b11111
-    };
-}
-macro_rules! cop1_fmt {
-    ($expr:expr) => {
-        (($expr as u32) >> 21) & 0b11111
-    };
-}
+// macro_rules! cop1_fd {
+//     ($expr:expr) => {
+//         (($expr as u32) >> 6) & 0b11111
+//     };
+// }
+// macro_rules! cop1_fs {
+//     ($expr:expr) => {
+//         (($expr as u32) >> 11) & 0b11111
+//     };
+// }
+// macro_rules! cop1_ft {
+//     ($expr:expr) => {
+//         (($expr as u32) >> 16) & 0b11111
+//     };
+// }
+// macro_rules! cop1_fmt {
+//     ($expr:expr) => {
+//         (($expr as u32) >> 21) & 0b11111
+//     };
+// }
 
 //Macros
 pub struct EmulatorInterface<T: CpuExternalHandler> {
@@ -313,12 +307,14 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
 
 //-------------------------------------------------------- co processors
 pub struct CP0 {
-    registers: [u32; 32],
+    _registers: [u32; 32],
 }
 
 impl CP0 {
     pub fn new() -> Self {
-        CP0 { registers: [0; 32] }
+        CP0 {
+            _registers: [0; 32],
+        }
     }
 }
 #[repr(C)]
@@ -328,13 +324,13 @@ pub union CP1Reg {
 }
 
 pub struct CP1 {
-    registers: CP1Reg,
+    _registers: CP1Reg,
 }
 
 impl CP1 {
     pub fn new() -> Self {
         CP1 {
-            registers: CP1Reg { single: [0.0; 32] },
+            _registers: CP1Reg { single: [0.0; 32] },
         }
     }
 }
@@ -344,8 +340,8 @@ impl CP1 {
 pub struct MipsCpu<T: CpuExternalHandler> {
     pc: u32,
     reg: [u32; 32],
-    cp0: CP0,
-    cp1: CP1,
+    _cp0: CP0,
+    _cp1: CP1,
     lo: u32,
     hi: u32,
     i_check: bool,
@@ -355,7 +351,7 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     is_within_memory_event: bool,
     //instructions_ran: u64,
     paused: AtomicUsize,
-    inturupts: Mutex<Vec<()>>,
+    _inturupts: Mutex<Vec<()>>,
     dropped: bool,
     mem: PagePoolRef<Memory>,
     external_handler: T,
@@ -587,8 +583,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             //instructions_ran: 0,
             pc: 0,
             reg: [0; 32],
-            cp0: CP0::new(),
-            cp1: CP1::new(),
+            _cp0: CP0::new(),
+            _cp1: CP1::new(),
             lo: 0,
             hi: 0,
             i_check: !false,
@@ -599,7 +595,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             is_within_memory_event: false,
             mem: Memory::new(),
             external_handler: handler,
-            inturupts: Default::default(),
+            _inturupts: Default::default(),
             dropped: false,
         };
 

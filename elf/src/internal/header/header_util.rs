@@ -18,9 +18,9 @@ impl TryFrom<u8> for ElfClass {
     }
 }
 
-impl Into<u8> for ElfClass {
-    fn into(self) -> u8 {
-        match self {
+impl From<ElfClass> for u8 {
+    fn from(val: ElfClass) -> u8 {
+        match val {
             ElfClass::Elf32 => 1,
             ElfClass::Elf64 => 2,
         }
@@ -46,9 +46,9 @@ impl TryFrom<u8> for ElfEndian {
     }
 }
 
-impl Into<u8> for ElfEndian {
-    fn into(self) -> u8 {
-        num_traits::ToPrimitive::to_u8(&self).unwrap()
+impl From<ElfEndian> for u8 {
+    fn from(val: ElfEndian) -> u8 {
+        num_traits::ToPrimitive::to_u8(&val).unwrap()
     }
 }
 
@@ -103,9 +103,9 @@ impl TryFrom<u8> for ElfAbi {
     }
 }
 
-impl Into<u8> for ElfAbi {
-    fn into(self) -> u8 {
-        num_traits::ToPrimitive::to_u8(&self).unwrap()
+impl From<ElfAbi> for u8 {
+    fn from(val: ElfAbi) -> Self {
+        num_traits::ToPrimitive::to_u8(&val).unwrap()
     }
 }
 
@@ -229,9 +229,9 @@ impl TryFrom<u16> for ElfType {
     }
 }
 
-impl Into<u16> for ElfType {
-    fn into(self) -> u16 {
-        match self {
+impl From<ElfType> for u16 {
+    fn from(val: ElfType) -> Self {
+        match val {
             ElfType::ET_NONE => 0x00,
             ElfType::ET_REL => 0x01,
             ElfType::ET_EXEC => 0x02,
@@ -647,9 +647,9 @@ impl TryFrom<u16> for ElfMachine {
     }
 }
 
-impl Into<u16> for ElfMachine {
-    fn into(self) -> u16 {
-        num_traits::ToPrimitive::to_u16(&self).unwrap()
+impl From<ElfMachine> for u16 {
+    fn from(val: ElfMachine) -> Self {
+        num_traits::ToPrimitive::to_u16(&val).unwrap()
     }
 }
 //----------------------------------------------------------------------

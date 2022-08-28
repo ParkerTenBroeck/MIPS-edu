@@ -4,13 +4,13 @@ pub mod header_util;
 
 #[derive(Debug)]
 pub struct ElfHeader {
-    pub(crate) class: ElfClass,
-    pub(crate) endianness: ElfEndian,
-    pub(crate) abi: ElfAbi,
-    pub(crate) elftype: ElfType,
-    pub(crate) machine: ElfMachine,
-    pub(crate) entry: u128,
-    pub(crate) flags: u32,
+    pub(crate) _class: ElfClass,
+    pub(crate) _endianness: ElfEndian,
+    pub(crate) _abi: ElfAbi,
+    pub(crate) _elftype: ElfType,
+    pub(crate) _machine: ElfMachine,
+    pub(crate) _entry: u128,
+    pub(crate) _flags: u32,
 }
 
 impl ElfHeader {
@@ -18,13 +18,13 @@ impl ElfHeader {
         header: &impl crate::external::header::ExternalElfHeaderTrait<T>,
     ) -> Self {
         Self {
-            class: ElfClass::try_from(header.class()).unwrap(),
-            endianness: ElfEndian::try_from(header.endianness()).unwrap(),
-            abi: ElfAbi::try_from(header.abi()).unwrap(),
-            elftype: ElfType::try_from(header.elftype()).unwrap(),
-            machine: ElfMachine::try_from(header.machine()).unwrap(),
-            entry: header.entry_point().into(),
-            flags: header.flags(),
+            _class: ElfClass::try_from(header.class()).unwrap(),
+            _endianness: ElfEndian::try_from(header.endianness()).unwrap(),
+            _abi: ElfAbi::try_from(header.abi()).unwrap(),
+            _elftype: ElfType::try_from(header.elftype()).unwrap(),
+            _machine: ElfMachine::try_from(header.machine()).unwrap(),
+            _entry: header.entry_point().into(),
+            _flags: header.flags(),
         }
     }
 }

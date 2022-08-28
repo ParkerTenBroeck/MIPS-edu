@@ -4,6 +4,8 @@
 !readme.md
 !Cargo.toml
 !Cargo.lock
+!rust-toolchain.toml
+!verify.sh
 
 !/compiler/
 !/compiler/src**

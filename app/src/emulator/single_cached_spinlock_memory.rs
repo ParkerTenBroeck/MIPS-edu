@@ -87,7 +87,7 @@ impl<'a> MemoryDefault<'a, PageGuard<'a>> for SingleCachedPlatSpinMemory {
     }
 }
 
-impl<'a> MemoryDefaultAccess<'a, PageGuard<'a>> for SingleCachedPlatSpinMemory {}
+unsafe impl<'a> MemoryDefaultAccess<'a, PageGuard<'a>> for SingleCachedPlatSpinMemory {}
 
 impl SingleCachedPlatSpinMemory {
     pub fn get_page_pool(&mut self) -> &mut PagePoolNotifier {
