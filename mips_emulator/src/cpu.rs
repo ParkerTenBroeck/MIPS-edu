@@ -9,8 +9,8 @@ use std::{
 use crate::memory::{
     emulator_memory::Memory,
     page_pool::{
-        PagedMemoryInterface, MemoryDefaultAccess, PagePoolController, PagedMemoryImpl, PagePoolListener,
-        PagePoolRef,
+        MemoryDefaultAccess, PagePoolController, PagedMemoryImpl, PagedMemoryInterface,
+        SharedPagePoolMemory,
     },
 };
 
@@ -343,6 +343,26 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
     }
 }
 
+pub trait EmulatorPause: 'static {
+    /// # Safety
+    ///
+    /// Must call resume after
+    unsafe fn pause(&mut self);
+
+    /// # Safety
+    ///
+    /// Must call pause before
+    unsafe fn resume(&mut self);
+}
+impl<T: CpuExternalHandler> EmulatorPause for EmulatorInterface<T> {
+    unsafe fn pause(&mut self) {
+        (*(self.raw_cpu() as *mut MipsCpu<T>)).pause()
+    }
+    unsafe fn resume(&mut self) {
+        (*(self.raw_cpu() as *mut MipsCpu<T>)).resume()
+    }
+}
+
 //-------------------------------------------------------- co processors
 
 #[derive(Default)]
@@ -370,29 +390,30 @@ impl Default for CP1 {
 
 //-------------------------------------------------------- co processors
 #[repr(align(4096))]
+#[repr(C)]
 pub struct MipsCpu<T: CpuExternalHandler> {
     pc: u32,
     reg: [u32; 32],
-    _cp0: CP0,
-    _cp1: CP1,
     lo: u32,
     hi: u32,
     check: bool,
     running: bool,
     finished: bool,
     is_paused: bool,
-    is_within_memory_event: bool,
+    _cp0: CP0,
+    _cp1: CP1,
+
+    mem: SharedPagePoolMemory<Memory>,
     //instructions_ran: u64,
     paused: AtomicUsize,
     _inturupts: Mutex<Vec<()>>,
     dropped: bool,
-    mem: PagePoolRef<Memory>,
     external_handler: T,
 }
 
 impl<T: CpuExternalHandler> MipsCpu<T> {
     #[inline(always)]
-    pub fn mem(&mut self) -> &mut PagePoolRef<Memory> {
+    pub fn mem(&mut self) -> &mut SharedPagePoolMemory<Memory> {
         &mut self.mem
     }
     #[inline(always)]
@@ -589,17 +610,17 @@ unsafe impl CpuExternalHandler for DefaultExternalHandler {
     }
 }
 
-impl<T: CpuExternalHandler> PagePoolListener for MipsCpu<T> {
-    fn lock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
-        self.pause_exclude_memory_event();
-        Result::Ok(())
-    }
+// impl<T: CpuExternalHandler> PagePoolListener for MipsCpu<T> {
+//     fn lock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
+//         self.pause_exclude_memory_event();
+//         Result::Ok(())
+//     }
 
-    fn unlock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
-        self.resume();
-        Result::Ok(())
-    }
-}
+//     fn unlock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
+//         self.resume();
+//         Result::Ok(())
+//     }
+// }
 
 impl<T: CpuExternalHandler> Drop for MipsCpu<T> {
     fn drop(&mut self) {
@@ -624,25 +645,32 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             finished: true,
             paused: 0.into(),
             is_paused: true,
-            is_within_memory_event: false,
+            // is_within_memory_event: false,
             mem: Memory::new(),
             external_handler: handler,
             _inturupts: Default::default(),
             dropped: false,
         };
 
-        EmulatorInterface::new(tmp)
+        let mut interface = EmulatorInterface::new(tmp);
+
+        let clone = interface.clone();
+        interface.cpu_mut(|cpu| {
+            cpu.mem.set_emulator_pause(clone);
+        });
+
+        interface
     }
 
-    unsafe fn ref_into_listener(&mut self) -> &'static mut (dyn PagePoolListener + Sync + Send) {
-        let test: &mut dyn PagePoolListener = self;
-        std::mem::transmute(test)
-    }
+    // unsafe fn ref_into_listener(&mut self) -> &'static mut (dyn PagePoolListener + Sync + Send) {
+    //     let test: &mut dyn PagePoolListener = self;
+    //     std::mem::transmute(test)
+    // }
 
     #[allow(unused)]
     pub fn get_mem<M: PagedMemoryImpl + Default + Send + Sync + 'static>(
         &mut self,
-    ) -> PagePoolRef<M> {
+    ) -> SharedPagePoolMemory<M> {
         self.get_mem_controller()
             .lock()
             .unwrap()
@@ -679,9 +707,9 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         unsafe { *core::ptr::read_volatile(&&self.dropped) }
     }
 
-    fn is_within_memory_event(&self) -> bool {
-        unsafe { *core::ptr::read_volatile(&&self.is_within_memory_event) }
-    }
+    // fn is_within_memory_event(&self) -> bool {
+    //     unsafe { *core::ptr::read_volatile(&&self.is_within_memory_event) }
+    // }
 
     #[allow(unused)]
     pub fn stop(&mut self) {
@@ -724,16 +752,16 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         }
     }
 
-    fn pause_exclude_memory_event(&mut self) {
-        self.paused
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        while unsafe {
-            core::ptr::write_volatile(&mut self.check, true);
-            !(self.is_paused() || self.is_within_memory_event() || !self.is_running())
-        } {
-            std::hint::spin_loop();
-        }
-    }
+    // fn pause_exclude_memory_event(&mut self) {
+    //     self.paused
+    //         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    //     while unsafe {
+    //         core::ptr::write_volatile(&mut self.check, true);
+    //         !(self.is_paused() || self.is_within_memory_event() || !self.is_running())
+    //     } {
+    //         std::hint::spin_loop();
+    //     }
+    // }
 
     fn resume(&mut self) {
         if self.paused.load(std::sync::atomic::Ordering::Relaxed) > 0 {
@@ -895,11 +923,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     fn run(&mut self) {
         //let result = std::panic::catch_unwind(||{
         //TODO ensure that the memory isnt currently locked beforehand
-
-        let listener = unsafe { self.ref_into_listener() };
-        self.mem.add_listener(listener);
-        self.mem
-            .add_thing(unsafe { std::mem::transmute(&mut self.is_within_memory_event) });
 
         self.is_paused = false;
         'main_loop: while {
@@ -1519,8 +1542,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             self.running //do while self.running
         } {}
         self.finished = true;
-        self.mem.remove_listener();
-        self.mem.remove_thing();
 
         self.external_handler.cpu_stop();
     }

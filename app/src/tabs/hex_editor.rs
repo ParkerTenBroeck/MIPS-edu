@@ -7,13 +7,13 @@ use egui_dock::Tab;
 use mips_emulator::{
     cpu::EmulatorInterface,
     memory::{
-        page_pool::{MemoryDefaultAccess, PagePoolRef},
+        page_pool::{MemoryDefaultAccess, SharedPagePoolMemory},
         single_cached_memory::SingleCachedMemory,
     },
 };
 
 pub struct HexEditor {
-    mem: PagePoolRef<SingleCachedMemory>,
+    mem: SharedPagePoolMemory<SingleCachedMemory>,
     cpu: EmulatorInterface<ExternalHandler>,
     starting_offset: u32,
     cursor_offset: Option<(u32, bool)>,

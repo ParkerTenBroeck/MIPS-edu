@@ -2,58 +2,65 @@ use std::{error::Error, ptr::NonNull};
 
 //use crate::{set_mem_alligned, get_mem_alligned, set_mem_alligned_o, get_mem_alligned_o};
 
+use crate::cpu::EmulatorPause;
+
 use super::page_pool::{
-    Page, PagePool, PagePoolController, PagedMemoryImpl, PagePoolListener, PagePoolNotifier,
-    PagePoolRef, SEG_SIZE,
+    Page, PagePool, PagePoolController, PagedMemoryImpl, SharedPagePool, SharedPagePoolMemory,
+    SEG_SIZE,
 };
 
 //stupid workaround
 const INIT: Option<NonNull<Page>> = None;
 pub struct Memory {
-    pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
-    pub(crate) page_pool: Option<PagePoolNotifier>,
-    pub(crate) going_to_lock: Option<&'static mut bool>,
+    //pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
+    pub(crate) page_pool: Option<SharedPagePool>,
+    //pub(crate) going_to_lock: Option<&'static mut bool>,
     pub(crate) page_table: [Option<NonNull<Page>>; SEG_SIZE],
+    emulator: Option<Box<dyn EmulatorPause>>,
 }
 
 unsafe impl Sync for Memory {}
 unsafe impl Send for Memory {}
 
 impl PagedMemoryImpl for Memory {
-    fn init_notifier(&mut self, notifier: PagePoolNotifier) {
+    fn init_notifier(&mut self, notifier: SharedPagePool) {
         self.page_pool = Option::Some(notifier);
     }
 
-    fn lock(&mut self, initiator: bool, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
-        match &mut self.listener {
-            Some(val) => val.lock(initiator),
-            None => Result::Ok(()),
+    fn lock(&mut self, initiator: bool, _page_pool: &PagePool) -> Result<(), Box<dyn Error>> {
+        if !initiator {
+            unsafe {
+                self.emulator.as_mut().unwrap().pause();
+            }
         }
+        Result::Ok(())
     }
 
-    fn unlock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
+    fn unlock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>> {
         for page in self.page_table.iter_mut() {
             *page = Option::None;
         }
 
-        let pages = page_pool.pool.iter_mut();
-        let mut addresses = page_pool.address_mapping.iter();
-        for page in pages {
-            self.page_table[(*addresses.next().unwrap()) as usize] = Option::Some(page.into());
+        let pages = page_pool.pool.iter();
+        let addresses = page_pool.address_mapping.iter();
+        for (page, address) in pages.zip(addresses) {
+            self.page_table[*address as usize] = Option::Some(page.into());
         }
 
-        match &mut self.listener {
-            Some(val) => val.unlock(initiator),
-            None => Result::Ok(()),
+        if !initiator {
+            unsafe {
+                self.emulator.as_mut().unwrap().resume();
+            }
         }
+        Result::Ok(())
     }
 
-    fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier> {
+    fn get_notifier(&mut self) -> Option<&mut SharedPagePool> {
         self.page_pool.as_mut()
     }
 }
 
-impl Default for PagePoolRef<Memory> {
+impl Default for SharedPagePoolMemory<Memory> {
     fn default() -> Self {
         Memory::new()
     }
@@ -64,7 +71,7 @@ impl Memory {
     #[cold]
     unsafe fn create_page(&mut self, addr: u32) -> NonNull<Page> {
         let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
-        set_thing(&mut self.going_to_lock);
+        //set_thing(&mut self.going_to_lock);
         match &self.page_pool {
             Some(val) => {
                 let mut val = val.get_page_pool();
@@ -75,17 +82,20 @@ impl Memory {
             }
             None => todo!(),
         }
-        unset_thing(&mut self.going_to_lock);
+        //unset_thing(&mut self.going_to_lock);
 
         match p {
             Some(val) => *val,
             None => std::hint::unreachable_unchecked(),
         }
     }
+
+    pub fn set_emulator_pause(&mut self, pauser: impl EmulatorPause) {
+        self.emulator = Option::Some(Box::new(pauser));
+    }
 }
 
 impl<'a> super::page_pool::PagedMemoryInterface<'a> for Memory {
-
     type Page = NonNull<Page>;
 
     #[inline(always)]
@@ -110,16 +120,17 @@ unsafe impl<'a> super::page_pool::MemoryDefaultAccess<'a, NonNull<Page>> for Mem
 
 #[allow(dead_code)]
 impl Memory {
-    pub fn new() -> PagePoolRef<Self> {
+    pub fn new() -> SharedPagePoolMemory<Self> {
         let controller = PagePoolController::new();
         let mut lock = controller.lock();
         match lock.as_mut() {
             Ok(lock) => {
                 let mem = box Memory {
-                    going_to_lock: Option::None,
+                    //going_to_lock: Option::None,
                     page_pool: Option::None,
                     page_table: [INIT; SEG_SIZE],
-                    listener: Option::None,
+                    emulator: Option::None,
+                    //listener: Option::None,
                 };
                 lock.add_holder(mem)
             }
@@ -127,26 +138,26 @@ impl Memory {
         }
     }
 
-    pub fn add_thing(&mut self, thing: &'static mut bool) {
-        self.going_to_lock = Option::Some(thing);
-    }
-    pub fn remove_thing(&mut self) {
-        self.going_to_lock = Option::None;
-    }
+    // pub fn add_thing(&mut self, thing: &'static mut bool) {
+    //     self.going_to_lock = Option::Some(thing);
+    // }
+    // pub fn remove_thing(&mut self) {
+    //     self.going_to_lock = Option::None;
+    // }
 
-    pub fn add_listener(&mut self, listener: &'static mut (dyn PagePoolListener + Send + Sync)) {
-        self.listener = Option::Some(listener);
-    }
-    pub fn remove_listener(&mut self) {
-        self.listener = Option::None;
-    }
+    // pub fn add_listener(&mut self, listener: &'static mut (dyn PagePoolListener + Send + Sync)) {
+    //     self.listener = Option::Some(listener);
+    // }
+    // pub fn remove_listener(&mut self) {
+    //     self.listener = Option::None;
+    // }
 
     pub fn unload_page_at_address(&mut self, address: u32) {
         match &self.page_pool {
             Some(val) => {
-                set_thing(&mut self.going_to_lock);
+                //set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_page((address >> 16) as u16);
-                unset_thing(&mut self.going_to_lock);
+                //unset_thing(&mut self.going_to_lock);
                 self.page_table[(address >> 16) as usize] = Option::None;
             }
             None => todo!(),
@@ -155,31 +166,14 @@ impl Memory {
     pub fn unload_all_pages(&mut self) {
         match &self.page_pool {
             Some(val) => {
-                set_thing(&mut self.going_to_lock);
+                //set_thing(&mut self.going_to_lock);
                 let _ = val.get_page_pool().remove_all_pages();
-                unset_thing(&mut self.going_to_lock);
+                //unset_thing(&mut self.going_to_lock);
                 self.page_table.iter_mut().for_each(|page| {
                     *page = None;
                 });
             }
             None => todo!(),
         }
-    }
-}
-
-fn set_thing(thing: &mut Option<&'static mut bool>) {
-    match thing {
-        Some(some) => {
-            **some = true;
-        }
-        None => {}
-    }
-}
-fn unset_thing(thing: &mut Option<&'static mut bool>) {
-    match thing {
-        Some(some) => {
-            **some = false;
-        }
-        None => {}
     }
 }

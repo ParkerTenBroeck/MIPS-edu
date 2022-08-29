@@ -6,7 +6,7 @@ use std::{
 use eframe::epaint::{Color32, ColorImage};
 use mips_emulator::{
     cpu::{CpuExternalHandler, MipsCpu},
-    memory::page_pool::{PagedMemoryInterface, MemoryDefaultAccess},
+    memory::page_pool::{MemoryDefaultAccess, PagedMemoryInterface},
 };
 
 use crate::{

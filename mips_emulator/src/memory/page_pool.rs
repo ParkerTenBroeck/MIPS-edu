@@ -2,6 +2,7 @@ use std::{
     error::Error,
     fmt::Debug,
     mem,
+    num::NonZeroU64,
     ops::{Deref, DerefMut},
     ptr::NonNull,
     sync::{Arc, Mutex, MutexGuard, Weak},
@@ -23,6 +24,9 @@ impl Page {
 }
 
 pub trait PageImpl {
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive self
     unsafe fn page_raw(&mut self) -> *mut [u8; SEG_SIZE];
 }
 
@@ -44,16 +48,11 @@ impl PageImpl for &mut Page {
     }
 }
 
-pub trait PagedMemoryImpl {
-    fn init_notifier(&mut self, _notifier: PagePoolNotifier) {}
-    fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier>;
-    fn lock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
-    fn unlock(&mut self, initiator: bool, page_pool: &mut PagePool) -> Result<(), Box<dyn Error>>;
-}
-
-pub trait PagePoolListener {
-    fn lock(&mut self, initiator: bool) -> Result<(), Box<dyn Error>>;
-    fn unlock(&mut self, initiator: bool) -> Result<(), Box<dyn Error>>;
+pub trait PagedMemoryImpl: Sync + Send {
+    fn init_notifier(&mut self, _notifier: SharedPagePool) {}
+    fn get_notifier(&mut self) -> Option<&mut SharedPagePool>;
+    fn lock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
+    fn unlock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
 }
 
 //------------------------------------------------------------------------------------------------------
@@ -68,7 +67,7 @@ impl<'a> PageImpl for PageGuard<'a> {
 
 //------------------------------------------------------------------------------------------------------
 pub struct ControllerGuard<'a, T> {
-    _guard: NotifierGuard<'a>,
+    _guard: SharedPagePoolGuard<'a>,
     pub data: T,
 }
 impl<'a, T> std::ops::Deref for ControllerGuard<'a, T> {
@@ -86,37 +85,43 @@ impl<'a, T> std::ops::DerefMut for ControllerGuard<'a, T> {
 
 //------------------------------------------------------------------------------------------------------
 
-pub struct PagePoolNotifier {
+pub struct SharedPagePool {
     page_pool: Arc<Mutex<PagePoolController>>,
-    id: usize,
+    id: Option<NonZeroU64>,
 }
 
-impl PagePoolNotifier {
+unsafe impl Send for SharedPagePool {}
+
+unsafe impl Sync for SharedPagePool {}
+
+impl SharedPagePool {
+    pub fn lock(&mut self) -> MutexGuard<PagePoolController> {
+        let mut guard = self.page_pool.lock().unwrap();
+        guard.last_lock_id = self.id;
+        guard
+    }
+}
+
+impl SharedPagePool {
     pub unsafe fn get_raw_pool(&self) -> &Arc<Mutex<PagePoolController>> {
         &self.page_pool
     }
 
-    pub fn get_page_pool(&self) -> NotifierGuard {
+    pub fn get_page_pool(&self) -> SharedPagePoolGuard {
         let mut controller = self.page_pool.lock().unwrap();
         controller.last_lock_id = self.id;
-        NotifierGuard { guard: controller }
+
+        SharedPagePoolGuard { guard: controller }
     }
 
     pub fn clone_page_pool_mutex(&self) -> Arc<Mutex<PagePoolController>> {
         self.page_pool.clone()
     }
 
-    pub fn create_controller_guard<T>(&self, data: T) -> ControllerGuard<'_, T> {
-        ControllerGuard {
-            _guard: self.get_page_pool(),
-            data,
-        }
-    }
-
-    pub fn new_controller_guard<'a, T>(
-        guard: NotifierGuard<'a>,
+    pub fn new_controller_guard<T>(
+        guard: SharedPagePoolGuard<'_>,
         data: T,
-    ) -> ControllerGuard<'a, T> {
+    ) -> ControllerGuard<'_, T> {
         ControllerGuard {
             _guard: guard,
             data,
@@ -126,33 +131,33 @@ impl PagePoolNotifier {
 
 //------------------------------------------------------------------------------------------------------
 
-pub struct NotifierGuard<'a> {
+pub struct SharedPagePoolGuard<'a> {
     guard: MutexGuard<'a, PagePoolController>,
 }
 
-impl<'a> NotifierGuard<'a> {
+impl<'a> SharedPagePoolGuard<'a> {
     pub unsafe fn from_raw(
         mut guard: MutexGuard<'a, PagePoolController>,
-        notifier: &PagePoolNotifier,
+        notifier: &SharedPagePool,
     ) -> Self {
         guard.last_lock_id = notifier.id;
         Self { guard }
     }
 }
 
-impl<'a> Drop for NotifierGuard<'a> {
+impl<'a> Drop for SharedPagePoolGuard<'a> {
     fn drop(&mut self) {
-        self.guard.last_lock_id = usize::MAX;
+        self.guard.last_lock_id = None;
     }
 }
-impl<'a> Deref for NotifierGuard<'a> {
+impl<'a> Deref for SharedPagePoolGuard<'a> {
     type Target = MutexGuard<'a, PagePoolController>;
 
     fn deref(&self) -> &Self::Target {
         &self.guard
     }
 }
-impl<'a> DerefMut for NotifierGuard<'a> {
+impl<'a> DerefMut for SharedPagePoolGuard<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard
     }
@@ -160,44 +165,36 @@ impl<'a> DerefMut for NotifierGuard<'a> {
 
 //------------------------------------------------------------------------------------------------------
 
-pub struct PagePoolRef<T: PagedMemoryImpl + Send + Sync> {
+pub struct SharedPagePoolMemory<T: PagedMemoryImpl> {
     inner: NonNull<T>,
     page_pool: Arc<Mutex<PagePoolController>>,
-    id: usize,
 }
 
-unsafe impl<T: PagedMemoryImpl + Send + Sync> Send for PagePoolRef<T> {}
+unsafe impl<T: PagedMemoryImpl> Send for SharedPagePoolMemory<T> {}
 
-unsafe impl<T: PagedMemoryImpl + Send + Sync> Sync for PagePoolRef<T> {}
+unsafe impl<T: PagedMemoryImpl> Sync for SharedPagePoolMemory<T> {}
 
-impl<T: PagedMemoryImpl + Send + Sync> Drop for PagePoolRef<T> {
+impl<T: PagedMemoryImpl> Drop for SharedPagePoolMemory<T> {
     fn drop(&mut self) {
+        let addr = self.inner.as_ptr() as u64;
         self.page_pool
             .lock()
-            .as_mut()
             .unwrap()
-            .remove_holder(self.id);
+            .remove_holder(NonZeroU64::new(addr).unwrap());
     }
 }
 
-impl<T: PagedMemoryImpl + Send + Sync> PagePoolRef<T> {
-    fn get_inner_mut<'a>(&'a mut self) -> &'a mut T {
+impl<T: PagedMemoryImpl> SharedPagePoolMemory<T> {
+    fn get_inner_mut(&mut self) -> &mut T {
         unsafe { self.inner.as_mut() }
     }
 
-    fn get_inner<'a>(&'a self) -> &'a T {
+    fn get_inner(&self) -> &T {
         unsafe { self.inner.as_ref() }
-    }
-
-    pub fn get_page_pool(&self) -> PagePoolNotifier {
-        PagePoolNotifier {
-            page_pool: self.page_pool.to_owned(),
-            id: self.id,
-        }
     }
 }
 
-impl<T: PagedMemoryImpl + Send + Sync> Deref for PagePoolRef<T> {
+impl<T: PagedMemoryImpl + Send + Sync> Deref for SharedPagePoolMemory<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -205,7 +202,7 @@ impl<T: PagedMemoryImpl + Send + Sync> Deref for PagePoolRef<T> {
     }
 }
 
-impl<T: PagedMemoryImpl + Send + Sync> DerefMut for PagePoolRef<T> {
+impl<T: PagedMemoryImpl + Send + Sync> DerefMut for SharedPagePoolMemory<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.get_inner_mut()
     }
@@ -223,9 +220,9 @@ pub struct PagePool {
 
 pub struct PagePoolController {
     page_pool: PagePool,
-    holders: Vec<(usize, NonNull<dyn PagedMemoryImpl + Send + Sync>)>,
+    holders: Vec<NonNull<dyn PagedMemoryImpl + Send + Sync>>,
     myself: Weak<Mutex<PagePoolController>>,
-    last_lock_id: usize,
+    last_lock_id: Option<NonZeroU64>,
 }
 
 impl Debug for PagePoolController {
@@ -239,6 +236,11 @@ impl Debug for PagePoolController {
 
 unsafe impl Send for PagePoolController {}
 unsafe impl Sync for PagePoolController {}
+
+fn addr_of_trait_object(ptr: NonNull<dyn PagedMemoryImpl + Send + Sync>) -> NonZeroU64 {
+    let tmp = ptr.as_ptr().cast::<()>() as u64;
+    NonZeroU64::new(tmp).unwrap()
+}
 
 impl PagePoolController {
     pub fn new() -> Arc<Mutex<Self>> {
@@ -255,7 +257,7 @@ impl PagePoolController {
                         page_pool: PagePool::default(),
                         holders: Vec::new(),
                         myself: weak,
-                        last_lock_id: 0,
+                        last_lock_id: None,
                     });
                 }
                 Err(_err) => {
@@ -268,43 +270,41 @@ impl PagePoolController {
 
     pub fn add_holder<T: PagedMemoryImpl + Send + Sync + 'static>(
         &mut self,
-        holder: Box<T>,
-    ) -> PagePoolRef<T> {
-        let mut id: usize = 0;
+        paged_memory: Box<T>,
+    ) -> SharedPagePoolMemory<T> {
+        let mut ptr = NonNull::new(Box::into_raw(paged_memory)).unwrap();
 
-        for holder in &self.holders {
-            if holder.0 >= id {
-                id = holder.0 + 1;
-            }
-        }
+        let id = ptr.as_ptr() as u64;
+        let id = NonZeroU64::new(id);
 
-        let mut ptr = NonNull::new(Box::into_raw(holder)).unwrap();
+        self.holders.push(ptr);
 
-        self.holders.push((id, ptr));
-
-        let ppref = PagePoolRef {
+        let shared = SharedPagePoolMemory {
             inner: ptr,
             page_pool: self.myself.upgrade().unwrap(),
-            id,
         };
 
-        unsafe { ptr.as_mut() }.init_notifier(ppref.get_page_pool());
+        unsafe { ptr.as_mut() }.init_notifier(SharedPagePool {
+            page_pool: self.myself.upgrade().unwrap(),
+            id,
+        });
 
-        ppref
+        shared
     }
 
-    pub fn remove_holder(&mut self, id: usize) {
-        let index = self.holders.iter().position(|i| id == i.0);
+    pub fn remove_holder(&mut self, id: NonZeroU64) {
+        let index = self
+            .holders
+            .iter()
+            .position(|ptr| addr_of_trait_object(*ptr) == id);
         //self.holders.iter_mut().f
-        match index {
-            Some(index) => {
-                let item = self.holders.remove(index);
-                let item = item.1;
-                unsafe {
-                    item.as_ptr().drop_in_place();
-                }
+        if let Some(index) = index {
+            let item = self.holders.remove(index);
+            unsafe {
+                item.as_ptr().drop_in_place();
             }
-            None => {}
+        } else {
+            panic!()
         }
     }
 
@@ -313,9 +313,12 @@ impl PagePoolController {
         let mut err: bool = false;
 
         for holder in &mut self.holders {
-            let tmp = unsafe { holder.1.as_mut() };
+            let tmp = unsafe { holder.as_mut() };
 
-            match tmp.lock(holder.0 == self.last_lock_id, &mut self.page_pool) {
+            match tmp.lock(
+                Some(addr_of_trait_object(*holder)) == self.last_lock_id,
+                &self.page_pool,
+            ) {
                 Ok(_) => {}
                 Err(_err) => {
                     err = true;
@@ -333,8 +336,11 @@ impl PagePoolController {
     fn unlock(&mut self) -> Result<(), Box<dyn Error>> {
         let mut err: bool = false;
         for holder in &mut self.holders {
-            let tmp = unsafe { holder.1.as_mut() };
-            match tmp.unlock(holder.0 == self.last_lock_id, &mut self.page_pool) {
+            let tmp = unsafe { holder.as_mut() };
+            match tmp.unlock(
+                Some(addr_of_trait_object(*holder)) == self.last_lock_id,
+                &self.page_pool,
+            ) {
                 Ok(_) => {}
                 Err(_err) => {
                     err = true;
@@ -347,6 +353,11 @@ impl PagePoolController {
         Result::Ok(())
     }
 
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive this `SharedPagePool`.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls lock
     pub unsafe fn get_page(&mut self, addr: u16) -> Option<NonNull<Page>> {
         let thing = self
             .page_pool
@@ -360,8 +371,13 @@ impl PagePoolController {
         }
     }
 
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive this `SharedPagePool`.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls lock
     #[inline(never)]
-    pub fn create_page(&mut self, addr: u16) -> Result<NonNull<Page>, Box<dyn Error>> {
+    pub unsafe fn create_page(&mut self, addr: u16) -> Result<NonNull<Page>, Box<dyn Error>> {
         match self
             .page_pool
             .address_mapping
@@ -417,14 +433,11 @@ impl PagePoolController {
             .address_mapping
             .iter()
             .position(|i| *i == add);
-        match pos {
-            Some(add) => {
-                self.lock()?;
-                self.page_pool.address_mapping.remove(add);
-                self.page_pool.pool.remove(add);
-                self.unlock()?;
-            }
-            None => {}
+        if let Some(add) = pos {
+            self.lock()?;
+            self.page_pool.address_mapping.remove(add);
+            self.page_pool.pool.remove(add);
+            self.unlock()?;
         }
         Result::Ok(())
     }
@@ -436,6 +449,11 @@ impl PagePoolController {
 #[macro_export]
 macro_rules! get_mem_alligned {
     ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
         #[inline(always)]
         unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type {
             (core::mem::transmute::<&u8, &$fn_type>(
@@ -469,7 +487,11 @@ macro_rules! get_mem_alligned {
 macro_rules! set_mem_alligned {
     // Arguments are module name and function name of function to tests bench
     ($func_name:ident, $fn_type:ty) => {
-        // The macro will expand into the contents of this block.
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
         #[inline(always)]
         unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) {
             (*core::mem::transmute::<&mut u8, &mut $fn_type>(
@@ -503,6 +525,11 @@ macro_rules! set_mem_alligned {
 #[macro_export]
 macro_rules! get_mem_alligned_o {
     ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
         #[inline(always)]
         unsafe fn $func_name(&'a mut self, address: u32) -> Option<$fn_type> {
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
@@ -560,7 +587,11 @@ macro_rules! get_mem_alligned_o {
 macro_rules! set_mem_alligned_o {
     // Arguments are module name and function name of function to tests bench
     ($func_name:ident, $fn_type:ty) => {
-        // The macro will expand into the contents of this block.
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
         #[inline(always)]
         unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()> {
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
@@ -613,10 +644,8 @@ macro_rules! set_mem_alligned_o {
 
 //------------------------------------------------------------------------------------------------------
 
-pub trait PagedMemoryInterface<'a>: PagedMemoryImpl
-{
+pub trait PagedMemoryInterface<'a>: PagedMemoryImpl {
     type Page: PageImpl;
-
 
     unsafe fn get_or_make_page(&'a mut self, page: u32) -> Self::Page; //&mut Page;
     unsafe fn get_page(&'a mut self, page: u32) -> Option<Self::Page>; //Option<&mut Page>;
@@ -661,7 +690,7 @@ pub trait PagedMemoryInterface<'a>: PagedMemoryImpl
 }
 
 /// # Safety
-/// 
+///
 /// All methods in this trait are accessor methods to `PagedMemoryInterface`.
 /// Since `PagedMemoryInterface` is a shared between threads any data accessed to written through these methods can cause race conditions
 pub unsafe trait MemoryDefaultAccess<'a, P>

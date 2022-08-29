@@ -2,7 +2,7 @@ use std::fs::File;
 
 #[allow(clippy::module_inception)]
 mod assembler;
-pub use assembler::*;
+pub use self::assembler::*;
 pub mod preprocessor;
 pub mod symbol;
 

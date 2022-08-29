@@ -3,70 +3,42 @@ use std::{error::Error, ops::DerefMut, ptr::NonNull, sync::Mutex};
 //use crate::{set_mem_alligned, get_mem_alligned, get_mem_alligned_o, set_mem_alligned_o};
 
 use super::page_pool::{
-    PagedMemoryInterface, MemoryDefaultAccess, Page, PageGuard, PagePool, PagedMemoryImpl, PagePoolNotifier,
+    MemoryDefaultAccess, Page, PageGuard, PagePool, PagedMemoryImpl, PagedMemoryInterface,
+    SharedPagePool,
 };
 
 #[derive(Default)]
 pub struct SingleCachedMemory {
-    page_pool: Option<PagePoolNotifier>,
+    page_pool: Option<SharedPagePool>,
     cache: Mutex<Option<(u16, NonNull<Page>)>>,
 }
 
 unsafe impl Sync for SingleCachedMemory {}
 unsafe impl Send for SingleCachedMemory {}
 
-//pub type Ret<'a> = PageGuard<'a, Option<(u16, &'static mut Page)>>;
-
-macro_rules! page_pool {
-    // `()` indicates that the macro takes no argument.
-    ($func_name:ident) => {
-        // The macro will expand into the contents of this block.
-        match &mut $func_name.page_pool {
-            Option::Some(val) => val,
-            Option::None => panic!(),
-        }
-    };
-}
-
 impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
-
     type Page = PageGuard<'a>;
 
     unsafe fn get_or_make_page(&'a mut self, page_id: u32) -> PageGuard<'a> {
         let page_id = (page_id >> 16) as u16;
 
-        //let tmp: &'static mut Option<(u16, &'static mut Page)> = &mut self.cache;
+        let mut pool_guard = self.page_pool.as_mut().unwrap().get_page_pool();
 
-        //let mut guard = self.cache.lock().unwrap();
-        //let unsafe_guard = (&mut guard) as *mut MutexGuard<'_, Option<(u16, &'static mut Page)>>;
         if let Option::Some((page_id_cache, page)) = *self.cache.lock().unwrap() {
             if page_id == page_id_cache {
-                let tmp = page_pool!(self);
-                let tmp = tmp.create_controller_guard(page);
-                return tmp;
+                return SharedPagePool::new_controller_guard(pool_guard, page);
             }
         }
 
-        match &mut self.page_pool {
-            Some(val) => {
-                let page_ref = val.get_page_pool().create_page(page_id).unwrap();
+        let page_ref = pool_guard.create_page(page_id).unwrap();
 
-                let mut lock = self.cache.lock().unwrap();
-                let tmp = lock.deref_mut();
+        let mut lock = self.cache.lock().unwrap();
+        let tmp = lock.deref_mut();
 
-                // let mut t1 = val.get_page_pool();
-                // let t2 = t1.create_page(page_id);
-                // let tmp_pg = t2.unwrap();
-
-                *tmp = Option::Some((page_id, page_ref));
-                match *tmp {
-                    Some((_page_id, page)) => {
-                        page_pool!(self).create_controller_guard(page)
-                    },
-                    None => std::hint::unreachable_unchecked(),
-                }
-            }
-            None => panic!(),
+        *tmp = Option::Some((page_id, page_ref));
+        match *tmp {
+            Some((_page_id, page)) => SharedPagePool::new_controller_guard(pool_guard, page),
+            None => std::hint::unreachable_unchecked(),
         }
     }
 
@@ -74,27 +46,25 @@ impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
     unsafe fn get_page(&'a mut self, page_id: u32) -> Option<PageGuard<'a>> {
         let page_id = (page_id >> 16) as u16;
 
-        let mut page_pool = page_pool!(self).get_page_pool();
+        let mut pool_guard = self.page_pool.as_mut().unwrap().get_page_pool();
+
         if let Option::Some((page_id_cache, page)) = *self.cache.lock().unwrap() {
             if page_id == page_id_cache {
-                return Option::Some(PagePoolNotifier::new_controller_guard(page_pool, page));
+                return Option::Some(SharedPagePool::new_controller_guard(pool_guard, page));
             }
         }
 
-        let page_ref: Option<NonNull<Page>> = page_pool.get_page(page_id);
-        let mut lock = self.cache.lock().unwrap();
-        let tmp = lock.deref_mut();
+        let page = pool_guard.get_page(page_id);
 
-        if let Option::Some(page_ref) = page_ref {
-            *tmp = Option::Some((page_id, page_ref));
-            match *tmp {
-                Some((_page_id, page)) => {
-                    Option::Some(PagePoolNotifier::new_controller_guard(page_pool, page))
-                }
-                None => std::hint::unreachable_unchecked(),
+        match page {
+            Some(page) => {
+                *self.cache.lock().unwrap() = Some((page_id, page));
+                Option::Some(SharedPagePool::new_controller_guard(pool_guard, page))
             }
-        } else {
-            Option::None
+            None => {
+                *self.cache.lock().unwrap() = None;
+                None
+            }
         }
     }
 }
@@ -102,7 +72,7 @@ impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
 unsafe impl<'a> MemoryDefaultAccess<'a, PageGuard<'a>> for SingleCachedMemory {}
 
 impl SingleCachedMemory {
-    pub fn get_page_pool(&mut self) -> &mut PagePoolNotifier {
+    pub fn get_page_pool(&mut self) -> &mut SharedPagePool {
         match &mut self.page_pool {
             Some(val) => val,
             None => panic!(),
@@ -118,26 +88,22 @@ impl SingleCachedMemory {
 }
 
 impl PagedMemoryImpl for SingleCachedMemory {
-    fn get_notifier(&mut self) -> Option<&mut PagePoolNotifier> {
+    fn get_notifier(&mut self) -> Option<&mut SharedPagePool> {
         self.page_pool.as_mut()
     }
 
-    fn lock(&mut self, initiator: bool, _page_pool: &mut PagePool) -> Result<(), Box<dyn Error>> {
+    fn lock(&mut self, initiator: bool, _page_pool: &PagePool) -> Result<(), Box<dyn Error>> {
         if !initiator {
             *self.cache.lock().unwrap().deref_mut() = Option::None;
         }
         Result::Ok(())
     }
 
-    fn unlock(
-        &mut self,
-        _initiator: bool,
-        _page_pool: &mut PagePool,
-    ) -> Result<(), Box<dyn Error>> {
+    fn unlock(&mut self, _initiator: bool, _page_pool: &PagePool) -> Result<(), Box<dyn Error>> {
         Result::Ok(())
     }
 
-    fn init_notifier(&mut self, notifier: PagePoolNotifier) {
+    fn init_notifier(&mut self, notifier: SharedPagePool) {
         self.page_pool = Option::Some(notifier);
     }
 }
