@@ -5,8 +5,8 @@ use std::{error::Error, ptr::NonNull};
 use crate::cpu::EmulatorPause;
 
 use super::page_pool::{
-    Page, PagePool, PagePoolController, PagedMemoryImpl, SharedPagePool, SharedPagePoolMemory,
-    SEG_SIZE,
+    Page, PageImpl, PagePool, PagePoolController, PagedMemoryImpl, PagedMemoryInterface,
+    SharedPagePool, SharedPagePoolMemory, SEG_SIZE,
 };
 
 //stupid workaround
@@ -66,6 +66,12 @@ impl Default for SharedPagePoolMemory<Memory> {
     }
 }
 
+pub enum TernaryOption<F, S> {
+    Option1(F),
+    Option2(S),
+    None,
+}
+
 impl Memory {
     #[inline(never)]
     #[cold]
@@ -92,6 +98,94 @@ impl Memory {
 
     pub fn set_emulator_pause(&mut self, pauser: impl EmulatorPause) {
         self.emulator = Option::Some(Box::new(pauser));
+    }
+
+    /// # Safety
+    ///
+    /// ptr must not outlive self
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls the lock method on this trait objects `PagedMemoryImpl`
+    pub unsafe fn get_or_make_mut_ptr_to_address(&mut self, address: u32) -> *mut u8 {
+        &mut (*self.get_or_make_page(address).page_raw())[(address & 0xFFFF) as usize]
+    }
+
+    /// Get a read only slice of contiguous memory withing `SharedPagePool`.
+    ///
+    /// `start` must be less than `end`
+    ///
+    /// If the physical addresses between virtual address `start` and `end` are contiguous then a slice is returned else a vec of size `end - start` is allocated and the non contigous memory is copied to the vec
+    ///
+    /// If any page doesnt exist between virtual addresses `start` and `end` then none is returned
+    ///
+    /// # Safety
+    ///
+    /// `Option2` is safe to use as the data is copyed to a seperate allocation
+    ///
+    /// `Option1` is a slice of contiguous memory within `SharedPagePool` starting at virtual address `start` ending at address `end` (has length `end - start`)
+    ///
+    /// `Option1`'s `*const [u8]` must not outlive `self` and must be destroyed if `self.lock` is called
+    pub unsafe fn slice_vec_or_none(
+        &mut self,
+        start: u32,
+        end: u32,
+    ) -> TernaryOption<*const [u8], Vec<u8>> {
+        assert!(start < end);
+        let len = (end - start) as usize;
+
+        if start & !0xFFFF == end & !0xFFFF {
+            if let Some(mut ptr) = self.get_page(start) {
+                TernaryOption::Option1(std::slice::from_raw_parts(
+                    &(*ptr.page_raw())[start as usize & 0xFFFF],
+                    len,
+                ))
+            } else {
+                TernaryOption::None
+            }
+        } else {
+            let mut last = start & !0xFFFF;
+            let mut curr = (start & !0xFFFF) + 0x10000;
+            let slice = loop {
+                {
+                    if let (Some(last), Some(curr)) = (self.get_page(last), self.get_page(curr)) {
+                        let last = last.as_ptr().cast::<u8>();
+                        let curr = curr.as_ptr().cast::<u8>();
+                        if last.add(1 << 16) as u64 == curr as u64 {
+                            //these pages are consecutive and will be valid if turned into a slice
+                        } else {
+                            break false;
+                        }
+                    } else {
+                        return TernaryOption::None;
+                    }
+                }
+
+                last = curr;
+                curr += 0x10000;
+                if curr == end & !0xFFFF {
+                    break true;
+                }
+            };
+            if slice {
+                if let Some(mut ptr) = self.get_page(start) {
+                    TernaryOption::Option1(std::slice::from_raw_parts(
+                        &(*ptr.page_raw())[start as usize & 0xFFFF],
+                        len,
+                    ))
+                } else {
+                    TernaryOption::None
+                }
+            } else {
+                let mut vec = Vec::with_capacity(len);
+
+                let raw = vec.spare_capacity_mut();
+                //TODO actaully copy contents of memory into vec
+                todo!();
+
+                vec.set_len(len);
+
+                TernaryOption::Option2(vec)
+            }
+        }
     }
 }
 

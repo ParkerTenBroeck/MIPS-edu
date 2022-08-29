@@ -593,6 +593,7 @@ macro_rules! set_mem_alligned_o {
         ///
         /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
         #[inline(always)]
+        #[allow(clippy::result_unit_err)]
         unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()> {
             let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
             match self.get_page(address) {
@@ -647,9 +648,25 @@ macro_rules! set_mem_alligned_o {
 pub trait PagedMemoryInterface<'a>: PagedMemoryImpl {
     type Page: PageImpl;
 
-    unsafe fn get_or_make_page(&'a mut self, page: u32) -> Self::Page; //&mut Page;
-    unsafe fn get_page(&'a mut self, page: u32) -> Option<Self::Page>; //Option<&mut Page>;
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive self.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls the lock method on this trait objects `PagedMemoryImpl`
+    unsafe fn get_or_make_page(&'a mut self, page: u32) -> Self::Page;
 
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive self.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls the lock method on this trait objects `PagedMemoryImpl`
+    unsafe fn get_page(&'a mut self, page: u32) -> Option<Self::Page>;
+
+    /// # Safety
+    ///
+    /// This data is directly written to this trait objects `SharedPagePool` starting at `address`.
+    ///
+    /// This can cause race conditions
     unsafe fn copy_into_raw<T: Copy>(&'a mut self, address: u32, data: &[T]) {
         let size: usize = data.len() * mem::size_of::<T>();
 
@@ -657,10 +674,11 @@ pub trait PagedMemoryInterface<'a>: PagedMemoryImpl {
         self.copy_into(address, data, 0, size);
     }
 
-    unsafe fn get_or_make_mut_ptr_to_address(&'a mut self, address: u32) -> *mut u8 {
-        &mut (*self.get_or_make_page(address).page_raw())[(address & 0xFFFF) as usize]
-    }
-
+    /// # Safety
+    ///
+    /// This data is directly written to this trait objects `SharedPagePool` starting at `address`.
+    ///
+    /// This can cause race conditions
     unsafe fn copy_into(&'a mut self, address: u32, data: &[u8], start: usize, end: usize) {
         let mut id = start;
 
@@ -671,12 +689,9 @@ pub trait PagedMemoryInterface<'a>: PagedMemoryImpl {
             if im & 0xFFFF == 0 {
                 tmp = Option::None;
             }
-            match &mut tmp {
-                None => {
-                    let page = (*ptr).get_or_make_page(im);
-                    tmp = Option::Some(page);
-                }
-                _ => {}
+            if tmp.is_none() {
+                let page = (*ptr).get_or_make_page(im);
+                tmp = Option::Some(page);
             }
             match &mut tmp {
                 Some(val) => {

@@ -6,7 +6,7 @@ use std::{
 use eframe::epaint::{Color32, ColorImage};
 use mips_emulator::{
     cpu::{CpuExternalHandler, MipsCpu},
-    memory::page_pool::{MemoryDefaultAccess, PagedMemoryInterface},
+    memory::page_pool::{MemoryDefaultAccess},
 };
 
 use crate::{
@@ -173,6 +173,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                     };
                     if start_address < end_address {
                         let ptr = cpu.mem().get_or_make_mut_ptr_to_address(start_address);
+
                         let slice = core::slice::from_raw_parts(
                             ptr,
                             (end_address - start_address) as usize,
