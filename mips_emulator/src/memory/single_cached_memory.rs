@@ -4,7 +4,7 @@ use std::{error::Error, ops::DerefMut, ptr::NonNull, sync::Mutex};
 
 use super::page_pool::{
     MemoryDefaultAccess, Page, PageGuard, PagePool, PagedMemoryImpl, PagedMemoryInterface,
-    SharedPagePool,
+    SharedPagePool, TryLockError,
 };
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
     unsafe fn get_or_make_page(&'a mut self, page_id: u32) -> PageGuard<'a> {
         let page_id = (page_id >> 16) as u16;
 
-        let mut pool_guard = self.page_pool.as_mut().unwrap().get_page_pool();
+        let mut pool_guard = self.page_pool.as_mut().unwrap().lock();
 
         if let Option::Some((page_id_cache, page)) = *self.cache.lock().unwrap() {
             if page_id == page_id_cache {
@@ -46,7 +46,7 @@ impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
     unsafe fn get_page(&'a mut self, page_id: u32) -> Option<PageGuard<'a>> {
         let page_id = (page_id >> 16) as u16;
 
-        let mut pool_guard = self.page_pool.as_mut().unwrap().get_page_pool();
+        let mut pool_guard = self.page_pool.as_mut().unwrap().lock();
 
         if let Option::Some((page_id_cache, page)) = *self.cache.lock().unwrap() {
             if page_id == page_id_cache {
@@ -64,6 +64,64 @@ impl<'a> PagedMemoryInterface<'a> for SingleCachedMemory {
             None => {
                 *self.cache.lock().unwrap() = None;
                 None
+            }
+        }
+    }
+
+    unsafe fn try_get_or_make_page(
+        &'a mut self,
+        address: u32,
+    ) -> Result<Self::Page, TryLockError<Box<dyn Error>>> {
+        let page_id = (address >> 16) as u16;
+
+        let mut pool_guard = self.page_pool.as_mut().unwrap().try_lock()?;
+
+        if let Option::Some((page_id_cache, page)) = *self.cache.try_lock()? {
+            if page_id == page_id_cache {
+                return Ok(SharedPagePool::new_controller_guard(pool_guard, page));
+            }
+        }
+
+        let page_ref = pool_guard.try_create_page(page_id)?;
+
+        let mut lock = self.cache.try_lock()?;
+        let tmp = lock.deref_mut();
+
+        *tmp = Option::Some((page_id, page_ref));
+        match *tmp {
+            Some((_page_id, page)) => Ok(SharedPagePool::new_controller_guard(pool_guard, page)),
+            None => std::hint::unreachable_unchecked(),
+        }
+    }
+
+    unsafe fn try_get_page(
+        &'a mut self,
+        address: u32,
+    ) -> Result<Option<Self::Page>, TryLockError<Box<dyn Error>>> {
+        let page_id = (address >> 16) as u16;
+
+        let mut pool_guard = self.page_pool.as_mut().unwrap().try_lock()?;
+
+        if let Option::Some((page_id_cache, page)) = *self.cache.try_lock()? {
+            if page_id == page_id_cache {
+                return Ok(Option::Some(SharedPagePool::new_controller_guard(
+                    pool_guard, page,
+                )));
+            }
+        }
+
+        let page = pool_guard.get_page(page_id);
+
+        match page {
+            Some(page) => {
+                *self.cache.try_lock()? = Some((page_id, page));
+                Ok(Option::Some(SharedPagePool::new_controller_guard(
+                    pool_guard, page,
+                )))
+            }
+            None => {
+                *self.cache.try_lock()? = None;
+                Ok(None)
             }
         }
     }
@@ -105,6 +163,37 @@ impl PagedMemoryImpl for SingleCachedMemory {
 
     fn init_notifier(&mut self, notifier: SharedPagePool) {
         self.page_pool = Option::Some(notifier);
+    }
+
+    fn try_lock(
+        &mut self,
+        initiator: bool,
+        _page_pool: &PagePool,
+    ) -> Result<(), super::page_pool::TryLockError<Box<dyn Error>>> {
+        if !initiator {
+            match self.cache.try_lock() {
+                Ok(mut val) => {
+                    *val = Option::None;
+                    Result::Ok(())
+                }
+                Err(err) => match err {
+                    std::sync::TryLockError::Poisoned(_val) => {
+                        Result::Err(TryLockError::Error("lock poisoned".into()))
+                    }
+                    std::sync::TryLockError::WouldBlock => Result::Err(TryLockError::WouldBlock),
+                },
+            }
+        } else {
+            Result::Ok(())
+        }
+    }
+
+    fn try_unlock(
+        &mut self,
+        _initiator: bool,
+        _page_pool: &PagePool,
+    ) -> Result<(), Box<dyn Error>> {
+        Result::Ok(())
     }
 }
 

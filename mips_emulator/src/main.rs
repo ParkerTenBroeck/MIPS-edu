@@ -6,10 +6,6 @@ use mips_emulator::{
 };
 
 fn main() {
-    // let test = &();
-    // let test = test as *mut ();
-    // let val = test;
-
     let mut emulator = MipsCpu::new_interface(DefaultExternalHandler::default());
 
     println!("s to start CPU, r to reset CPU, h to halt CPU and e to exit");

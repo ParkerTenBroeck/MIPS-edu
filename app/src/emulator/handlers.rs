@@ -6,7 +6,7 @@ use std::{
 use eframe::epaint::{Color32, ColorImage};
 use mips_emulator::{
     cpu::{CpuExternalHandler, MipsCpu},
-    memory::page_pool::{MemoryDefaultAccess},
+    memory::page_pool::MemoryDefaultAccess,
 };
 
 use crate::{
@@ -92,7 +92,7 @@ impl ExternalHandler {
 
     unsafe fn opcode(cpu: &mut MipsCpu<Self>) -> u32 {
         let add = cpu.pc().wrapping_sub(4);
-        cpu.mem().get_u32_alligned(add)
+        cpu.mem().get_u32_alligned_be(add)
     }
 
     pub fn new(
@@ -154,7 +154,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                     let end_address = {
                         let mut i = start_address;
                         loop {
-                            if let Option::Some(val) = cpu.mem().get_u8_o(i) {
+                            if let Option::Some(val) = cpu.mem().get_u8_o_be(i) {
                                 if val == 0 {
                                     break i;
                                 }

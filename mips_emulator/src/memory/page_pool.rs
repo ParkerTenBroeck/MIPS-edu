@@ -53,6 +53,13 @@ pub trait PagedMemoryImpl: Sync + Send {
     fn get_notifier(&mut self) -> Option<&mut SharedPagePool>;
     fn lock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
     fn unlock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
+
+    fn try_lock(
+        &mut self,
+        initiator: bool,
+        page_pool: &PagePool,
+    ) -> Result<(), TryLockError<Box<dyn Error>>>;
+    fn try_unlock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
 }
 
 //------------------------------------------------------------------------------------------------------
@@ -95,23 +102,26 @@ unsafe impl Send for SharedPagePool {}
 unsafe impl Sync for SharedPagePool {}
 
 impl SharedPagePool {
-    pub fn lock(&mut self) -> MutexGuard<PagePoolController> {
-        let mut guard = self.page_pool.lock().unwrap();
-        guard.last_lock_id = self.id;
-        guard
-    }
-}
-
-impl SharedPagePool {
-    pub unsafe fn get_raw_pool(&self) -> &Arc<Mutex<PagePoolController>> {
-        &self.page_pool
-    }
-
-    pub fn get_page_pool(&self) -> SharedPagePoolGuard {
+    pub fn lock(&self) -> SharedPagePoolGuard {
         let mut controller = self.page_pool.lock().unwrap();
         controller.last_lock_id = self.id;
 
         SharedPagePoolGuard { guard: controller }
+    }
+
+    pub fn try_lock(&self) -> Result<SharedPagePoolGuard, TryLockError<Box<dyn Error>>> {
+        match self.page_pool.try_lock() {
+            Ok(mut controller) => {
+                controller.last_lock_id = self.id;
+                Ok(SharedPagePoolGuard { guard: controller })
+            }
+            Err(err) => match err {
+                std::sync::TryLockError::Poisoned(err) => {
+                    Err(TryLockError::Error(err.to_string().into()))
+                }
+                std::sync::TryLockError::WouldBlock => Result::Err(TryLockError::WouldBlock),
+            },
+        }
     }
 
     pub fn clone_page_pool_mutex(&self) -> Arc<Mutex<PagePoolController>> {
@@ -133,16 +143,6 @@ impl SharedPagePool {
 
 pub struct SharedPagePoolGuard<'a> {
     guard: MutexGuard<'a, PagePoolController>,
-}
-
-impl<'a> SharedPagePoolGuard<'a> {
-    pub unsafe fn from_raw(
-        mut guard: MutexGuard<'a, PagePoolController>,
-        notifier: &SharedPagePool,
-    ) -> Self {
-        guard.last_lock_id = notifier.id;
-        Self { guard }
-    }
 }
 
 impl<'a> Drop for SharedPagePoolGuard<'a> {
@@ -242,6 +242,20 @@ fn addr_of_trait_object(ptr: NonNull<dyn PagedMemoryImpl + Send + Sync>) -> NonZ
     NonZeroU64::new(tmp).unwrap()
 }
 
+pub enum TryLockError<T> {
+    Error(T),
+    WouldBlock,
+}
+
+impl<T> From<std::sync::TryLockError<T>> for TryLockError<Box<dyn Error>> {
+    fn from(err: std::sync::TryLockError<T>) -> Self {
+        match err {
+            std::sync::TryLockError::Poisoned(err) => Self::Error(err.to_string().into()),
+            std::sync::TryLockError::WouldBlock => Self::WouldBlock,
+        }
+    }
+}
+
 impl PagePoolController {
     pub fn new() -> Arc<Mutex<Self>> {
         let arc;
@@ -308,7 +322,73 @@ impl PagePoolController {
         }
     }
 
-    #[inline(always)]
+    fn try_lock(&mut self) -> Result<(), TryLockError<Box<dyn Error>>> {
+        let mut index = 0;
+        let (unlock_index, err) = loop {
+            let mut holder = self.holders[index];
+            match unsafe { holder.as_mut() }.try_lock(
+                Some(addr_of_trait_object(holder)) == self.last_lock_id,
+                &self.page_pool,
+            ) {
+                Ok(_) => {}
+                Err(err) => {
+                    if index == 0 {
+                        break (None, Some(err));
+                    } else {
+                        break (Some(index - 1), Some(err));
+                    }
+                }
+            };
+            if index == self.holders.len() {
+                break (None, None);
+            }
+            index += 1;
+        };
+
+        if let Some(unlock_index) = unlock_index {
+            for i in 0..unlock_index {
+                let mut holder = self.holders[i];
+                match unsafe { holder.as_mut() }.try_unlock(
+                    Some(addr_of_trait_object(holder)) == self.last_lock_id,
+                    &self.page_pool,
+                ) {
+                    Ok(_) => {}
+                    Err(_err) => {
+                        //TODO put error somewhere
+                    }
+                };
+            }
+
+            if let Some(err) = err {
+                Result::Err(err)
+            } else {
+                Result::Err(TryLockError::WouldBlock)
+            }
+        } else {
+            Result::Ok(())
+        }
+    }
+
+    fn try_unlock(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut vec = Vec::new();
+
+        for holder in &mut self.holders {
+            match unsafe { holder.as_mut() }.try_unlock(
+                Some(addr_of_trait_object(*holder)) == self.last_lock_id,
+                &self.page_pool,
+            ) {
+                Ok(_) => {}
+                Err(err) => vec.push(err),
+            }
+        }
+
+        if vec.is_empty() {
+            Result::Ok(())
+        } else {
+            Result::Err(format!("{:#?}", vec).into())
+        }
+    }
+
     fn lock(&mut self) -> Result<(), Box<dyn Error>> {
         let mut err: bool = false;
 
@@ -417,12 +497,74 @@ impl PagePoolController {
         )
     }
 
-    #[inline(always)]
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive this `SharedPagePool`.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls lock
+    #[inline(never)]
+    pub unsafe fn try_create_page(
+        &mut self,
+        addr: u16,
+    ) -> Result<NonNull<Page>, TryLockError<Box<dyn Error>>> {
+        impl From<Box<dyn Error>> for TryLockError<Box<dyn Error>> {
+            fn from(err: Box<dyn Error>) -> Self {
+                TryLockError::Error(err)
+            }
+        }
+
+        match self
+            .page_pool
+            .address_mapping
+            .iter()
+            .position(|val| *val >= addr)
+        {
+            Some(index) => {
+                let val = unsafe { *self.page_pool.address_mapping.get_unchecked(index) };
+                if val as u16 == addr {
+                } else {
+                    self.try_lock()?;
+                    self.page_pool.address_mapping.insert(index, addr);
+                    self.page_pool.pool.insert(index, Page::new());
+                    self.try_unlock()?;
+                }
+            }
+            None => {
+                self.try_lock()?;
+                self.page_pool.address_mapping.push(addr);
+                self.page_pool.pool.push(Page::new());
+                self.try_unlock()?;
+            }
+        }
+
+        Result::Ok(
+            self.page_pool
+                .pool
+                .get_mut(
+                    self.page_pool
+                        .address_mapping
+                        .iter()
+                        .position(|val| *val >= addr)
+                        .unwrap(),
+                )
+                .unwrap()
+                .into(),
+        )
+    }
+
     pub fn remove_all_pages(&mut self) -> Result<(), Box<dyn Error>> {
         self.lock()?;
         self.page_pool.address_mapping.clear();
         self.page_pool.pool.clear();
         self.unlock()?;
+        Result::Ok(())
+    }
+
+    pub fn try_remove_all_pages(&mut self) -> Result<(), TryLockError<Box<dyn Error>>> {
+        self.try_lock()?;
+        self.page_pool.address_mapping.clear();
+        self.page_pool.pool.clear();
+        self.try_lock()?;
         Result::Ok(())
     }
 
@@ -441,206 +583,22 @@ impl PagePoolController {
         }
         Result::Ok(())
     }
-}
 
-//------------------------------------------------------------------------------------------------------
-
-#[cfg(feature = "big_endian")]
-#[macro_export]
-macro_rules! get_mem_alligned {
-    ($func_name:ident, $fn_type:ty) => {
-        /// # Safety
-        ///
-        /// address must be alligned to datas alignment
-        ///
-        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
-        #[inline(always)]
-        unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type {
-            (core::mem::transmute::<&u8, &$fn_type>(
-                (*self.get_or_make_page(address).page_raw())
-                    .get_unchecked_mut((address & 0xFFFF) as usize),
-            ))
-            .to_be()
+    #[inline(never)]
+    pub fn try_remove_page(&mut self, add: u16) -> Result<(), TryLockError<Box<dyn Error>>> {
+        let pos = self
+            .page_pool
+            .address_mapping
+            .iter()
+            .position(|i| *i == add);
+        if let Some(add) = pos {
+            self.try_lock()?;
+            self.page_pool.address_mapping.remove(add);
+            self.page_pool.pool.remove(add);
+            self.try_unlock()?;
         }
-    };
-}
-
-#[cfg(not(feature = "big_endian"))]
-#[macro_export]
-macro_rules! get_mem_alligned {
-    ($func_name:ident, $fn_type:ty) => {
-        #[inline(always)]
-        unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type {
-            unsafe {
-                (core::mem::transmute::<&u8, &$fn_type>(
-                    self.get_or_make_page(address)
-                        .page
-                        .get_unchecked_mut((address & 0xFFFF) as usize),
-                ))
-            }
-        }
-    };
-}
-
-#[cfg(feature = "big_endian")]
-#[macro_export]
-macro_rules! set_mem_alligned {
-    // Arguments are module name and function name of function to tests bench
-    ($func_name:ident, $fn_type:ty) => {
-        /// # Safety
-        ///
-        /// address must be alligned to datas alignment
-        ///
-        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
-        #[inline(always)]
-        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) {
-            (*core::mem::transmute::<&mut u8, &mut $fn_type>(
-                (*self.get_or_make_page(address).page_raw())
-                    .get_unchecked_mut((address & 0xFFFF) as usize),
-            )) = data.to_be();
-        }
-    };
-}
-
-#[cfg(not(feature = "big_endian"))]
-#[macro_export]
-macro_rules! set_mem_alligned {
-    // Arguments are module name and function name of function to tests bench
-    ($func_name:ident, $fn_type:ty) => {
-        // The macro will expand into the contents of this block.
-        #[inline(always)]
-        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) {
-            unsafe {
-                (*core::mem::transmute::<&mut u8, &mut $fn_type>(
-                    self.get_or_make_page(address)
-                        .page
-                        .get_unchecked_mut((address & 0xFFFF) as usize),
-                )) = data;
-            }
-        }
-    };
-}
-
-#[cfg(feature = "big_endian")]
-#[macro_export]
-macro_rules! get_mem_alligned_o {
-    ($func_name:ident, $fn_type:ty) => {
-        /// # Safety
-        ///
-        /// address must be alligned to datas alignment
-        ///
-        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
-        #[inline(always)]
-        unsafe fn $func_name(&'a mut self, address: u32) -> Option<$fn_type> {
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
-
-            match &mut self.get_page(address) {
-                Option::Some(val) => {
-                    return Option::Some(
-                        (mem::transmute::<
-                            &mut [u8; $crate::memory::page_pool::SEG_SIZE],
-                            &mut [$fn_type;
-                                     $crate::memory::page_pool::SEG_SIZE
-                                         / mem::size_of::<$fn_type>()],
-                        >(&mut *val.page_raw())[tmp])
-                            .to_be(),
-                    );
-                }
-                Option::None => {
-                    return Option::None;
-                }
-            }
-        }
-    };
-}
-
-#[cfg(not(feature = "big_endian"))]
-#[macro_export]
-macro_rules! get_mem_alligned_o {
-    ($func_name:ident, $fn_type:ty) => {
-        #[inline(always)]
-        fn $func_name(&'a mut self, address: u32) -> Option<$fn_type> {
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
-            unsafe {
-                match &mut self.get_page(address) {
-                    Option::Some(val) => {
-                        return Option::Some(
-                            mem::transmute::<
-                                &mut [u8; $crate::memory::page_pool::SEG_SIZE],
-                                &mut [$fn_type;
-                                         $crate::memory::page_pool::SEG_SIZE
-                                             / mem::size_of::<$fn_type>()],
-                            >(&mut val.page)[tmp],
-                        );
-                    }
-                    Option::None => {
-                        return Option::None;
-                    }
-                }
-            }
-        }
-    };
-}
-
-#[cfg(feature = "big_endian")]
-#[macro_export]
-macro_rules! set_mem_alligned_o {
-    // Arguments are module name and function name of function to tests bench
-    ($func_name:ident, $fn_type:ty) => {
-        /// # Safety
-        ///
-        /// address must be alligned to datas alignment
-        ///
-        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
-        #[inline(always)]
-        #[allow(clippy::result_unit_err)]
-        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()> {
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
-            match self.get_page(address) {
-                Option::Some(mut val) => {
-                    mem::transmute::<
-                        &mut [u8; $crate::memory::page_pool::SEG_SIZE],
-                        &mut [$fn_type;
-                                 $crate::memory::page_pool::SEG_SIZE / mem::size_of::<$fn_type>()],
-                    >(&mut *val.page_raw())[tmp] = data.to_be();
-
-                    return Result::Ok(());
-                }
-                Option::None => {
-                    return Result::Err(());
-                }
-            }
-        }
-    };
-}
-
-#[cfg(not(feature = "big_endian"))]
-#[macro_export]
-macro_rules! set_mem_alligned_o {
-    // Arguments are module name and function name of function to tests bench
-    ($func_name:ident, $fn_type:ty) => {
-        // The macro will expand into the contents of this block.
-        #[inline(always)]
-        fn $func_name(&mut self, address: u32, data: $fn_type) -> Result<(), ()> {
-            let tmp = (address & 0xFFFF) as usize / mem::size_of::<$fn_type>();
-            match self.get_page(address) {
-                Option::Some(mut val) => {
-                    unsafe {
-                        mem::transmute::<
-                            &mut [u8; $crate::memory::page_pool::SEG_SIZE],
-                            &mut [$fn_type;
-                                     $crate::memory::page_pool::SEG_SIZE
-                                         / mem::size_of::<$fn_type>()],
-                        >(&mut val.page)[tmp] = data;
-                    }
-                    return Result::Ok(());
-                }
-                Option::None => {
-                    return Result::Err(());
-                }
-            }
-        }
-    };
+        Result::Ok(())
+    }
 }
 
 //------------------------------------------------------------------------------------------------------
@@ -661,6 +619,26 @@ pub trait PagedMemoryInterface<'a>: PagedMemoryImpl {
     ///
     /// The returned pointer must also be destroyed after this `SharedPagePool` calls the lock method on this trait objects `PagedMemoryImpl`
     unsafe fn get_page(&'a mut self, page: u32) -> Option<Self::Page>;
+
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive self.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls the lock method on this trait objects `PagedMemoryImpl`
+    unsafe fn try_get_or_make_page(
+        &'a mut self,
+        address: u32,
+    ) -> Result<Self::Page, TryLockError<Box<dyn Error>>>;
+
+    /// # Safety
+    ///
+    /// The returned pointer must not outlive self.
+    ///
+    /// The returned pointer must also be destroyed after this `SharedPagePool` calls the lock method on this trait objects `PagedMemoryImpl`
+    unsafe fn try_get_page(
+        &'a mut self,
+        address: u32,
+    ) -> Result<Option<Self::Page>, TryLockError<Box<dyn Error>>>;
 
     /// # Safety
     ///
@@ -704,6 +682,189 @@ pub trait PagedMemoryInterface<'a>: PagedMemoryImpl {
     }
 }
 
+//------------------------------------------------------------------------------------------------------
+
+#[macro_export]
+macro_rules! get_mem_alligned_be {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
+        #[inline(always)]
+        unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type {
+            (core::mem::transmute::<&u8, &$fn_type>(
+                (*self.get_or_make_page(address).page_raw())
+                    .get_unchecked_mut((address & 0xFFFF) as usize),
+            ))
+            .to_be()
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! get_mem_alligned_le {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
+        #[inline(always)]
+        unsafe fn $func_name(&'a mut self, address: u32) -> $fn_type {
+            (core::mem::transmute::<&u8, &$fn_type>(
+                (*self.get_or_make_page(address).page_raw())
+                    .get_unchecked_mut((address & 0xFFFF) as usize),
+            ))
+            .to_le()
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! set_mem_alligned_be {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
+        #[inline(always)]
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) {
+            (*core::mem::transmute::<&mut u8, &mut $fn_type>(
+                (*self.get_or_make_page(address).page_raw())
+                    .get_unchecked_mut((address & 0xFFFF) as usize),
+            )) = data.to_be();
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! set_mem_alligned_le {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
+        #[inline(always)]
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) {
+            (*core::mem::transmute::<&mut u8, &mut $fn_type>(
+                (*self.get_or_make_page(address).page_raw())
+                    .get_unchecked_mut((address & 0xFFFF) as usize),
+            )) = data.to_le();
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! get_mem_alligned_o_be {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
+        #[inline(always)]
+        unsafe fn $func_name(&'a mut self, address: u32) -> Option<$fn_type> {
+            match &mut self.get_page(address) {
+                Option::Some(val) => {
+                    return Option::Some(
+                        (core::mem::transmute::<&u8, &$fn_type>(
+                            (*val.page_raw()).get_unchecked_mut((address & 0xFFFF) as usize),
+                        ))
+                        .to_be(),
+                    );
+                }
+                Option::None => {
+                    return Option::None;
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! get_mem_alligned_o_le {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data returned is from a `SharedPagePool`, this data is shared between threads and does not protect against race conditions
+        #[inline(always)]
+        unsafe fn $func_name(&'a mut self, address: u32) -> Option<$fn_type> {
+            match &mut self.get_page(address) {
+                Option::Some(val) => {
+                    return Option::Some(
+                        (core::mem::transmute::<&u8, &$fn_type>(
+                            (*val.page_raw()).get_unchecked_mut((address & 0xFFFF) as usize),
+                        ))
+                        .to_le(),
+                    );
+                }
+                Option::None => {
+                    return Option::None;
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! set_mem_alligned_o_be {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
+        #[inline(always)]
+        #[allow(clippy::result_unit_err)]
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()> {
+            match &mut self.get_page(address) {
+                Option::Some(val) => {
+                    (*core::mem::transmute::<&mut u8, &mut $fn_type>(
+                        (*val.page_raw()).get_unchecked_mut((address & 0xFFFF) as usize),
+                    )) = data.to_be();
+
+                    return Result::Ok(());
+                }
+                Option::None => {
+                    return Result::Err(());
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! set_mem_alligned_o_le {
+    ($func_name:ident, $fn_type:ty) => {
+        /// # Safety
+        ///
+        /// address must be alligned to datas alignment
+        ///
+        /// The data is written to this traits underlying `SharedPagePool`, this can cause race conditions
+        #[inline(always)]
+        #[allow(clippy::result_unit_err)]
+        unsafe fn $func_name(&'a mut self, address: u32, data: $fn_type) -> Result<(), ()> {
+            match &mut self.get_page(address) {
+                Option::Some(val) => {
+                    (*core::mem::transmute::<&mut u8, &mut $fn_type>(
+                        (*val.page_raw()).get_unchecked_mut((address & 0xFFFF) as usize),
+                    )) = data.to_le();
+                    return Result::Ok(());
+                }
+                Option::None => {
+                    return Result::Err(());
+                }
+            }
+        }
+    };
+}
+
 /// # Safety
 ///
 /// All methods in this trait are accessor methods to `PagedMemoryInterface`.
@@ -713,45 +874,85 @@ where
     P: PageImpl,
     Self: PagedMemoryInterface<'a>,
 {
-    get_mem_alligned!(get_i64_alligned, i64);
-    set_mem_alligned!(set_i64_alligned, i64);
-    get_mem_alligned!(get_u64_alligned, u64);
-    set_mem_alligned!(set_u64_alligned, u64);
+    get_mem_alligned_be!(get_i64_alligned_be, i64);
+    set_mem_alligned_be!(set_i64_alligned_be, i64);
+    get_mem_alligned_be!(get_u64_alligned_be, u64);
+    set_mem_alligned_be!(set_u64_alligned_be, u64);
 
-    get_mem_alligned!(get_i32_alligned, i32);
-    set_mem_alligned!(set_i32_alligned, i32);
-    get_mem_alligned!(get_u32_alligned, u32);
-    set_mem_alligned!(set_u32_alligned, u32);
+    get_mem_alligned_be!(get_i32_alligned_be, i32);
+    set_mem_alligned_be!(set_i32_alligned_be, i32);
+    get_mem_alligned_be!(get_u32_alligned_be, u32);
+    set_mem_alligned_be!(set_u32_alligned_be, u32);
 
-    get_mem_alligned!(get_i16_alligned, i16);
-    set_mem_alligned!(set_i16_alligned, i16);
-    get_mem_alligned!(get_u16_alligned, u16);
-    set_mem_alligned!(set_u16_alligned, u16);
+    get_mem_alligned_be!(get_i16_alligned_be, i16);
+    set_mem_alligned_be!(set_i16_alligned_be, i16);
+    get_mem_alligned_be!(get_u16_alligned_be, u16);
+    set_mem_alligned_be!(set_u16_alligned_be, u16);
 
-    get_mem_alligned!(get_i8, i8);
-    set_mem_alligned!(set_i8, i8);
-    get_mem_alligned!(get_u8, u8);
-    set_mem_alligned!(set_u8, u8);
+    get_mem_alligned_be!(get_i8_be, i8);
+    set_mem_alligned_be!(set_i8_be, i8);
+    get_mem_alligned_be!(get_u8_be, u8);
+    set_mem_alligned_be!(set_u8_be, u8);
 
-    get_mem_alligned_o!(get_i64_alligned_o, i64);
-    set_mem_alligned_o!(set_i64_alligned_o, i64);
-    get_mem_alligned_o!(get_u64_alligned_o, u64);
-    set_mem_alligned_o!(set_u64_alligned_o, u64);
+    get_mem_alligned_o_be!(get_i64_alligned_o_be, i64);
+    set_mem_alligned_o_be!(set_i64_alligned_o_be, i64);
+    get_mem_alligned_o_be!(get_u64_alligned_o_be, u64);
+    set_mem_alligned_o_be!(set_u64_alligned_o_be, u64);
 
-    get_mem_alligned_o!(get_i32_alligned_o, i32);
-    set_mem_alligned_o!(set_i32_alligned_o, i32);
-    get_mem_alligned_o!(get_u32_alligned_o, u32);
-    set_mem_alligned_o!(set_u32_alligned_o, u32);
+    get_mem_alligned_o_be!(get_i32_alligned_o_be, i32);
+    set_mem_alligned_o_be!(set_i32_alligned_o_be, i32);
+    get_mem_alligned_o_be!(get_u32_alligned_o_be, u32);
+    set_mem_alligned_o_be!(set_u32_alligned_o_be, u32);
 
-    get_mem_alligned_o!(get_i16_alligned_o, i16);
-    set_mem_alligned_o!(set_i16_alligned_o, i16);
-    get_mem_alligned_o!(get_u16_alligned_o, u16);
-    set_mem_alligned_o!(set_u16_alligned_o, u16);
+    get_mem_alligned_o_be!(get_i16_alligned_o_be, i16);
+    set_mem_alligned_o_be!(set_i16_alligned_o_be, i16);
+    get_mem_alligned_o_be!(get_u16_alligned_o_be, u16);
+    set_mem_alligned_o_be!(set_u16_alligned_o_be, u16);
 
-    get_mem_alligned_o!(get_i8_o, i8);
-    set_mem_alligned_o!(set_i8_o, i8);
-    get_mem_alligned_o!(get_u8_o, u8);
-    set_mem_alligned_o!(set_u8_o, u8);
+    get_mem_alligned_o_be!(get_i8_o_be, i8);
+    set_mem_alligned_o_be!(set_i8_o_be, i8);
+    get_mem_alligned_o_be!(get_u8_o_be, u8);
+    set_mem_alligned_o_be!(set_u8_o_be, u8);
+
+    get_mem_alligned_le!(get_i64_alligned_le, i64);
+    set_mem_alligned_le!(set_i64_alligned_le, i64);
+    get_mem_alligned_le!(get_u64_alligned_le, u64);
+    set_mem_alligned_le!(set_u64_alligned_le, u64);
+
+    get_mem_alligned_le!(get_i32_alligned_le, i32);
+    set_mem_alligned_le!(set_i32_alligned_le, i32);
+    get_mem_alligned_le!(get_u32_alligned_le, u32);
+    set_mem_alligned_le!(set_u32_alligned_le, u32);
+
+    get_mem_alligned_le!(get_i16_alligned_le, i16);
+    set_mem_alligned_le!(set_i16_alligned_le, i16);
+    get_mem_alligned_le!(get_u16_alligned_le, u16);
+    set_mem_alligned_le!(set_u16_alligned_le, u16);
+
+    get_mem_alligned_le!(get_i8_le, i8);
+    set_mem_alligned_le!(set_i8_le, i8);
+    get_mem_alligned_le!(get_u8_le, u8);
+    set_mem_alligned_le!(set_u8_le, u8);
+
+    get_mem_alligned_o_le!(get_i64_alligned_o_le, i64);
+    set_mem_alligned_o_le!(set_i64_alligned_o_le, i64);
+    get_mem_alligned_o_le!(get_u64_alligned_o_le, u64);
+    set_mem_alligned_o_le!(set_u64_alligned_o_le, u64);
+
+    get_mem_alligned_o_le!(get_i32_alligned_o_le, i32);
+    set_mem_alligned_o_le!(set_i32_alligned_o_le, i32);
+    get_mem_alligned_o_le!(get_u32_alligned_o_le, u32);
+    set_mem_alligned_o_le!(set_u32_alligned_o_le, u32);
+
+    get_mem_alligned_o_le!(get_i16_alligned_o_le, i16);
+    set_mem_alligned_o_le!(set_i16_alligned_o_le, i16);
+    get_mem_alligned_o_le!(get_u16_alligned_o_le, u16);
+    set_mem_alligned_o_le!(set_u16_alligned_o_le, u16);
+
+    get_mem_alligned_o_le!(get_i8_o_le, i8);
+    set_mem_alligned_o_le!(set_i8_o_le, i8);
+    get_mem_alligned_o_le!(get_u8_o_le, u8);
+    set_mem_alligned_o_le!(set_u8_o_le, u8);
 }
 
 //------------------------------------------------------------------------------------------------------

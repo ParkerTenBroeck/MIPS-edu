@@ -351,6 +351,12 @@ pub trait EmulatorPause: 'static {
 
     /// # Safety
     ///
+    /// Must call resume after
+    #[allow(clippy::result_unit_err)]
+    unsafe fn try_pause(&mut self, iterations: usize) -> Result<(), ()>;
+
+    /// # Safety
+    ///
     /// Must call pause before
     unsafe fn resume(&mut self);
 }
@@ -360,6 +366,21 @@ impl<T: CpuExternalHandler> EmulatorPause for EmulatorInterface<T> {
     }
     unsafe fn resume(&mut self) {
         (*(self.raw_cpu() as *mut MipsCpu<T>)).resume()
+    }
+
+    unsafe fn try_pause(&mut self, iterations: usize) -> Result<(), ()> {
+        let cpu = &mut (*(self.raw_cpu() as *mut MipsCpu<T>));
+
+        cpu.paused
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        for _ in 0..iterations {
+            core::ptr::write_volatile(&mut cpu.check, true);
+            if cpu.is_paused() || !cpu.is_running() {
+                return Result::Ok(());
+            }
+        }
+        self.resume();
+        Result::Err(())
     }
 }
 
@@ -390,7 +411,7 @@ impl Default for CP1 {
 
 //-------------------------------------------------------- co processors
 #[repr(align(4096))]
-#[repr(C)]
+//#[repr(C)]
 pub struct MipsCpu<T: CpuExternalHandler> {
     pc: u32,
     reg: [u32; 32],
@@ -483,7 +504,7 @@ impl DefaultExternalHandler {
     }
 
     fn opcode(cpu: &mut MipsCpu<Self>) -> u32 {
-        unsafe { cpu.mem.get_u32_alligned(cpu.pc.wrapping_sub(4)) }
+        unsafe { cpu.mem.get_u32_alligned_be(cpu.pc.wrapping_sub(4)) }
     }
 }
 
@@ -835,8 +856,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 let since_the_epoch = std::time::SystemTime::now()
                     .duration_since(start)
                     .expect("Time went backwards");
-                println!("{:?}", since_the_epoch);
-                println!("CPU stopping");
+                log::info!("CPU stopping");
+                log::debug!("time ran for: {:?}", since_the_epoch);
 
                 match result {
                     Ok(_) => {}
@@ -892,12 +913,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.check = true;
 
         log::info!("CPU Started");
-        //let start = std::time::SystemTime::now();
         self.run();
-        // let since_the_epoch = std::time::SystemTime::now()
-        //    .duration_since(start)
-        //    .expect("Time went backwards");
-        // println!("{:?}", since_the_epoch);
         log::info!("CPU Step Stopping");
     }
 
@@ -1459,7 +1475,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
 
-                            #[cfg(feature = "memory_allignment_check")]
                             if core::intrinsics::likely(address & 0b1 == 0) {
                                 self.reg[immediate_t!(op)] = get_mem_alligned!(address, i16) as u32;
                             //self.mem.get_i16_alligned(address) as u32
@@ -1473,7 +1488,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
 
-                            #[cfg(feature = "memory_allignment_check")]
                             if core::intrinsics::likely(address & 0b1 == 0) {
                                 self.reg[immediate_t!(op)] = get_mem_alligned!(address, u16) as u32;
                             //self.mem.get_u16_alligned(address) as u32
@@ -1487,7 +1501,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
                                 as u32;
 
-                            #[cfg(feature = "memory_allignment_check")]
                             if core::intrinsics::likely(address & 0b11 == 0) {
                                 self.reg[immediate_t!(op)] = get_mem_alligned!(address, u32);
                             //self.mem.get_u32_alligned(address) as u32

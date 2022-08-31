@@ -4,12 +4,11 @@ use std::{
 };
 
 use eframe::egui::WidgetText;
-use mips_emulator::memory::page_pool::PagedMemoryInterface;
-
-use crate::{
-    emulator::single_cached_spinlock_memory::SingleCachedPlatSpinMemory,
-    platform::sync::PlatSpecificLocking,
+use mips_emulator::memory::{
+    page_pool::PagedMemoryInterface, single_cached_memory::SingleCachedMemory,
 };
+
+use crate::platform::sync::PlatSpecificLocking;
 
 use super::side_tabbed_panel::SideTab;
 
@@ -362,7 +361,7 @@ impl SideTab for CPUSidePanel {
                     *mem = mem.to_be();
                 }
                 unsafe {
-                    cpu.get_mem::<SingleCachedPlatSpinMemory>()
+                    cpu.get_mem::<SingleCachedMemory>()
                         .copy_into_raw(0, test_prog.as_slice());
                 }
                 log::info!("Loaded Demo 1 CPU");
@@ -376,33 +375,37 @@ impl SideTab for CPUSidePanel {
 
                 let test_prog = include_bytes!("../../res/tmp.bin");
                 unsafe {
-                    cpu.get_mem::<SingleCachedPlatSpinMemory>()
+                    cpu.get_mem::<SingleCachedMemory>()
                         .copy_into_raw(0, test_prog);
                 }
                 log::info!("Loaded Demo 2 CPU");
             });
             ui.ctx().request_repaint();
         }
-        if ui.button("Load Demo 3").clicked() {
-            let _ = app.cpu.stop();
-            app.cpu.cpu_mut(|cpu| {
-                cpu.clear();
+        #[allow(clippy::collapsible_if)]
+        if cfg!(debug_assertions) {
+            if ui.button("Load Demo 3").clicked() {
+                let _ = app.cpu.stop();
+                app.cpu.cpu_mut(|cpu| {
+                    cpu.clear();
 
-                let mut buf = Vec::new();
-                BufReader::new(
-                    File::open("/home/may/Documents/GitHub/OxidizedMips/mips/bin/tmp.bin").unwrap(),
-                )
-                .read_to_end(&mut buf)
-                .unwrap();
+                    let mut buf = Vec::new();
+                    BufReader::new(
+                        File::open("/home/may/Documents/GitHub/OxidizedMips/mips/bin/tmp.bin")
+                            .unwrap(),
+                    )
+                    .read_to_end(&mut buf)
+                    .unwrap();
 
-                let test_prog = buf.as_slice();
-                unsafe {
-                    cpu.get_mem::<SingleCachedPlatSpinMemory>()
-                        .copy_into_raw(0, test_prog);
-                }
-                log::info!("Loaded Demo 2 CPU");
-            });
-            ui.ctx().request_repaint();
+                    let test_prog = buf.as_slice();
+                    unsafe {
+                        cpu.get_mem::<SingleCachedMemory>()
+                            .copy_into_raw(0, test_prog);
+                    }
+                    log::info!("Loaded Demo 2 CPU");
+                });
+                ui.ctx().request_repaint();
+            }
         }
 
         fn create_text(accessed: bool, text: &str) -> WidgetText {

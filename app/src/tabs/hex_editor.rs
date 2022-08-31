@@ -210,15 +210,15 @@ impl Tab for HexEditor {
                     if ui.ctx().input().key_pressed(egui::Key::Backspace) {
                         if *middle {
                             *middle = false;
-                            let val = self.mem.get_u8(*offset);
+                            let val = self.mem.get_u8_be(*offset);
                             let val = val & 0b1111u8;
-                            self.mem.set_u8(*offset, val);
+                            self.mem.set_u8_be(*offset, val);
                         } else if let Option::Some(new) = offset.checked_sub(1) {
                             *offset = new;
                             *middle = true;
-                            let val = self.mem.get_u8(*offset);
+                            let val = self.mem.get_u8_be(*offset);
                             let val = val & 0b11110000u8;
-                            self.mem.set_u8(*offset, val);
+                            self.mem.set_u8_be(*offset, val);
                             moved = true;
                         }
                     }
@@ -232,16 +232,16 @@ impl Tab for HexEditor {
                         if ui.ctx().input().key_pressed(keys[i as usize]) {
                             if let Option::Some((pos, middle)) = &mut self.cursor_offset {
                                 if *middle {
-                                    let val = self.mem.get_u8(*pos);
+                                    let val = self.mem.get_u8_be(*pos);
                                     let val = (val & 0b11110000u8) + i;
-                                    self.mem.set_u8(*pos, val);
+                                    self.mem.set_u8_be(*pos, val);
                                     *pos = pos.wrapping_add(1);
                                     *middle = false;
                                     moved = true;
                                 } else {
-                                    let val = self.mem.get_u8(*pos);
+                                    let val = self.mem.get_u8_be(*pos);
                                     let val = (val & 0b1111u8) + (i << 4);
-                                    self.mem.set_u8(*pos, val);
+                                    self.mem.set_u8_be(*pos, val);
                                     *middle = true;
                                 }
                             }
@@ -327,7 +327,7 @@ impl Tab for HexEditor {
                                                 Some(val) => val,
                                                 None => return,
                                             };
-                                            let mut label = match self.mem.get_u8_o(add) {
+                                            let mut label = match self.mem.get_u8_o_be(add) {
                                                 Some(val) => {
                                                     egui::RichText::new(format!("{:02X}", val))
                                                 }
@@ -391,7 +391,8 @@ impl Tab for HexEditor {
 
                                         for i in 0u32..self.bytes_per_line as u32 {
                                             ui.spacing_mut().item_spacing.x = 0.0;
-                                            let mut label = match self.mem.get_u8_o(address + i) {
+                                            let mut label = match self.mem.get_u8_o_be(address + i)
+                                            {
                                                 Some(val) => egui::RichText::new(
                                                     Self::u8_to_display_char(val),
                                                 ),
@@ -409,7 +410,8 @@ impl Tab for HexEditor {
 
                                         if self.show_disassembly {
                                             ui.separator();
-                                            let text = match self.mem.get_u32_alligned_o(address) {
+                                            let text = match self.mem.get_u32_alligned_o_be(address)
+                                            {
                                                 Some(val) => {
                                                     assembler::disassembler::simple::disassemble(
                                                         val, address,
