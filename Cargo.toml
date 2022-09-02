@@ -6,6 +6,7 @@ members = [
     "compiler",
     "mips_emulator",
     "elf",
+    "gdb",
 ]
 
 

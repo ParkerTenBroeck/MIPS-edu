@@ -1,7 +1,7 @@
 use crate::emulator::handlers::ExternalHandler;
 use eframe::{
     egui::{self, WidgetText},
-    epaint::Color32,
+    epaint::{text::LayoutJob, Color32},
 };
 use egui_dock::Tab;
 use mips_emulator::{
@@ -26,7 +26,12 @@ pub struct HexEditor {
     highlight_frame: bool,
     highlight_stack: bool,
     highlight_global: bool,
-    last_height: u32,
+
+    last_num_rows: u32,
+    _addresses: LayoutJob,
+    _hex_data: LayoutJob,
+    _ascii_repr: LayoutJob,
+    _relayout: bool,
 }
 
 impl HexEditor {
@@ -47,7 +52,12 @@ impl HexEditor {
             highlight_stack: false,
             highlight_global: false,
             starting_offset: 0,
-            last_height: 0,
+
+            last_num_rows: 0,
+            _addresses: Default::default(),
+            _hex_data: Default::default(),
+            _ascii_repr: Default::default(),
+            _relayout: true,
         }
     }
 
@@ -55,9 +65,6 @@ impl HexEditor {
         if !input.is_ascii_control() {
             return input as char;
         }
-        // match input {
-        //     _ => '.',
-        // }
         '.'
     }
 
@@ -105,6 +112,8 @@ impl Tab for HexEditor {
     fn ui(&mut self, ui: &mut egui::Ui) {
         let max_width = ui.max_rect().width();
 
+        let mut resize_text = false;
+
         ui.vertical(|ui| unsafe {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
@@ -118,6 +127,7 @@ impl Tab for HexEditor {
                         .checkbox(&mut self.show_disassembly, "Show Disassembly")
                         .clicked()
                     {
+                        resize_text = true;
                         if self.show_disassembly {
                             self.bytes_per_line = 4;
                         } else {
@@ -144,9 +154,6 @@ impl Tab for HexEditor {
 
             ui.separator();
 
-            //ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-
-            //});
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
                     let text = egui::RichText::new(match self.cursor_offset {
@@ -253,7 +260,7 @@ impl Tab for HexEditor {
                         if offset < self.starting_offset {
                             self.starting_offset = self.align_address_to_row(offset);
                         }
-                        let tmp = self.bytes_per_line as u32 * self.last_height;
+                        let tmp = self.bytes_per_line as u32 * self.last_num_rows;
                         if let Option::Some(val) = self.starting_offset.checked_add(tmp) {
                             if offset > val {
                                 self.starting_offset = self.align_address_to_row(offset - tmp);
@@ -268,7 +275,7 @@ impl Tab for HexEditor {
 
                     if self.scroll_to_pc {
                         let tmp = self.align_address_to_row(
-                            (self.last_height * self.bytes_per_line as u32) / 2,
+                            (self.last_num_rows * self.bytes_per_line as u32) / 2,
                         );
                         let tmp2 = self.align_address_to_row(self.cpu.pc());
                         self.starting_offset = match tmp2.checked_sub(tmp) {
@@ -431,9 +438,9 @@ impl Tab for HexEditor {
                                     //ui.horizontal(add_contents)
                                     if exit {
                                         if partial {
-                                            self.last_height = h.saturating_sub(2);
+                                            self.last_num_rows = h.saturating_sub(2);
                                         } else {
-                                            self.last_height = h.saturating_sub(1);
+                                            self.last_num_rows = h.saturating_sub(1);
                                         }
                                         break;
                                     }

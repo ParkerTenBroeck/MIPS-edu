@@ -22,6 +22,13 @@
 !/elf/Cargo.lock
 !/elf/Cargo.toml
 
+!/gdb/
+!/gdb/src**
+!/gdb/tests**
+!/gdb/build.rs
+!/gdb/Cargo.lock
+!/gdb/Cargo.toml
+
 !/app/
 !/app/Cargo.lock
 !/app/Cargo.toml

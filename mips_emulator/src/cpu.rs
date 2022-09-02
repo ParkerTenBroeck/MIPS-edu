@@ -194,12 +194,13 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
             std::hint::spin_loop()
         }
     }
-    pub fn cpu_mut(&mut self, fn_once: impl FnOnce(&mut MipsCpu<T>)) {
+    pub fn cpu_mut<R>(&mut self, fn_once: impl FnOnce(&mut MipsCpu<T>) -> R) -> R {
         self.lock_mut(|iner| unsafe {
             (*iner.raw_cpu_mut()).pause();
-            fn_once(&mut *iner.raw_cpu_mut());
+            let result = fn_once(&mut *iner.raw_cpu_mut());
             (*iner.raw_cpu_mut()).resume();
-        });
+            result
+        })
     }
     pub fn cpu_ref(&mut self, fn_once: impl FnOnce(&MipsCpu<T>)) {
         self.lock(|inner| unsafe {
@@ -440,6 +441,10 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     #[inline(always)]
     pub fn pc(&self) -> u32 {
         self.pc
+    }
+    #[inline(always)]
+    pub fn set_pc(&mut self, pc: u32) {
+        self.pc = pc;
     }
     #[inline(always)]
     pub fn reg(&self) -> &[u32; 32] {
@@ -697,6 +702,15 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             .unwrap()
             .add_holder(Box::new(M::default()))
     }
+
+    #[allow(unused)]
+    /// # Safety
+    ///
+    /// do not use this while the emulator is running or many many bad things can happen
+    pub unsafe fn raw_mem(&mut self) -> &mut SharedPagePoolMemory<Memory> {
+        &mut self.mem
+    }
+
     #[allow(unused)]
     pub fn get_mem_controller(&mut self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>> {
         match &self.mem.page_pool {
