@@ -8,6 +8,13 @@ use std::{
     thread,
 };
 
+pub mod async_target;
+pub mod connection;
+pub mod packets;
+pub mod stub;
+pub mod target;
+pub mod signal;
+
 pub type DebugServerHandle = Arc<RwLock<InnerDebugServerHandle>>;
 
 #[derive(Default)]
@@ -167,6 +174,7 @@ impl<T: CpuExternalHandler> DebugServer<T> {
 
         let j = thread::spawn(move || {
             let listener = TcpListener::bind("127.0.0.1:1234").unwrap();
+
             println!("listening started, ready to accept");
             for stream in listener.incoming() {
                 println!("accepted");
@@ -191,7 +199,11 @@ impl<T: CpuExternalHandler> DebugServer<T> {
         }
 
         let mut data = [0; 2000];
+
+        let mut start = std::time::SystemTime::now();
         while match stream.read(&mut data) {
+
+            
             Ok(size) => {
                 let mut str = std::str::from_utf8(&data[..size]).unwrap();
 
@@ -265,7 +277,11 @@ impl<T: CpuExternalHandler> DebugServer<T> {
                 stream.shutdown(Shutdown::Both).unwrap();
                 false
             }
-        } {}
+        } {
+
+            eprintln!("time: {:?}", start.elapsed().unwrap());
+            start = std::time::SystemTime::now();
+        }
         true
     }
 
@@ -379,9 +395,9 @@ impl<T: CpuExternalHandler> DebugServer<T> {
 
             "vMustReplyEmpty" => PacketIn::MustReplayEmpty,
 
-            "Hc" = arg => u8::from_str_radix(arg, 16).map_or(PacketIn::Unreconized, PacketIn::SelectExecutionThread),
-            "Hg" = arg => u8::from_str_radix(arg, 16).map_or(PacketIn::Unreconized, PacketIn::SelectRegisterThread),
-            "Hm" = arg => u8::from_str_radix(arg, 16).map_or(PacketIn::Unreconized, PacketIn::SelectMemoryThread),
+            "Hc" = arg => u8::from_str_radix(arg.trim_start_matches('-'), 16).map_or(PacketIn::Unreconized, PacketIn::SelectExecutionThread),
+            "Hg" = arg => u8::from_str_radix(arg.trim_start_matches('-'), 16).map_or(PacketIn::Unreconized, PacketIn::SelectRegisterThread),
+            "Hm" = arg => u8::from_str_radix(arg.trim_start_matches('-'), 16).map_or(PacketIn::Unreconized, PacketIn::SelectMemoryThread),
 
             "qSupported:" = raw_args => {
                 let mut args: Vec<(String, bool, Option<String>)> = Vec::new();
@@ -426,7 +442,7 @@ impl<T: CpuExternalHandler> DebugServer<T> {
                     });
                 }
                 if self.emulator.start_new_thread().is_ok() {
-                    PacketOut::OK
+                    PacketOut::ok_string(stopped(5))
                 } else {
                     PacketOut::err(0)
                 }
@@ -438,7 +454,7 @@ impl<T: CpuExternalHandler> DebugServer<T> {
                     });
                 }
                 if self.emulator.step_new_thread().is_ok() {
-                    PacketOut::OK
+                    PacketOut::ok_string(stopped(5))
                 } else {
                     PacketOut::err(0)
                 }
@@ -490,7 +506,7 @@ impl<T: CpuExternalHandler> DebugServer<T> {
             PacketIn::qProcessInfo => PacketOut::ok_string("pid:1;endian:big;"),
             PacketIn::qRegisterInfo(index) => REGISTER_INFO
                 .get(index as usize)
-                .map_or(PacketOut::err(1), |ok| PacketOut::ok_string(*ok)),
+                .map_or(PacketOut::err(0x45), |ok| PacketOut::ok_string(*ok)),
             PacketIn::qMemoryRegionInfo => {
                 PacketOut::ok_string("start:0;size:FFFFFFFF;permissions:rwx;")
             }

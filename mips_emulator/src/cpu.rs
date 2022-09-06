@@ -498,6 +498,9 @@ pub unsafe trait CpuExternalHandler: Sync + Send + Sized + 'static {
         }
     }
     fn cpu_stop(&mut self) {}
+    fn cpu_start(&mut self) {}
+    fn cpu_pause(&mut self) {}
+    fn cpu_resume(&mut self) {}
 }
 
 #[derive(Default)]
@@ -709,6 +712,13 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     /// do not use this while the emulator is running or many many bad things can happen
     pub unsafe fn raw_mem(&mut self) -> &mut SharedPagePoolMemory<Memory> {
         &mut self.mem
+    }
+
+    /// # Safety
+    ///
+    /// using this while the emulator is running can cause race conditions everywhere and break the state of the cpu
+    pub unsafe fn raw_handler(&mut self) -> &mut T {
+        &mut self.external_handler
     }
 
     #[allow(unused)]
@@ -951,19 +961,24 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     #[inline(never)]
     #[link_section = ".text.emu_run"]
     fn run(&mut self) {
-        //let result = std::panic::catch_unwind(||{
-        //TODO ensure that the memory isnt currently locked beforehand
+        self.external_handler.cpu_start();
 
         self.is_paused = false;
         'main_loop: while {
             while *self.paused.get_mut() > 0 {
-                self.is_paused = true;
+                if !self.is_paused {
+                    self.is_paused = true;
+                    self.external_handler.cpu_pause();
+                }
                 if !self.running {
                     break 'main_loop;
                 }
                 std::hint::spin_loop();
             }
-            self.is_paused = false;
+            if self.is_paused {
+                self.is_paused = false;
+                self.external_handler.cpu_resume();
+            }
 
             let mut ins_cache = unsafe {
                 (
