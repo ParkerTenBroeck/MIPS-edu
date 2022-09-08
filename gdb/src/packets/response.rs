@@ -19,7 +19,6 @@ impl<'a, C: Connection> ResponseWritter<'a, C> {
         Ok(())
     }
 
-
     fn inner_write(&mut self, byte: u8) -> Result<(), C::Error> {
         if !self.started {
             self.started = true;

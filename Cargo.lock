@@ -83,6 +83,7 @@ dependencies = [
  "eframe",
  "egui_dock",
  "enum-map",
+ "gdb",
  "image",
  "js-sys",
  "log",
@@ -1007,6 +1008,7 @@ version = "0.1.0"
 dependencies = [
  "log",
  "mips_emulator",
+ "num-traits",
 ]
 
 [[package]]

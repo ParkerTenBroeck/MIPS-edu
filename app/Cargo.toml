@@ -23,6 +23,7 @@ assembler = { path = "../assembler" }
 util = { path = "../util" }
 enum-map = { version = "2", features = ["serde"] }
 log = { version = "0.4" }
+gdb = { path = "../gdb" }
 
 serde = { version = "1", features = ["derive"], optional = false }
 qoi = "*"

@@ -91,6 +91,39 @@ impl Application {
             cpu_virtual_keyboard,
             dock: Default::default(),
         };
+        {
+
+            
+            let mut emulator = ret.cpu.clone();
+
+            let _ = std::thread::spawn(move || {
+
+                let socket = std::net::TcpListener::bind("localhost:1234").unwrap();
+                for socket in socket.incoming().flatten(){
+                    
+                    let target = crate::emulator::debug_target::TargetInterface {
+                        emulator: emulator.clone(),
+                    };
+
+                    let stub = gdb::stub::GDBStub::new(target, socket);
+                    let (stub, notifier) = gdb::async_target::create_async_stub(stub);
+
+                        
+                    emulator.cpu_mut(|cpu| unsafe{
+                        cpu.raw_handler().debugger = Some(Box::new(notifier));
+                    });
+
+                    log::trace!("Starting debugger in seperate thread");
+                    log::info!("{:?}", stub.run_blocking());
+
+                    emulator.cpu_mut(|cpu| unsafe{
+                        cpu.raw_handler().debugger = None;
+                    });
+                    
+                }
+                
+            });
+        }
 
         ret.add_cpu_memory_tab();
         ret.add_cpu_screen_tab();

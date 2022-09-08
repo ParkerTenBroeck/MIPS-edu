@@ -1,11 +1,12 @@
 use crate::{
-    connection::{Connection},
+    connection::Connection,
     packets::{
         incoming::{Command, Packet, PacketParseError},
         psm::PacketStateMachine,
-        response::{ResponseWritter},
+        response::ResponseWritter,
     },
-    target::Target, signal::Signal,
+    signal::Signal,
+    target::Target,
 };
 
 enum GDBState {
@@ -16,7 +17,7 @@ enum GDBState {
 }
 
 #[derive(Debug)]
-pub enum GDBError<C: Connection> {
+pub enum GDBError<C: Connection, T: Target> {
     ConnectionRead(C::Error),
     ConnectionWrite(C::Error),
     ConnectionFlush(C::Error),
@@ -24,6 +25,7 @@ pub enum GDBError<C: Connection> {
     ClientSentNack,
     CommandError,
     ExternalError,
+    TargetError(T::Error),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +52,13 @@ pub struct GDBStub<C: Connection, T: Target> {
     state: GDBState,
     ptm: PacketStateMachine,
     cfg: GDBStubCfg,
-    async_data: Vec<String>
+    async_data: Vec<String>,
+}
+
+impl <C: Connection, T: Target> Drop for GDBStub<C, T>{
+    fn drop(&mut self) {
+        _ = self.connection.on_session_end();
+    }
 }
 
 pub enum StopReason {
@@ -70,7 +78,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
             state: GDBState::Idle,
             ptm: PacketStateMachine::new(),
             cfg: Default::default(),
-            async_data: Vec::new()
+            async_data: Vec::new(),
         }
     }
 
@@ -78,16 +86,12 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         self.connection.peek().map(|b| b.is_some()).unwrap_or(true)
     }
 
-    pub fn check_non_blocking(&mut self) -> Result<Option<DisconnectReason>, GDBError<C>> {
-        
-
-        
-
+    pub fn check_non_blocking(&mut self) -> Result<Option<DisconnectReason>, GDBError<C, T>> {
         let res = if self.has_data_to_read() {
             match self.state {
                 GDBState::Idle | GDBState::Running => {
                     let byte = self.connection.read().map_err(GDBError::ConnectionRead)?;
-                    
+
                     self.incomming_data(byte)?;
 
                     // for message in &self.async_data{
@@ -105,18 +109,18 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 _ => Ok(None),
             }
         };
-    
+
         self.async_data.clear();
 
         res
     }
 
-    pub fn target_stop(&mut self, reason: StopReason) -> Result<(), GDBError<C>> {
+    pub fn target_stop(&mut self, reason: StopReason) -> Result<(), GDBError<C, T>> {
         //if true{
         //    return Ok(())
         //}
         //let mut buff = String::new();
-        //let mut f_conn = BufferedConnection::new(&mut buff); 
+        //let mut f_conn = BufferedConnection::new(&mut buff);
         let mut res = ResponseWritter::new(&mut self.connection);
         match reason {
             StopReason::DoneStep => {
@@ -168,7 +172,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         matches!(self.state, GDBState::Running | GDBState::CtrlCInt)
     }
 
-    pub fn incomming_data(&mut self, byte: u8) -> Result<(), GDBError<C>> {
+    pub fn incomming_data(&mut self, byte: u8) -> Result<(), GDBError<C, T>> {
         if let Some(buf) = self.ptm.incomming_data(byte) {
             let packet = Packet::from_buff(buf).map_err(GDBError::PacketParseError)?;
             log::trace!("<-- {:?}", packet);
@@ -177,13 +181,13 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         Ok(())
     }
 
-    fn incomming_packet(&mut self, packet: Packet) -> Result<(), GDBError<C>> {
+    fn incomming_packet(&mut self, packet: Packet) -> Result<(), GDBError<C, T>> {
         match packet {
             Packet::Ack => Ok(()),
             Packet::Nack => Err(GDBError::ClientSentNack),
             Packet::Interrupt => {
                 self.state = GDBState::CtrlCInt;
-                self.target.inturrupt();
+                self.target.inturrupt().map_err(GDBError::TargetError)?;
                 Ok(())
             }
             Packet::Command(command) => {
@@ -207,7 +211,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
     fn handle_command(
         &mut self,
         command: Command,
-    ) -> Result<(&GDBState, ResponseWritter<C>), GDBError<C>> {
+    ) -> Result<(&GDBState, ResponseWritter<C>), GDBError<C, T>> {
         let mut response = ResponseWritter::new(&mut self.connection);
 
         match command {
@@ -241,29 +245,56 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
             }
             Command::Reset => {}
 
-            Command::ReadRegister(_) => {
-                response
-                    .write_str("00000000")
-                    .map_err(GDBError::ConnectionWrite)?;
+            Command::ReadRegister(reg) => {
+                if let Ok(reg) = self.target.read_register(reg) {
+                    response
+                        .write_hex_buff(&reg.to_be_bytes())
+                        .map_err(GDBError::ConnectionWrite)?;
+                } else {
+                    response
+                        .write_str("E01")
+                        .map_err(GDBError::ConnectionWrite)?;
+                }
             }
             Command::ReadRegisters => {
-                for _ in 0..38 {
+                if let Ok(regs) = self.target.read_registers() {
+                    for reg in regs {
+                        response
+                            .write_hex_buff(&reg.to_be_bytes())
+                            .map_err(GDBError::ConnectionWrite)?;
+                    }
+                } else {
                     response
-                        .write_str("00000000")
+                        .write_str("E01")
                         .map_err(GDBError::ConnectionWrite)?;
                 }
             }
             Command::WriteRegister(_, _) => {}
             Command::WriteRegisters() => {}
 
-            Command::ReadMemory(addr, size) => {
-                for i in 0..size{
-                    response
-                    .write_hex(addr.wrapping_add(i) as u8)
-                    .map_err(GDBError::ConnectionWrite)?;
+            Command::ReadMemory(addr, len) => {
+                if let Ok(data) = self.target.read_memory(addr, len) {
+                    for byte in data {
+                        response
+                            .write_hex(byte)
+                            .map_err(GDBError::ConnectionWrite)?;
+                    }
+                } else {
+                    for _ in 0..len {
+                        response
+                            .write_hex(0xDF)
+                            .map_err(GDBError::ConnectionWrite)?;
+                    }
                 }
             }
-            Command::WriteMemory(_, _) => {}
+            Command::WriteMemory(addr, data) => {
+                self.target
+                    .write_memory(addr, &data)
+                    .map_err(GDBError::TargetError)?;
+                response
+                    .write_str("OK")
+                    .map_err(GDBError::ConnectionWrite)?;
+            }
 
             Command::MustReplayEmpty => {}
 
@@ -281,18 +312,13 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 .write_str("QStartNoAckMode+")
                 .map_err(GDBError::ConnectionWrite)?,
             Command::qTStatus => {}
-            Command::qfThreadInfo => {
-                response.write_str("m1")
-                .map_err(GDBError::ConnectionWrite)?
-            }
-            Command::qsThreadInfo => {
-                response.write(b'l')
-                .map_err(GDBError::ConnectionWrite)?
-            }
-            Command::qC => {
-                response.write_str("QC1")
-                .map_err(GDBError::ConnectionWrite)?
-            }
+            Command::qfThreadInfo => response
+                .write_str("m11")
+                .map_err(GDBError::ConnectionWrite)?,
+            Command::qsThreadInfo => response.write(b'l').map_err(GDBError::ConnectionWrite)?,
+            Command::qC => response
+                .write_str("QC11")
+                .map_err(GDBError::ConnectionWrite)?,
             Command::qAttached => {}
             Command::qOffsets => {}
             Command::qHostInfo => {
@@ -310,13 +336,24 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                     response
                         .write_str(reg_info)
                         .map_err(GDBError::ConnectionWrite)?;
-                } else {
-                    
+                } else {     
+                    response
+                    .write_str("E01")
+                    .map_err(GDBError::ConnectionWrite)?;
+            
                 }
             }
-            Command::qMemoryRegionInfo => response
-                .write_str("start:0;size:FFFFFFFF;permissions:rwx;")
-                .map_err(GDBError::ConnectionWrite)?,
+            Command::qMemoryRegionInfo(region) => {
+                response
+                .write_str("start:")
+                .map_err(GDBError::ConnectionWrite)?;
+                response
+                .write_hex_buff(&region.to_be_bytes())
+                .map_err(GDBError::ConnectionWrite)?;
+                response
+                .write_str(";size:ffffffff;permissions:rwx;")
+                .map_err(GDBError::ConnectionWrite)?
+            }
             Command::SelectExecutionThread(_) => {
                 response
                     .write_str("OK")

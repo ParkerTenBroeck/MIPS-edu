@@ -2,7 +2,6 @@ use std::{num::ParseIntError, str::Utf8Error};
 
 use crate::signal::Signal;
 
-
 #[derive(Debug)]
 pub enum Packet {
     Ack,
@@ -63,7 +62,7 @@ pub enum Command {
     qHostInfo,
     qProcessInfo,
     qRegisterInfo(u8),
-    qMemoryRegionInfo,
+    qMemoryRegionInfo(u32),
 
     SelectExecutionThread(u8),
     SelectRegisterThread(u8),
@@ -172,7 +171,8 @@ impl Command {
                 }else{
                     let mut data = Vec::with_capacity(len as usize);
                     let mut iter = data_arg.chars();
-                    while let (Some(un), ln) = (iter.next(), iter.next().map_or(Err(CommandParseError::MalformedCommand), Ok)?){
+                    while let Some(un) = iter.next(){
+                        let ln = iter.next().map_or(Err(CommandParseError::MalformedCommand), Ok)?;
                         let un = un.to_digit(16).map_or(Err(CommandParseError::MalformedCommand), Ok)?;
                         let ln = ln.to_digit(16).map_or(Err(CommandParseError::MalformedCommand), Ok)?;
                         data.push((un << 4 | ln) as u8)
@@ -203,7 +203,7 @@ impl Command {
                 };
                 let sig = u8::from_str_radix(sig, 16).map_err(CommandParseError::ParseIntError)?;
                 let sig = Signal::from_protocol_u8(sig);
-                Command::ContinueAtSignal(sig, arr) 
+                Command::ContinueAtSignal(sig, arr)
             },
             'S' = arg => {
                 let (sig, arr) = if let Some((sig, arr)) = arg.split_once(';'){
@@ -213,7 +213,7 @@ impl Command {
                 };
                 let sig = u8::from_str_radix(sig, 16).map_err(CommandParseError::ParseIntError)?;
                 let sig = Signal::from_protocol_u8(sig);
-                Command::StepAtSignal(sig, arr) 
+                Command::StepAtSignal(sig, arr)
             },
 
             "vMustReplyEmpty" => Command::MustReplayEmpty,
@@ -246,7 +246,10 @@ impl Command {
             "qHostInfo" => Command::qHostInfo,
             "qProcessInfo" => Command::qProcessInfo,
             "qRegisterInfo" = arg => u8::from_str_radix(arg, 16).map(Command::qRegisterInfo).map_err(CommandParseError::ParseIntError)?,
-            "qMemoryRegionInfo" = _arg => Command::qMemoryRegionInfo,
+            "qMemoryRegionInfo:" = arg => {
+                let page = u32::from_str_radix(arg, 16).map_err(CommandParseError::ParseIntError)?;
+                Command::qMemoryRegionInfo(page & !0xFFFF)
+            },
 
             "QStartNoAckMode" => Command::QStartNoAckMode
         ))

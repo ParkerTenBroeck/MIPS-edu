@@ -1,4 +1,4 @@
-use std::{net::TcpStream, marker::PhantomData};
+use std::net::TcpStream;
 
 pub trait Connection {
     type Error;
@@ -12,34 +12,9 @@ pub trait Connection {
     }
     fn flush(&mut self) -> Result<(), Self::Error>;
     fn on_session_start(&mut self) -> Result<(), Self::Error>;
+    fn on_session_end(&mut self) -> Result<(), Self::Error>;
     fn read(&mut self) -> Result<u8, Self::Error>;
     fn peek(&mut self) -> Result<Option<u8>, Self::Error>;
-}
-
-pub struct BufferedConnection<'a, E>{
-    data: &'a mut String,
-    phantom: PhantomData<E>,
-}
-
-impl<'a, E> Connection for BufferedConnection<'a, E>{
-    type Error = E;
-
-    fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
-        self.data.push(byte as char);
-        Ok(())
-    }
-
-    fn flush(&mut self) -> Result<(), Self::Error> { Ok(()) }
-
-    fn on_session_start(&mut self) -> Result<(), Self::Error> { Ok(()) }
-
-    fn read(&mut self) -> Result<u8, Self::Error> {
-        todo!()
-    }
-
-    fn peek(&mut self) -> Result<Option<u8>, Self::Error> {
-        todo!()
-    }
 }
 
 impl Connection for TcpStream {
@@ -84,10 +59,9 @@ impl Connection for TcpStream {
             Err(e) => Err(e),
         }
     }
-}
 
-impl<'a, E> BufferedConnection<'a, E> {
-    pub fn new(buff: &'a mut String) -> Self {
-        Self { data: buff, phantom: PhantomData }
+    fn on_session_end(&mut self) -> Result<(), Self::Error> {
+        self.shutdown(std::net::Shutdown::Both)?;
+        Ok(())
     }
 }

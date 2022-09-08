@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 mips_emulator = { path = "../mips_emulator"}
 log = {version = "0.4.16", features = ["max_level_trace", "release_max_level_trace"]}
+num-traits = { version = "0.2", default-features = false }

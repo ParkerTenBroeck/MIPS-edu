@@ -11,9 +11,9 @@ use std::{
 pub mod async_target;
 pub mod connection;
 pub mod packets;
+pub mod signal;
 pub mod stub;
 pub mod target;
-pub mod signal;
 
 pub type DebugServerHandle = Arc<RwLock<InnerDebugServerHandle>>;
 
@@ -202,8 +202,6 @@ impl<T: CpuExternalHandler> DebugServer<T> {
 
         let mut start = std::time::SystemTime::now();
         while match stream.read(&mut data) {
-
-            
             Ok(size) => {
                 let mut str = std::str::from_utf8(&data[..size]).unwrap();
 
@@ -278,7 +276,6 @@ impl<T: CpuExternalHandler> DebugServer<T> {
                 false
             }
         } {
-
             eprintln!("time: {:?}", start.elapsed().unwrap());
             start = std::time::SystemTime::now();
         }

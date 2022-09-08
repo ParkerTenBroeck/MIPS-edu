@@ -7,3 +7,4 @@ pub mod settings;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sound;
 pub mod terminal_tab;
+pub mod debugger;
