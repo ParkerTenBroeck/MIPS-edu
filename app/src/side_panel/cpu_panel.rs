@@ -31,7 +31,7 @@ pub struct CPUSidePanel {
     int_format: IntegerFormat,
     float_foramt: FloatFormat,
     use_reg_names: bool,
-    //thing: Vec<(u128, u64)>
+    thing: Vec<(u128, u64)>,
 }
 
 impl Default for CPUSidePanel {
@@ -46,7 +46,7 @@ impl CPUSidePanel {
             int_format: IntegerFormat::SignedBase10,
             float_foramt: FloatFormat::Base10,
             use_reg_names: true,
-            //thing: Default::default(),
+            thing: Default::default(),
         }
     }
 }
@@ -166,9 +166,16 @@ impl SideTab for CPUSidePanel {
             });
         });
 
-        let (pc, hi, lo, reg) = unsafe {
+        let (pc, hi, lo, reg, running, instructions_ran) = unsafe {
             let cpu = app.cpu.raw_cpu();
-            ((*cpu).pc(), (*cpu).hi(), (*cpu).lo(), *(*cpu).reg())
+            (
+                (*cpu).pc(),
+                (*cpu).hi(),
+                (*cpu).lo(),
+                *(*cpu).reg(),
+                (*cpu).is_running(),
+                (*cpu).instructions_ran(),
+            )
         };
 
         macro_rules! register_lable {
@@ -181,28 +188,32 @@ impl SideTab for CPUSidePanel {
             };
         }
 
-        // let ins = app.cpu.get_instructions_ran();
-        // ui.label(format!("instructions ran: {}", ins));
+        ui.label(format!("instructions ran: {}", instructions_ran));
 
-        // let ins_p_s;
+        let ins_p_s;
 
-        // if app.cpu.is_running(){
-        //     self.thing.push((crate::platform::time::duration_since_epoch().as_nanos(), ins));
-        //     if self.thing.len() > 60{
-        //         self.thing.remove(0);
-        //     }
-        //     let start = self.thing[0];
-        //     let end = *self.thing.last().unwrap();
-        //     if let Option::Some(val) = ((end.1 - start.1) * 1000000000).checked_div((end.0 - start.0) as u64){
-        //         ins_p_s = val;
-        //     }else{
-        //         ins_p_s = 0;
-        //     }
-        // }else{
-        //     self.thing.clear();
-        //     ins_p_s = 0;
-        // }
-        // ui.label(format!("Instructions/Second: {}", ins_p_s));
+        if running {
+            self.thing.push((
+                crate::platform::time::duration_since_epoch().as_nanos(),
+                instructions_ran,
+            ));
+            if self.thing.len() > 60 {
+                self.thing.remove(0);
+            }
+            let start = self.thing[0];
+            let end = *self.thing.last().unwrap();
+            if let Option::Some(val) =
+                ((end.1 - start.1) * 1000000000).checked_div((end.0 - start.0) as u64)
+            {
+                ins_p_s = val;
+            } else {
+                ins_p_s = 0;
+            }
+        } else {
+            self.thing.clear();
+            ins_p_s = 0;
+        }
+        ui.label(format!("Instructions/Second: {}", ins_p_s));
 
         //ui.horizontal(|ui| {
         ui.collapsing("GP Registers", |ui| {

@@ -92,40 +92,38 @@ impl Application {
             dock: Default::default(),
         };
         {
-
-            
             let mut emulator = ret.cpu.clone();
 
             let _ = crate::platform::thread::start_thread(move || {
-                
-                let socket = match std::net::TcpListener::bind("localhost:1234"){
+                let socket = match std::net::TcpListener::bind("localhost:1234") {
                     Ok(ok) => ok,
                     Err(e) => {
                         log::error!("debugger encountered IO error: {e}");
-                        return
-                    },
+                        return;
+                    }
                 };
-                if socket.set_nonblocking(true).is_err(){
+                if socket.set_nonblocking(true).is_err() {
                     log::error!("Failed to put debugger socket into non blocking mode");
                     return;
                 }
                 for stream in socket.incoming() {
                     match stream {
                         Ok(socket) => {
-                            let target = crate::emulator::debug_target::TargetInterface::new(emulator.clone());
+                            let target = crate::emulator::debug_target::TargetInterface::new(
+                                emulator.clone(),
+                            );
 
                             let stub = gdb::stub::GDBStub::new(target, socket);
                             let (stub, notifier) = gdb::async_target::create_async_stub(stub);
 
-                                
-                            emulator.cpu_mut(|cpu| unsafe{
+                            emulator.cpu_mut(|cpu| unsafe {
                                 cpu.raw_handler().debugger = Some(Box::new(notifier));
                             });
 
                             log::trace!("Starting debugger in seperate thread");
                             log::info!("{:?}", stub.run_blocking());
 
-                            emulator.cpu_mut(|cpu| unsafe{
+                            emulator.cpu_mut(|cpu| unsafe {
                                 cpu.raw_handler().debugger = None;
                             });
                         }
@@ -136,7 +134,7 @@ impl Application {
                         Err(e) => {
                             log::error!("debugger encountered IO error: {e}");
                             return;
-                        },
+                        }
                     }
                 }
             });

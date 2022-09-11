@@ -55,7 +55,7 @@ pub struct GDBStub<C: Connection, T: Target> {
     async_data: Vec<String>,
 }
 
-impl <C: Connection, T: Target> Drop for GDBStub<C, T>{
+impl<C: Connection, T: Target> Drop for GDBStub<C, T> {
     fn drop(&mut self) {
         _ = self.connection.on_session_end();
     }
@@ -337,23 +337,22 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                     response
                         .write_str(reg_info)
                         .map_err(GDBError::ConnectionWrite)?;
-                } else {     
+                } else {
                     response
-                    .write_str("E01")
-                    .map_err(GDBError::ConnectionWrite)?;
-            
+                        .write_str("E01")
+                        .map_err(GDBError::ConnectionWrite)?;
                 }
             }
             Command::qMemoryRegionInfo(region) => {
                 response
-                .write_str("start:")
-                .map_err(GDBError::ConnectionWrite)?;
+                    .write_str("start:")
+                    .map_err(GDBError::ConnectionWrite)?;
                 response
-                .write_hex_buff(&region.to_be_bytes())
-                .map_err(GDBError::ConnectionWrite)?;
+                    .write_hex_buff(&region.to_be_bytes())
+                    .map_err(GDBError::ConnectionWrite)?;
                 response
-                .write_str(";size:ffffffff;permissions:rwx;")
-                .map_err(GDBError::ConnectionWrite)?
+                    .write_str(";size:ffffffff;permissions:rwx;")
+                    .map_err(GDBError::ConnectionWrite)?
             }
             Command::SelectExecutionThread(_) => {
                 response
@@ -377,29 +376,29 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                     .map_err(GDBError::ConnectionWrite)?;
             }
             Command::InsertSoftwareBreakpoint(kind, addr) => {
-                if let Err(err) = self.target.insert_software_breakpoint(kind,addr){
+                if let Err(err) = self.target.insert_software_breakpoint(kind, addr) {
                     response
                         .write_str("E01")
                         .map_err(GDBError::ConnectionWrite)?;
                     Err(GDBError::TargetError(err))?
-                }else{
+                } else {
                     response
                         .write_str("OK")
                         .map_err(GDBError::ConnectionWrite)?;
                 }
-            },
+            }
             Command::RemoveSoftwareBreakpoint(kind, addr) => {
-                if let Err(err) = self.target.remove_software_breakpoint(kind,addr){
+                if let Err(err) = self.target.remove_software_breakpoint(kind, addr) {
                     response
                         .write_str("E01")
                         .map_err(GDBError::ConnectionWrite)?;
                     Err(GDBError::TargetError(err))?
-                }else{
+                } else {
                     response
                         .write_str("OK")
                         .map_err(GDBError::ConnectionWrite)?;
                 }
-            },
+            }
         }
         Ok((&self.state, response))
     }

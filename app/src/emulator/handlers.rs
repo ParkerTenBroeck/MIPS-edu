@@ -384,7 +384,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
     fn breakpoint(&mut self, cpu: &mut MipsCpu<Self>, _call_id: u32) {
         cpu.stop();
         cpu.set_pc(cpu.pc().wrapping_sub(4));
-        if let Some(debugger) = &mut self.debugger{
+        if let Some(debugger) = &mut self.debugger {
             debugger.on_software_breakpoint();
         }
     }

@@ -1,12 +1,8 @@
 use egui_dock::Tab;
 
+pub struct DebuggerTab {}
 
-
-pub struct DebuggerTab{
-
-}
-
-impl Tab for DebuggerTab{
+impl Tab for DebuggerTab {
     fn ui(&mut self, ui: &mut eframe::egui::Ui) {
         ui.label("temporary");
     }

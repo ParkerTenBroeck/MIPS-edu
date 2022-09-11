@@ -1,9 +1,8 @@
 use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::Target};
 use mips_emulator::{
-    cpu::{EmulatorInterface, CpuExternalHandler},
-    memory::{page_pool::{MemoryDefaultAccess}, single_cached_memory::SingleCachedMemory},
+    cpu::{CpuExternalHandler, EmulatorInterface},
+    memory::{page_pool::MemoryDefaultAccess, single_cached_memory::SingleCachedMemory},
 };
-
 
 #[derive(Debug)]
 pub enum TargetError {
@@ -13,22 +12,25 @@ pub enum TargetError {
     UnsupportedBreakpointKind,
     InvalidBreakpointAddress(u32),
     BreakpointDoesntExist(u32),
-    BreakpointAlreadyExists
+    BreakpointAlreadyExists,
 }
 
-struct Breakpoint{
+struct Breakpoint {
     addr: u32,
     old_data: u32,
 }
 
 pub struct TargetInterface<T: CpuExternalHandler> {
     pub emulator: EmulatorInterface<T>,
-    breakpoints: Vec<Breakpoint>
+    breakpoints: Vec<Breakpoint>,
 }
 
 impl<T: CpuExternalHandler> TargetInterface<T> {
-    pub fn new(emulator: EmulatorInterface<T>) -> Self{
-        Self { emulator, breakpoints: Default::default() }
+    pub fn new(emulator: EmulatorInterface<T>) -> Self {
+        Self {
+            emulator,
+            breakpoints: Default::default(),
+        }
     }
 }
 
@@ -77,7 +79,7 @@ impl<T: CpuExternalHandler> Target for TargetInterface<T> {
         self.emulator.cpu_mut(|cpu| unsafe {
             let mut mem = cpu.get_mem::<SingleCachedMemory>();
             let mut vec = Vec::with_capacity(len as usize);
-            for i in 0..len{
+            for i in 0..len {
                 vec.push(mem.get_u8_be(addr.wrapping_add(i)));
             }
             Ok(vec)
@@ -124,52 +126,52 @@ impl<T: CpuExternalHandler> Target for TargetInterface<T> {
     }
 
     fn insert_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
-        if kind == 4{
-            if self.breakpoints.iter().any(|val| val.addr == addr){
-                return Ok(())//Err(TargetError::BreakpointAlreadyExists)
+        if kind == 4 {
+            if self.breakpoints.iter().any(|val| val.addr == addr) {
+                return Ok(()); //Err(TargetError::BreakpointAlreadyExists)
             }
-            if addr & 0b11 == 0{
-                self.emulator.cpu_mut(|cpu|{
+            if addr & 0b11 == 0 {
+                self.emulator.cpu_mut(|cpu| {
                     let mut mem = cpu.get_mem::<SingleCachedMemory>();
-                    let data = unsafe{ mem.get_u32_alligned_o_be(addr) };
+                    let data = unsafe { mem.get_u32_alligned_o_be(addr) };
                     if let Some(old_data) = data {
-                        self.breakpoints.push(Breakpoint{addr, old_data});
-                        unsafe{
+                        self.breakpoints.push(Breakpoint { addr, old_data });
+                        unsafe {
                             mem.set_u32_alligned_be(addr, 0x00000000D);
                         }
                         Ok(())
-                    }else{
+                    } else {
                         Err(TargetError::InvalidBreakpointAddress(addr))
                     }
                 })
-            }else{
+            } else {
                 Err(TargetError::InvalidBreakpointAddress(addr))
             }
-        }else{
+        } else {
             Err(TargetError::UnsupportedBreakpointKind)
         }
     }
 
     fn remove_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
-        if kind == 4{
-            if let Some(breakpoint) = self.breakpoints.iter().find(|val| val.addr == addr){
-                self.emulator.cpu_mut(|cpu|{
+        if kind == 4 {
+            if let Some(breakpoint) = self.breakpoints.iter().find(|val| val.addr == addr) {
+                self.emulator.cpu_mut(|cpu| {
                     let mut mem = cpu.get_mem::<SingleCachedMemory>();
                     _ = unsafe { mem.set_u32_alligned_o_be(addr, breakpoint.old_data) };
                     Ok(())
                 })
-            }else{
+            } else {
                 Err(TargetError::BreakpointDoesntExist(addr))
             }
-        }else{
+        } else {
             Err(TargetError::UnsupportedBreakpointKind)
         }
     }
 
     fn sw_breakpoint_hit(&mut self) {
-        self.emulator.cpu_mut(|cpu|{
+        self.emulator.cpu_mut(|cpu| {
             let bp_addr = cpu.pc().wrapping_sub(4);
-            if self.breakpoints.iter().any(|val| val.addr == bp_addr){
+            if self.breakpoints.iter().any(|val| val.addr == bp_addr) {
                 //this is a debugger breakpoint so lets move the pc back one
                 cpu.set_pc(bp_addr)
             }

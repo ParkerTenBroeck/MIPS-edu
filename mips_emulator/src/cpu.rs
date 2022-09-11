@@ -2,7 +2,7 @@ use core::panic;
 use std::{
     panic::AssertUnwindSafe,
     pin::Pin,
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    sync::{atomic::AtomicUsize, Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -410,15 +410,22 @@ impl Default for CP1 {
     }
 }
 
-trait Debugger<T: CpuExternalHandler>: 'static + Sync + Send{
-    fn start(&mut self, cpu: MipsCpu<T>) -> bool;
-    fn stop(&mut self, cpu: MipsCpu<T>);
-    fn on_syscall(&mut self, cpu: MipsCpu<T>) -> bool;
-    fn on_break(&mut self, cpu: MipsCpu<T>) -> bool;
-    fn check_memory_access(&mut self, cpu: MipsCpu<T>) -> bool;
-    fn on_memory_read(&mut self, cpu: MipsCpu<T>) -> bool;
-    fn on_memory_write(&mut self, cpu: MipsCpu<T>) -> bool;
-    
+pub trait Debugger<T: CpuExternalHandler>: 'static + Sync + Send {
+    fn detach(&mut self);
+    fn attach(&mut self, cpu: &mut MipsCpu<T>);
+
+    fn start(&mut self, cpu: &mut MipsCpu<T>) -> bool;
+    fn stop(&mut self, cpu: &mut MipsCpu<T>);
+    fn on_syscall(&mut self, id: u32, cpu: &mut MipsCpu<T>) -> bool;
+    fn on_break(&mut self, id: u32, cpu: &mut MipsCpu<T>) -> bool;
+    fn check_memory_access(&mut self, cpu: &mut MipsCpu<T>) -> bool;
+    fn check_syscall_access(&mut self, cpu: &mut MipsCpu<T>) -> bool;
+    fn on_memory_read(&mut self, addr: u32, len: u32, cpu: &mut MipsCpu<T>) -> bool;
+    fn on_memory_write(&mut self, addr: u32, len: u32, cpu: &mut MipsCpu<T>) -> bool;
+
+    fn memory_error(&mut self, error_id: u32, cpu: &mut MipsCpu<T>);
+    fn arithmitic_error(&mut self, error_id: u32, cpu: &mut MipsCpu<T>);
+    fn invalid_op_code(&mut self, cpu: &mut MipsCpu<T>);
 }
 
 //-------------------------------------------------------- co processors
@@ -437,13 +444,13 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     _cp1: CP1,
 
     mem: SharedPagePoolMemory<Memory>,
-    //instructions_ran: u64,
+    instructions_ran: u64,
     paused: AtomicUsize,
     _inturupts: Mutex<Vec<()>>,
     dropped: bool,
     external_handler: T,
 
-    debugger: Mutex<Option<Box<dyn Debugger<T>>>>
+    debugger: Arc<Mutex<Option<Box<dyn Debugger<T>>>>>,
 }
 
 impl<T: CpuExternalHandler> MipsCpu<T> {
@@ -680,7 +687,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     #[allow(unused)]
     pub fn new_interface(handler: T) -> EmulatorInterface<T> {
         let mut tmp = MipsCpu {
-            //instructions_ran: 0,
+            instructions_ran: 0,
             pc: 0,
             reg: [0; 32],
             _cp0: CP0::default(),
@@ -697,7 +704,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             external_handler: handler,
             _inturupts: Default::default(),
             dropped: false,
-            debugger: Mutex::new(None),
+            debugger: Arc::new(Mutex::new(None)),
         };
 
         let mut interface = EmulatorInterface::new(tmp);
@@ -733,6 +740,10 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             Some(val) => val.clone_page_pool_mutex(),
             None => panic!(),
         }
+    }
+
+    pub fn instructions_ran(&self) -> u64 {
+        self.instructions_ran
     }
 
     #[allow(unused)]
@@ -783,7 +794,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.reg = [0; 32];
         self.lo = 0;
         self.hi = 0;
-        //self.instructions_ran = 0;
+        self.instructions_ran = 0;
     }
 
     #[allow(unused)]
@@ -801,6 +812,23 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         } {
             std::hint::spin_loop();
         }
+    }
+
+    pub fn attach_debugger(&mut self, new_debugger: impl Debugger<T>) {
+        self.pause();
+        let c = self.debugger.clone();
+        let mut debugger = c.lock().unwrap();
+
+        let mut old_debugger = None;
+        std::mem::swap(&mut old_debugger, &mut *debugger);
+        if let Some(mut debugger) = old_debugger {
+            debugger.detach();
+        }
+
+        *debugger = Some(Box::new(new_debugger));
+        debugger.as_mut().unwrap().attach(self);
+        drop(debugger);
+        self.resume();
     }
 
     fn resume(&mut self) {
@@ -828,20 +856,29 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     #[inline(never)]
     #[cold]
     fn memory_error(&mut self, error_id: u32) {
+        self.if_has_debugger(|cpu, debugger| {
+            debugger.memory_error(error_id, cpu);
+        });
         unsafe { core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler) }
             .memory_error(self, error_id);
     }
 
     #[inline(never)]
     #[cold]
-    fn arithmetic_error(&mut self, id: u32) {
+    fn arithmetic_error(&mut self, error_id: u32) {
+        self.if_has_debugger(|cpu, debugger| {
+            debugger.arithmitic_error(error_id, cpu);
+        });
         unsafe { core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler) }
-            .arithmetic_error(self, id);
+            .arithmetic_error(self, error_id);
     }
 
     #[inline(never)]
     #[cold]
     fn invalid_op_code(&mut self) {
+        self.if_has_debugger(|cpu, debugger| {
+            debugger.invalid_op_code(cpu);
+        });
         unsafe { core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler) }
             .invalid_opcode(self);
     }
@@ -854,6 +891,19 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     fn breakpoint(&mut self, call_id: u32) {
         unsafe { core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler) }
             .breakpoint(self, call_id);
+    }
+
+    fn if_has_debugger<R>(
+        &mut self,
+        fn_once: impl FnOnce(&mut Self, &mut Box<dyn Debugger<T>>) -> R,
+    ) {
+        let c = self.debugger.clone();
+        let lock = c.lock();
+        if let Ok(mut guard) = lock {
+            if let Some(debugger) = &mut *guard {
+                fn_once(self, debugger);
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -897,6 +947,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         if self.running || !self.finished {
             return;
         }
+
         self.running = false;
         self.finished = false;
         self.check = true;
@@ -957,21 +1008,700 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
 
         log::info!("CPU Step Stopped");
     }
+}
 
+//------------------------------------------------------------------------------------------------------------------------
+
+macro_rules! core_emu {
+    ($self:ident, $debugger_lock:ident, $id:ident, $address:ident, $bp:block, $sc:block, $rb:block, $rhw:block, $rw:block, $wb:block, $whw:block, $ww:block) => {
+        let mut ins_cache = unsafe {
+            (
+                &mut ($self.mem.get_or_make_page($self.pc).as_mut()).page,
+                $self.pc >> 16,
+            )
+        };
+        let mut mem_cache =
+            unsafe { (&mut ($self.mem.get_or_make_page(0).as_mut()).page, 0u32) };
+
+        macro_rules! set_mem_alligned {
+            ($add:expr, $val:expr, $fn_type:ty) => {
+                unsafe {
+                    let address = $add;
+                    if core::intrinsics::unlikely(address >> 16 != mem_cache.1) {
+                        mem_cache = (
+                            &mut ($self.mem.get_or_make_page(address).as_mut()).page,
+                            address >> 16,
+                        );
+                    }
+
+                    let item = mem_cache.0.get_unchecked_mut(address as u16 as usize);
+                    *core::mem::transmute::<&mut u8, &mut $fn_type>(item) = $val.to_be()
+                }
+            };
+        }
+
+        macro_rules! get_mem_alligned {
+            ($add:expr, $fn_type:ty) => {
+                unsafe {
+                    let address = $add;
+                    if core::intrinsics::unlikely(address >> 16 != mem_cache.1) {
+                        mem_cache = (
+                            &mut ($self.mem.get_or_make_page(address).as_mut()).page,
+                            address >> 16,
+                        );
+                    }
+
+                    let item = mem_cache.0.get_unchecked(address as u16 as usize);
+                    core::mem::transmute::<&u8, &$fn_type>(item).to_be()
+                }
+            };
+        }
+
+
+        'cpu_loop: while {
+            let op: u32 = unsafe {
+                if core::intrinsics::unlikely($self.pc >> 16 != ins_cache.1) {
+                    ins_cache = (
+                        &mut ($self.mem.get_or_make_page($self.pc).as_mut()).page,
+                        $self.pc >> 16,
+                    );
+                }
+
+                let item = ins_cache.0.get_unchecked($self.pc as u16 as usize);
+                core::mem::transmute::<&u8, &u32>(item).to_be()
+            };
+
+            //prevent overflow
+            $self.pc = $self.pc.wrapping_add(4);
+            $self.instructions_ran += 1;
+
+            {
+                macro_rules! get_reg {
+                    ($reg:expr) => {
+                        unsafe { *$self.reg.get_unchecked($reg) }
+                    };
+                }
+
+                match op >> 26 {
+                    0 => {
+                        match op & 0b111111 {
+                            // REGISTER formatted instructions
+
+                            //arithmatic
+                            0b100000 => {
+                                //ADD
+                                match ($self.reg[register_s!(op)] as i32)
+                                    .checked_add($self.reg[register_t!((op))] as i32)
+                                {
+                                    Some(val) => {
+                                        $self.reg[register_d!(op)] = val as u32;
+                                    }
+
+                                    None => {
+                                        drop($debugger_lock);
+                                        $self.arithmetic_error(2);
+                                        break 'cpu_loop;
+                                    }
+                                }
+                            }
+                            0b100001 => {
+                                //ADDU
+                                $self.reg[register_d!(op)] = $self.reg[register_s!(op)]
+                                    .wrapping_add($self.reg[register_t!((op))])
+                            }
+                            0b100100 => {
+                                //AND
+                                $self.reg[register_d!(op)] =
+                                    $self.reg[register_s!(op)] & $self.reg[register_t!((op))]
+                            }
+                            0b011010 => {
+                                //DIV
+                                let t = $self.reg[register_t!(op)] as i32;
+                                if core::intrinsics::likely(t != 0) {
+                                    let s = $self.reg[register_s!(op)] as i32;
+                                    $self.lo = (s.wrapping_div(t)) as u32;
+                                    $self.hi = (s.wrapping_rem(t)) as u32;
+                                } else {
+                                    drop($debugger_lock);
+                                    $self.arithmetic_error(0);
+                                    break 'cpu_loop;
+                                }
+                            }
+                            0b011011 => {
+                                //DIVU
+                                let t = $self.reg[register_t!(op)];
+                                if core::intrinsics::likely(t != 0) {
+                                    let s = $self.reg[register_s!(op)];
+                                    $self.lo = s.wrapping_div(t);
+                                    $self.hi = s.wrapping_rem(t);
+                                } else {
+                                    drop($debugger_lock);
+                                    $self.arithmetic_error(0);
+                                    break 'cpu_loop;
+                                }
+                            }
+                            0b011000 => {
+                                //MULT
+                                let t = $self.reg[register_t!(op)] as i32 as i64;
+                                let s = $self.reg[register_s!(op)] as i32 as i64;
+                                let result = t.wrapping_mul(s);
+                                $self.lo = (result & 0xFFFFFFFF) as u32;
+                                $self.hi = (result >> 32) as u32;
+                            }
+                            0b011001 => {
+                                //MULTU
+                                let t = $self.reg[register_t!(op)] as u64;
+                                let s = $self.reg[register_s!(op)] as u64;
+                                let result = t.wrapping_mul(s);
+                                $self.lo = (result & 0xFFFFFFFF) as u32;
+                                $self.hi = (result >> 32) as u32;
+                            }
+                            0b100111 => {
+                                //NOR
+                                $self.reg[register_d!(op)] =
+                                    !($self.reg[register_s!(op)] | $self.reg[register_t!(op)]);
+                            }
+                            0b100101 => {
+                                //OR
+                                $self.reg[register_d!(op)] =
+                                    $self.reg[register_s!(op)] | $self.reg[register_t!(op)];
+                            }
+                            0b100110 => {
+                                //XOR
+                                $self.reg[register_d!(op)] =
+                                    $self.reg[register_s!(op)] ^ $self.reg[register_t!(op)];
+                            }
+                            0b000000 => {
+                                //SLL
+                                $self.reg[register_d!(op)] =
+                                    $self.reg[register_t!(op)] << register_a!(op);
+                            }
+                            0b000100 => {
+                                //SLLV
+                                $self.reg[register_d!(op)] = ($self.reg[register_t!(op)])
+                                    << (0b11111 & $self.reg[register_s!(op)]);
+                            }
+                            0b000011 => {
+                                //SRA
+                                $self.reg[register_d!(op)] = ($self.reg[register_t!(op)] as i32
+                                    >> register_a!(op))
+                                    as u32;
+                            }
+                            0b000111 => {
+                                //SRAV
+                                $self.reg[register_d!(op)] = ($self.reg[register_t!(op)] as i32
+                                    >> (0b11111 & $self.reg[register_s!(op)]))
+                                    as u32;
+                            }
+                            0b000010 => {
+                                //SRL
+                                $self.reg[register_d!(op)] =
+                                    ($self.reg[register_t!(op)] >> register_a!(op)) as u32;
+                            }
+                            0b000110 => {
+                                //SRLV
+                                $self.reg[register_d!(op)] = ($self.reg[register_t!(op)]
+                                    >> (0b11111 & $self.reg[register_s!(op)]))
+                                    as u32;
+                            }
+                            0b100010 => {
+                                //SUB
+                                if let Option::Some(val) = ($self.reg[register_s!(op)] as i32)
+                                    .checked_sub($self.reg[register_t!(op)] as i32)
+                                {
+                                    $self.reg[register_d!(op)] = val as u32;
+                                } else {
+                                    drop($debugger_lock);
+                                    $self.arithmetic_error(1);
+                                    break 'cpu_loop;
+                                }
+                            }
+                            0b100011 => {
+                                //SUBU
+                                $self.reg[register_d!(op)] = $self.reg[register_s!(op)]
+                                    .wrapping_sub($self.reg[register_t!(op)]);
+                            }
+
+                            //comparason
+                            0b101010 => {
+                                //SLT
+                                $self.reg[register_d!(op)] = {
+                                    if ($self.reg[register_s!(op)] as i32)
+                                        < ($self.reg[register_t!(op)] as i32)
+                                    {
+                                        1
+                                    } else {
+                                        0
+                                    }
+                                }
+                            }
+                            0b101011 => {
+                                //SLTU
+                                $self.reg[register_d!(op)] = {
+                                    if $self.reg[register_s!(op)] < $self.reg[register_t!(op)] {
+                                        1
+                                    } else {
+                                        0
+                                    }
+                                }
+                            }
+
+                            //jump
+                            0b001001 => {
+                                //JALR
+                                $self.reg[31] = $self.pc;
+                                $self.pc = $self.reg[register_s!(op)];
+                            }
+                            0b001000 => {
+                                //JR
+                                $self.pc = $self.reg[register_s!(op)];
+                            }
+
+                            //data movement
+                            0b010000 => {
+                                //MFHI
+                                $self.reg[register_d!(op)] = $self.hi;
+                            }
+                            0b010010 => {
+                                //MFLO
+                                $self.reg[register_d!(op)] = $self.lo;
+                            }
+                            0b010001 => {
+                                //MTHI
+                                $self.hi = $self.reg[register_s!(op)];
+                            }
+                            0b010011 => {
+                                //MTLO
+                                $self.lo = $self.reg[register_s!(op)];
+                            }
+
+                            //special
+                            0b001100 => {
+                                //syscall
+                                let $id = (op >> 6) & 0b11111111111111111111;
+                                $sc
+                                $self.system_call($id);
+                            }
+                            0b001101 => {
+                                //break
+                                let $id = (op >> 6) & 0b11111111111111111111;
+                                $bp
+                                $self.breakpoint($id);
+                            }
+                            0b110100 => {
+                                //TEQ
+                                if $self.reg[register_s!(op)] == $self.reg[register_t!(op)] {
+                                    let $id = (op >> 6) & 0b1111111111;
+                                    $sc
+                                    $self.system_call($id);
+                                }
+                            }
+                            0b110000 => {
+                                //TGE
+                                if $self.reg[register_s!(op)] as i32
+                                    >= $self.reg[register_t!(op)] as i32
+                                {
+                                    let $id = (op >> 6) & 0b1111111111;
+                                    $sc
+                                    $self.system_call($id)
+                                }
+                            }
+                            0b110001 => {
+                                //TGEU
+                                if $self.reg[register_s!(op)] >= $self.reg[register_t!(op)] {
+                                    let $id = (op >> 6) & 0b1111111111;
+                                    $sc
+                                    $self.system_call($id)
+                                }
+                            }
+                            0b110010 => {
+                                //TIT
+                                if ($self.reg[register_s!(op)] as i32)
+                                    < $self.reg[register_t!(op)] as i32
+                                {
+                                    let $id = (op >> 6) & 0b1111111111;
+                                    $sc
+                                    $self.system_call($id)
+                                }
+                            }
+                            0b110011 => {
+                                //TITU
+                                if $self.reg[register_s!(op)] < $self.reg[register_t!(op)] {
+                                    let $id = (op >> 6) & 0b1111111111;
+                                    $sc
+                                    $self.system_call($id)
+                                }
+                            }
+                            0b110110 => {
+                                //TNE
+                                if $self.reg[register_s!(op)] != $self.reg[register_t!(op)] {
+                                    let $id = (op >> 6) & 0b1111111111;
+                                    $sc
+                                    $self.system_call($id)
+                                }
+                            }
+
+                            _ => {
+                                drop($debugger_lock);
+                                $self.invalid_op_code();
+                                break 'cpu_loop;
+                            },
+                        }
+                    }
+                    //Jump instructions
+                    0b000010 => {
+                        //jump
+                        $self.pc = ($self.pc & 0b11110000000000000000000000000000)
+                            | jump_immediate_address!(op);
+                    }
+                    0b000011 => {
+                        //jal
+                        $self.reg[31] = $self.pc;
+                        $self.pc = ($self.pc & 0b11110000000000000000000000000000)
+                            | jump_immediate_address!(op);
+                    }
+                    // IMMEDIATE formmated instructions
+
+                    // arthmetic
+                    0b001000 => {
+                        //ADDI
+                        if let Option::Some(val) = ($self.reg[immediate_s!(op)] as i32)
+                            .checked_add(immediate_immediate_signed_extended!(op) as i32)
+                        {
+                            $self.reg[immediate_t!(op)] = val as u32;
+                        } else {
+                            drop($debugger_lock);
+                            $self.arithmetic_error(1);
+                            break 'cpu_loop;
+                        }
+                    }
+                    0b001001 => {
+                        //ADDIU
+                        $self.reg[immediate_t!(op)] = ($self.reg[immediate_s!(op)])
+                            .wrapping_add(immediate_immediate_signed_extended!(op));
+                    }
+                    0b001100 => {
+                        //ANDI
+                        $self.reg[immediate_t!(op)] =
+                            $self.reg[immediate_s!(op)] & immediate_immediate_zero_extended!(op)
+                    }
+                    0b001101 => {
+                        //ORI
+                        $self.reg[immediate_t!(op)] = $self.reg[immediate_s!(op)] as u32
+                            | immediate_immediate_zero_extended!(op) as u32
+                    }
+                    0b001110 => {
+                        //XORI
+                        $self.reg[immediate_t!(op)] = $self.reg[immediate_s!(op)] as u32
+                            ^ immediate_immediate_zero_extended!(op) as u32
+                    }
+
+                    // constant manupulating inctructions
+                    0b001111 => {
+                        //LUI
+                        $self.reg[immediate_t!(op)] =
+                            immediate_immediate_zero_extended!(op) << 16;
+                    }
+                    // these were replaced
+                    // 0b011001 => {
+                    //     //LHI
+                    //     let t = immediate_t!(op) as usize;
+                    //     $self.reg[t] =
+                    //         $self.reg[t] & 0xFFFF | immediate_immediate_unsigned_hi!(op) as u32;
+                    // }
+                    // 0b011000 => {
+                    //     //LLO
+                    //     let t = immediate_t!(op) as usize;
+                    //     $self.reg[t] =
+                    //         $self.reg[t] & 0xFFFF0000 | immediate_immediate_zero_extended!(op) as u32;
+                    // }
+
+                    // comparison Instructions
+                    0b001010 => {
+                        //SLTI
+                        $self.reg[immediate_t!(op)] = {
+                            if ($self.reg[immediate_s!(op)] as i32)
+                                < (immediate_immediate_signed_extended!(op) as i32)
+                            {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                    }
+                    0b001011 => {
+                        //SLTIU
+                        $self.reg[immediate_t!(op)] = {
+                            if ($self.reg[immediate_s!(op)] as u32)
+                                < (immediate_immediate_signed_extended!(op) as u32)
+                            {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                    }
+
+                    // branch instructions
+                    0b000100 => {
+                        //BEQ
+                        if get_reg!(immediate_s!(op)) == get_reg!(immediate_t!(op)) {
+                            $self.pc = (($self.pc as i32)
+                                .wrapping_add(immediate_immediate_address!(op)))
+                                as u32;
+                        }
+                    }
+                    0b000001 => {
+                        match immediate_t!(op) {
+                            0b00001 => {
+                                //BGEZ
+                                if ($self.reg[immediate_s!(op)] as i32) >= 0 {
+                                    $self.pc = (($self.pc as i32)
+                                        .wrapping_add(immediate_immediate_address!(op)))
+                                        as u32;
+                                }
+                            }
+                            0b00000 => {
+                                //BLTZ
+                                if ($self.reg[immediate_s!(op)] as i32) < 0 {
+                                    $self.pc = (($self.pc as i32)
+                                        .wrapping_add(immediate_immediate_address!(op)))
+                                        as u32;
+                                }
+                            }
+                            _ => {
+                                $self.invalid_op_code();
+                            }
+                        }
+                    }
+                    0b000111 => {
+                        //BGTZ
+                        if $self.reg[immediate_s!(op)] as i32 > 0 {
+                            $self.pc = (($self.pc as i32)
+                                .wrapping_add(immediate_immediate_address!(op)))
+                                as u32;
+                        }
+                    }
+
+                    0b000110 => {
+                        //BLEZ
+                        if $self.reg[immediate_s!(op)] as i32 <= 0 {
+                            $self.pc = (($self.pc as i32)
+                                .wrapping_add(immediate_immediate_address!(op)))
+                                as u32;
+                        }
+                    }
+                    0b000101 => {
+                        //BNE
+                        if $self.reg[immediate_s!(op)] != $self.reg[immediate_t!(op) as usize] {
+                            $self.pc = (($self.pc as i32)
+                                .wrapping_add(immediate_immediate_address!(op)))
+                                as u32;
+                        }
+                    }
+
+                    //load unsinged instructions
+                    0b100010 => {
+                        //LWL
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        let reg_num = immediate_t!(op);
+                        let thing: &mut [u8; 4] =
+                            unsafe { core::mem::transmute(&mut $self.reg[reg_num]) };
+                        $rhw
+                        thing[3] = get_mem_alligned!($address, u8); //$self.mem.get_u8(address);
+                        thing[2] = get_mem_alligned!($address.wrapping_add(1), u8);
+                        //$self.mem.get_u8(address + 1);
+                    }
+                    0b100110 => {
+                        //LWR
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        let reg_num = immediate_t!(op);
+                        let thing: &mut [u8; 4] =
+                            unsafe { core::mem::transmute(&mut $self.reg[reg_num]) };
+                        {
+                            let $address = $address.wrapping_sub(1);
+                            $rhw
+                        }
+                        thing[0] = get_mem_alligned!($address, u8); //$self.mem.get_u8(address);
+                        thing[1] = get_mem_alligned!($address.wrapping_sub(1), u8);
+                        //$self.mem.get_u8(address.wrapping_sub(1));
+                    }
+
+                    //save unaliged instructions
+                    0b101010 => {
+                        //SWL
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        let reg_num = immediate_t!(op);
+                        let thing: [u8; 4] = $self.reg[reg_num].to_ne_bytes();
+                        $whw
+                        set_mem_alligned!($address, thing[3], u8);
+                        set_mem_alligned!($address.wrapping_add(1), thing[2], u8);
+                    }
+                    0b101110 => {
+                        //SWR
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        let reg_num = immediate_t!(op);
+                        let thing: [u8; 4] = $self.reg[reg_num].to_ne_bytes();
+                        {
+                            let $address = $address.wrapping_sub(1);
+                            $whw
+                        }
+                        set_mem_alligned!($address, thing[0], u8);
+                        set_mem_alligned!($address.wrapping_sub(1), thing[1], u8);
+                    }
+
+                    // load instrictions
+                    0b100000 => {
+                        //LB
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        $rb
+                        $self.reg[immediate_t!(op)] = get_mem_alligned!($address, i8) as u32;
+                    }
+                    0b100100 => {
+                        //LBU
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        $rb
+                        $self.reg[immediate_t!(op)] = get_mem_alligned!($address, u8) as u32;
+                    }
+                    0b100001 => {
+                        //LH
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+
+                        if core::intrinsics::likely($address & 0b1 == 0) {
+                            $rhw
+                            $self.reg[immediate_t!(op)] = get_mem_alligned!($address, i16) as u32;
+                        //$self.mem.get_i16_alligned(address) as u32
+                        } else {
+                            drop($debugger_lock);
+                            $self.memory_error(0);
+                            break 'cpu_loop;
+                        }
+                    }
+                    0b100101 => {
+                        //LHU
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+
+                        if core::intrinsics::likely($address & 0b1 == 0) {
+                            $rhw
+                            $self.reg[immediate_t!(op)] = get_mem_alligned!($address, u16) as u32;
+                        //$self.mem.get_u16_alligned(address) as u32
+                        } else {
+                            drop($debugger_lock);
+                            $self.memory_error(0);
+                            break 'cpu_loop;
+                        }
+                    }
+                    0b100011 => {
+                        //LW
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+
+                        if core::intrinsics::likely($address & 0b11 == 0) {
+                            $rhw
+                            $self.reg[immediate_t!(op)] = get_mem_alligned!($address, u32);
+                        //$self.mem.get_u32_alligned(address) as u32
+                        } else {
+                            drop($debugger_lock);
+                            $self.memory_error(1);
+                            break 'cpu_loop;
+                        }
+                    }
+
+                    // store instructions
+                    0b101000 => {
+                        //SB
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        $wb
+                        set_mem_alligned!($address, $self.reg[immediate_t!(op)] as u8, u8);
+                    }
+                    0b101001 => {
+                        //SH
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+
+                        if core::intrinsics::likely($address & 0b1 == 0) {
+                            $whw
+                            set_mem_alligned!($address, $self.reg[immediate_t!(op)] as u16, u16);
+                        } else {
+                            drop($debugger_lock);
+                            $self.memory_error(3);
+                            break 'cpu_loop;
+                        }
+                    }
+                    0b101011 => {
+                        //SW
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        if core::intrinsics::likely($address & 0b11 == 0) {
+                            $ww
+                            set_mem_alligned!($address, $self.reg[immediate_t!(op)], u32);
+                        } else {
+                            drop($debugger_lock);
+                            $self.memory_error(4);
+                            break 'cpu_loop;
+                        }
+                    }
+
+                    _ => {
+                        drop($debugger_lock);
+                        $self.invalid_op_code();
+                        break 'cpu_loop;
+                    },
+                }
+            }
+
+            !$self.check
+        } {}
+    };
+}
+//------------------------------------------------------------------------------------------------------------------------
+impl<T: CpuExternalHandler> MipsCpu<T> {
     #[inline(never)]
     #[link_section = ".text.emu_run"]
     fn run(&mut self) {
+        let debugger = self.debugger.clone();
+        let lock = debugger.lock();
+        if let Ok(mut debugger) = lock {
+            if let Some(debugger) = &mut *debugger {
+                if debugger.start(self) {
+                    self.running = false;
+                    self.finished = true;
+                    return;
+                }
+            }
+        }
         self.external_handler.cpu_start();
 
         self.is_paused = false;
-        'main_loop: while {
+        'run_loop: while {
             while *self.paused.get_mut() > 0 {
                 if !self.is_paused {
                     self.is_paused = true;
                     self.external_handler.cpu_pause();
                 }
                 if !self.running {
-                    break 'main_loop;
+                    break 'run_loop;
                 }
                 std::hint::spin_loop();
             }
@@ -980,610 +1710,196 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 self.external_handler.cpu_resume();
             }
 
-            let mut ins_cache = unsafe {
-                (
-                    &mut (self.mem.get_or_make_page(self.pc).as_mut()).page,
-                    self.pc >> 16,
-                )
-            };
-            let mut mem_cache =
-                unsafe { (&mut (self.mem.get_or_make_page(0).as_mut()).page, 0u32) };
+            let d = self.debugger.clone();
+            let debugger_lock = d.lock().unwrap();
 
-            macro_rules! set_mem_alligned {
-                ($add:expr, $val:expr, $fn_type:ty) => {
-                    unsafe {
-                        let address = $add;
-                        if core::intrinsics::unlikely(address >> 16 != mem_cache.1) {
-                            mem_cache = (
-                                &mut (self.mem.get_or_make_page(address).as_mut()).page,
-                                address >> 16,
-                            );
-                        }
-
-                        let item = mem_cache.0.get_unchecked_mut(address as u16 as usize);
-                        *core::mem::transmute::<&mut u8, &mut $fn_type>(item) = $val.to_be()
-                    }
-                };
-            }
-
-            macro_rules! get_mem_alligned {
-                ($add:expr, $fn_type:ty) => {
-                    unsafe {
-                        let address = $add;
-                        if core::intrinsics::unlikely(address >> 16 != mem_cache.1) {
-                            mem_cache = (
-                                &mut (self.mem.get_or_make_page(address).as_mut()).page,
-                                address >> 16,
-                            );
-                        }
-
-                        let item = mem_cache.0.get_unchecked(address as u16 as usize);
-                        core::mem::transmute::<&u8, &$fn_type>(item).to_be()
-                    }
-                };
-            }
-
-            while {
-                let op: u32 = unsafe {
-                    if core::intrinsics::unlikely(self.pc >> 16 != ins_cache.1) {
-                        ins_cache = (
-                            &mut (self.mem.get_or_make_page(self.pc).as_mut()).page,
-                            self.pc >> 16,
-                        );
-                    }
-
-                    let item = ins_cache.0.get_unchecked(self.pc as u16 as usize);
-                    core::mem::transmute::<&u8, &u32>(item).to_be()
-                };
-
-                //prevent overflow
-                self.pc = self.pc.wrapping_add(4);
-
+            if debugger_lock.is_none() {
+                #[allow(unused)]
                 {
-                    macro_rules! get_reg {
-                        ($reg:expr) => {
-                            unsafe { *self.reg.get_unchecked($reg) }
-                        };
-                    }
-
-                    match op >> 26 {
-                        0 => {
-                            match op & 0b111111 {
-                                // REGISTER formatted instructions
-
-                                //arithmatic
-                                0b100000 => {
-                                    //ADD
-                                    match (self.reg[register_s!(op)] as i32)
-                                        .checked_add(self.reg[register_t!((op))] as i32)
+                    core_emu!(
+                        self,
+                        debugger_lock,
+                        id,
+                        address,
+                        {},
+                        {},
+                        {},
+                        {},
+                        {},
+                        {},
+                        {},
+                        {}
+                    );
+                }
+            } else if debugger_lock.is_some() {
+                self.run_with_debugger(debugger_lock);
+                impl<T: CpuExternalHandler> MipsCpu<T> {
+                    #[inline(never)]
+                    fn run_with_debugger(
+                        &mut self,
+                        mut debugger_lock: MutexGuard<'_, Option<Box<dyn Debugger<T>>>>,
+                    ) {
+                        let debugger = debugger_lock.as_mut().unwrap();
+                        match (
+                            debugger.check_memory_access(self),
+                            debugger.check_syscall_access(self),
+                        ) {
+                            (true, true) => {
+                                core_emu!(
+                                    self,
+                                    debugger_lock,
+                                    id,
+                                    address,
                                     {
-                                        Some(val) => {
-                                            self.reg[register_d!(op)] = val as u32;
+                                        if debugger.on_break(id, self) {
+                                            return; //break 'main_loop;
                                         }
-
-                                        None => {
-                                            self.arithmetic_error(2);
-                                        }
-                                    }
-                                }
-                                0b100001 => {
-                                    //ADDU
-                                    self.reg[register_d!(op)] = self.reg[register_s!(op)]
-                                        .wrapping_add(self.reg[register_t!((op))])
-                                }
-                                0b100100 => {
-                                    //AND
-                                    self.reg[register_d!(op)] =
-                                        self.reg[register_s!(op)] & self.reg[register_t!((op))]
-                                }
-                                0b011010 => {
-                                    //DIV
-                                    let t = self.reg[register_t!(op)] as i32;
-                                    if core::intrinsics::likely(t != 0) {
-                                        let s = self.reg[register_s!(op)] as i32;
-                                        self.lo = (s.wrapping_div(t)) as u32;
-                                        self.hi = (s.wrapping_rem(t)) as u32;
-                                    } else {
-                                        self.arithmetic_error(0);
-                                    }
-                                }
-                                0b011011 => {
-                                    //DIVU
-                                    let t = self.reg[register_t!(op)];
-                                    if core::intrinsics::likely(t != 0) {
-                                        let s = self.reg[register_s!(op)];
-                                        self.lo = s.wrapping_div(t);
-                                        self.hi = s.wrapping_rem(t);
-                                    } else {
-                                        self.arithmetic_error(0);
-                                    }
-                                }
-                                0b011000 => {
-                                    //MULT
-                                    let t = self.reg[register_t!(op)] as i32 as i64;
-                                    let s = self.reg[register_s!(op)] as i32 as i64;
-                                    let result = t.wrapping_mul(s);
-                                    self.lo = (result & 0xFFFFFFFF) as u32;
-                                    self.hi = (result >> 32) as u32;
-                                }
-                                0b011001 => {
-                                    //MULTU
-                                    let t = self.reg[register_t!(op)] as u64;
-                                    let s = self.reg[register_s!(op)] as u64;
-                                    let result = t.wrapping_mul(s);
-                                    self.lo = (result & 0xFFFFFFFF) as u32;
-                                    self.hi = (result >> 32) as u32;
-                                }
-                                0b100111 => {
-                                    //NOR
-                                    self.reg[register_d!(op)] =
-                                        !(self.reg[register_s!(op)] | self.reg[register_t!(op)]);
-                                }
-                                0b100101 => {
-                                    //OR
-                                    self.reg[register_d!(op)] =
-                                        self.reg[register_s!(op)] | self.reg[register_t!(op)];
-                                }
-                                0b100110 => {
-                                    //XOR
-                                    self.reg[register_d!(op)] =
-                                        self.reg[register_s!(op)] ^ self.reg[register_t!(op)];
-                                }
-                                0b000000 => {
-                                    //SLL
-                                    self.reg[register_d!(op)] =
-                                        self.reg[register_t!(op)] << register_a!(op);
-                                }
-                                0b000100 => {
-                                    //SLLV
-                                    self.reg[register_d!(op)] = (self.reg[register_t!(op)])
-                                        << (0b11111 & self.reg[register_s!(op)]);
-                                }
-                                0b000011 => {
-                                    //SRA
-                                    self.reg[register_d!(op)] = (self.reg[register_t!(op)] as i32
-                                        >> register_a!(op))
-                                        as u32;
-                                }
-                                0b000111 => {
-                                    //SRAV
-                                    self.reg[register_d!(op)] = (self.reg[register_t!(op)] as i32
-                                        >> (0b11111 & self.reg[register_s!(op)]))
-                                        as u32;
-                                }
-                                0b000010 => {
-                                    //SRL
-                                    self.reg[register_d!(op)] =
-                                        (self.reg[register_t!(op)] >> register_a!(op)) as u32;
-                                }
-                                0b000110 => {
-                                    //SRLV
-                                    self.reg[register_d!(op)] = (self.reg[register_t!(op)]
-                                        >> (0b11111 & self.reg[register_s!(op)]))
-                                        as u32;
-                                }
-                                0b100010 => {
-                                    //SUB
-                                    if let Option::Some(val) = (self.reg[register_s!(op)] as i32)
-                                        .checked_sub(self.reg[register_t!(op)] as i32)
+                                    },
                                     {
-                                        self.reg[register_d!(op)] = val as u32;
-                                    } else {
-                                        self.arithmetic_error(1)
-                                    }
-                                }
-                                0b100011 => {
-                                    //SUBU
-                                    self.reg[register_d!(op)] = self.reg[register_s!(op)]
-                                        .wrapping_sub(self.reg[register_t!(op)]);
-                                }
-
-                                //comparason
-                                0b101010 => {
-                                    //SLT
-                                    self.reg[register_d!(op)] = {
-                                        if (self.reg[register_s!(op)] as i32)
-                                            < (self.reg[register_t!(op)] as i32)
-                                        {
-                                            1
-                                        } else {
-                                            0
+                                        if debugger.on_syscall(id, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_read(address, 1, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_read(address, 2, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_read(address, 4, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_write(address, 1, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_write(address, 2, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_write(address, 4, self) {
+                                            return; //break 'main_loop;
                                         }
                                     }
-                                }
-                                0b101011 => {
-                                    //SLTU
-                                    self.reg[register_d!(op)] = {
-                                        if self.reg[register_s!(op)] < self.reg[register_t!(op)] {
-                                            1
-                                        } else {
-                                            0
+                                );
+                            }
+                            (true, false) => {
+                                core_emu!(
+                                    self,
+                                    debugger_lock,
+                                    id,
+                                    address,
+                                    {
+                                        if debugger.on_break(id, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {},
+                                    {
+                                        if debugger.on_memory_read(address, 1, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_read(address, 2, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_read(address, 4, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_write(address, 1, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_write(address, 2, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {
+                                        if debugger.on_memory_write(address, 4, self) {
+                                            return; //break 'main_loop;
                                         }
                                     }
-                                }
-
-                                //jump
-                                0b001001 => {
-                                    //JALR
-                                    self.reg[31] = self.pc;
-                                    self.pc = self.reg[register_s!(op)];
-                                }
-                                0b001000 => {
-                                    //JR
-                                    self.pc = self.reg[register_s!(op)];
-                                }
-
-                                //data movement
-                                0b010000 => {
-                                    //MFHI
-                                    self.reg[register_d!(op)] = self.hi;
-                                }
-                                0b010010 => {
-                                    //MFLO
-                                    self.reg[register_d!(op)] = self.lo;
-                                }
-                                0b010001 => {
-                                    //MTHI
-                                    self.hi = self.reg[register_s!(op)];
-                                }
-                                0b010011 => {
-                                    //MTLO
-                                    self.lo = self.reg[register_s!(op)];
-                                }
-
-                                //special
-                                0b001100 => {
-                                    //syscall
-                                    self.system_call((op >> 6) & 0b11111111111111111111)
-                                }
-                                0b001101 => {
-                                    //break
-                                    self.breakpoint((op >> 6) & 0b11111111111111111111)
-                                }
-                                0b110100 => {
-                                    //TEQ
-                                    if self.reg[register_s!(op)] == self.reg[register_t!(op)] {
-                                        self.system_call((op >> 6) & 0b1111111111)
-                                    }
-                                }
-                                0b110000 => {
-                                    //TGE
-                                    if self.reg[register_s!(op)] as i32
-                                        >= self.reg[register_t!(op)] as i32
+                                );
+                            }
+                            #[allow(unused)]
+                            (false, true) => {
+                                core_emu!(
+                                    self,
+                                    debugger_lock,
+                                    id,
+                                    address,
                                     {
-                                        self.system_call((op >> 6) & 0b1111111111)
-                                    }
-                                }
-                                0b110001 => {
-                                    //TGEU
-                                    if self.reg[register_s!(op)] >= self.reg[register_t!(op)] {
-                                        self.system_call((op >> 6) & 0b1111111111)
-                                    }
-                                }
-                                0b110010 => {
-                                    //TIT
-                                    if (self.reg[register_s!(op)] as i32)
-                                        < self.reg[register_t!(op)] as i32
+                                        if debugger.on_break(id, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
                                     {
-                                        self.system_call((op >> 6) & 0b1111111111)
-                                    }
-                                }
-                                0b110011 => {
-                                    //TITU
-                                    if self.reg[register_s!(op)] < self.reg[register_t!(op)] {
-                                        self.system_call((op >> 6) & 0b1111111111)
-                                    }
-                                }
-                                0b110110 => {
-                                    //TNE
-                                    if self.reg[register_s!(op)] != self.reg[register_t!(op)] {
-                                        self.system_call((op >> 6) & 0b1111111111)
-                                    }
-                                }
-
-                                _ => self.invalid_op_code(),
+                                        if debugger.on_syscall(id, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {},
+                                    {},
+                                    {},
+                                    {},
+                                    {},
+                                    {}
+                                );
                             }
+                            #[allow(unused)]
+                            (false, false) => {
+                                core_emu!(
+                                    self,
+                                    debugger_lock,
+                                    id,
+                                    address,
+                                    {
+                                        if debugger.on_break(id, self) {
+                                            return; //break 'main_loop;
+                                        }
+                                    },
+                                    {},
+                                    {},
+                                    {},
+                                    {},
+                                    {},
+                                    {},
+                                    {}
+                                );
+                            } //_ => {}
                         }
-                        //Jump instructions
-                        0b000010 => {
-                            //jump
-                            self.pc = (self.pc & 0b11110000000000000000000000000000)
-                                | jump_immediate_address!(op);
-                        }
-                        0b000011 => {
-                            //jal
-                            self.reg[31] = self.pc;
-                            self.pc = (self.pc & 0b11110000000000000000000000000000)
-                                | jump_immediate_address!(op);
-                        }
-                        // IMMEDIATE formmated instructions
-
-                        // arthmetic
-                        0b001000 => {
-                            //ADDI
-                            if let Option::Some(val) = (self.reg[immediate_s!(op)] as i32)
-                                .checked_add(immediate_immediate_signed_extended!(op) as i32)
-                            {
-                                self.reg[immediate_t!(op)] = val as u32;
-                            } else {
-                                self.arithmetic_error(1);
-                            }
-                        }
-                        0b001001 => {
-                            //ADDIU
-                            self.reg[immediate_t!(op)] = (self.reg[immediate_s!(op)])
-                                .wrapping_add(immediate_immediate_signed_extended!(op));
-                        }
-                        0b001100 => {
-                            //ANDI
-                            self.reg[immediate_t!(op)] =
-                                self.reg[immediate_s!(op)] & immediate_immediate_zero_extended!(op)
-                        }
-                        0b001101 => {
-                            //ORI
-                            self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                                | immediate_immediate_zero_extended!(op) as u32
-                        }
-                        0b001110 => {
-                            //XORI
-                            self.reg[immediate_t!(op)] = self.reg[immediate_s!(op)] as u32
-                                ^ immediate_immediate_zero_extended!(op) as u32
-                        }
-
-                        // constant manupulating inctructions
-                        0b001111 => {
-                            //LUI
-                            self.reg[immediate_t!(op)] =
-                                immediate_immediate_zero_extended!(op) << 16;
-                        }
-                        // these were replaced
-                        // 0b011001 => {
-                        //     //LHI
-                        //     let t = immediate_t!(op) as usize;
-                        //     self.reg[t] =
-                        //         self.reg[t] & 0xFFFF | immediate_immediate_unsigned_hi!(op) as u32;
-                        // }
-                        // 0b011000 => {
-                        //     //LLO
-                        //     let t = immediate_t!(op) as usize;
-                        //     self.reg[t] =
-                        //         self.reg[t] & 0xFFFF0000 | immediate_immediate_zero_extended!(op) as u32;
-                        // }
-
-                        // comparison Instructions
-                        0b001010 => {
-                            //SLTI
-                            self.reg[immediate_t!(op)] = {
-                                if (self.reg[immediate_s!(op)] as i32)
-                                    < (immediate_immediate_signed_extended!(op) as i32)
-                                {
-                                    1
-                                } else {
-                                    0
-                                }
-                            }
-                        }
-                        0b001011 => {
-                            //SLTIU
-                            self.reg[immediate_t!(op)] = {
-                                if (self.reg[immediate_s!(op)] as u32)
-                                    < (immediate_immediate_signed_extended!(op) as u32)
-                                {
-                                    1
-                                } else {
-                                    0
-                                }
-                            }
-                        }
-
-                        // branch instructions
-                        0b000100 => {
-                            //BEQ
-                            if get_reg!(immediate_s!(op)) == get_reg!(immediate_t!(op)) {
-                                self.pc = ((self.pc as i32)
-                                    .wrapping_add(immediate_immediate_address!(op)))
-                                    as u32;
-                            }
-                        }
-                        0b000001 => {
-                            match immediate_t!(op) {
-                                0b00001 => {
-                                    //BGEZ
-                                    if (self.reg[immediate_s!(op)] as i32) >= 0 {
-                                        self.pc = ((self.pc as i32)
-                                            .wrapping_add(immediate_immediate_address!(op)))
-                                            as u32;
-                                    }
-                                }
-                                0b00000 => {
-                                    //BLTZ
-                                    if (self.reg[immediate_s!(op)] as i32) < 0 {
-                                        self.pc = ((self.pc as i32)
-                                            .wrapping_add(immediate_immediate_address!(op)))
-                                            as u32;
-                                    }
-                                }
-                                _ => {
-                                    self.invalid_op_code();
-                                }
-                            }
-                        }
-                        0b000111 => {
-                            //BGTZ
-                            if self.reg[immediate_s!(op)] as i32 > 0 {
-                                self.pc = ((self.pc as i32)
-                                    .wrapping_add(immediate_immediate_address!(op)))
-                                    as u32;
-                            }
-                        }
-
-                        0b000110 => {
-                            //BLEZ
-                            if self.reg[immediate_s!(op)] as i32 <= 0 {
-                                self.pc = ((self.pc as i32)
-                                    .wrapping_add(immediate_immediate_address!(op)))
-                                    as u32;
-                            }
-                        }
-                        0b000101 => {
-                            //BNE
-                            if self.reg[immediate_s!(op)] != self.reg[immediate_t!(op) as usize] {
-                                self.pc = ((self.pc as i32)
-                                    .wrapping_add(immediate_immediate_address!(op)))
-                                    as u32;
-                            }
-                        }
-
-                        //load unsinged instructions
-                        0b100010 => {
-                            //LWL
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            let reg_num = immediate_t!(op);
-                            let thing: &mut [u8; 4] =
-                                unsafe { core::mem::transmute(&mut self.reg[reg_num]) };
-                            thing[3] = get_mem_alligned!(address, u8); //self.mem.get_u8(address);
-                            thing[2] = get_mem_alligned!(address.wrapping_add(1), u8);
-                            //self.mem.get_u8(address + 1);
-                        }
-                        0b100110 => {
-                            //LWR
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            let reg_num = immediate_t!(op);
-                            let thing: &mut [u8; 4] =
-                                unsafe { core::mem::transmute(&mut self.reg[reg_num]) };
-                            thing[0] = get_mem_alligned!(address, u8); //self.mem.get_u8(address);
-                            thing[1] = get_mem_alligned!(address.wrapping_sub(1), u8);
-                            //self.mem.get_u8(address.wrapping_sub(1));
-                        }
-
-                        //save unaliged instructions
-                        0b101010 => {
-                            //SWL
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            let reg_num = immediate_t!(op);
-                            let thing: [u8; 4] = self.reg[reg_num].to_ne_bytes();
-                            set_mem_alligned!(address, thing[3], u8);
-                            set_mem_alligned!(address.wrapping_add(1), thing[2], u8);
-                        }
-                        0b101110 => {
-                            //SWR
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            let reg_num = immediate_t!(op);
-                            let thing: [u8; 4] = self.reg[reg_num].to_ne_bytes();
-
-                            set_mem_alligned!(address, thing[0], u8);
-                            set_mem_alligned!(address.wrapping_sub(1), thing[1], u8);
-                        }
-
-                        // load instrictions
-                        0b100000 => {
-                            //LB
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, i8) as u32;
-                        }
-                        0b100100 => {
-                            //LBU
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            self.reg[immediate_t!(op)] = get_mem_alligned!(address, u8) as u32;
-                        }
-                        0b100001 => {
-                            //LH
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-
-                            if core::intrinsics::likely(address & 0b1 == 0) {
-                                self.reg[immediate_t!(op)] = get_mem_alligned!(address, i16) as u32;
-                            //self.mem.get_i16_alligned(address) as u32
-                            } else {
-                                self.memory_error(0);
-                            }
-                        }
-                        0b100101 => {
-                            //LHU
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-
-                            if core::intrinsics::likely(address & 0b1 == 0) {
-                                self.reg[immediate_t!(op)] = get_mem_alligned!(address, u16) as u32;
-                            //self.mem.get_u16_alligned(address) as u32
-                            } else {
-                                self.memory_error(0);
-                            }
-                        }
-                        0b100011 => {
-                            //LW
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-
-                            if core::intrinsics::likely(address & 0b11 == 0) {
-                                self.reg[immediate_t!(op)] = get_mem_alligned!(address, u32);
-                            //self.mem.get_u32_alligned(address) as u32
-                            } else {
-                                self.memory_error(1);
-                            }
-                        }
-
-                        // store instructions
-                        0b101000 => {
-                            //SB
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-
-                            set_mem_alligned!(address, self.reg[immediate_t!(op)] as u8, u8);
-                        }
-                        0b101001 => {
-                            //SH
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-
-                            if core::intrinsics::likely(address & 0b1 == 0) {
-                                set_mem_alligned!(address, self.reg[immediate_t!(op)] as u16, u16);
-                            } else {
-                                self.memory_error(3);
-                            }
-                        }
-                        0b101011 => {
-                            //SW
-                            let address = ((self.reg[immediate_s!(op)] as i32)
-                                .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
-                                as u32;
-                            if core::intrinsics::likely(address & 0b11 == 0) {
-                                set_mem_alligned!(address, self.reg[immediate_t!(op)], u32);
-                            } else {
-                                self.memory_error(4);
-                            }
-                        }
-
-                        _ => self.invalid_op_code(),
                     }
                 }
-
-                !self.check
-            } {}
+            }
             self.check = false;
 
-            //TODO clear paused state and check states when CPU stops running
-            self.running //do while self.running
+            self.running
         } {}
         self.finished = true;
 
         self.external_handler.cpu_stop();
+
+        let debugger = self.debugger.clone();
+        let lock = debugger.lock();
+        if let Ok(mut debugger) = lock {
+            if let Some(debugger) = &mut *debugger {
+                debugger.stop(self);
+            }
+        }
     }
 }
