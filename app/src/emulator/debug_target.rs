@@ -1,6 +1,6 @@
 use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::Target};
 use mips_emulator::{
-    cpu::EmulatorInterface,
+    cpu::{EmulatorInterface, CpuExternalHandler},
     memory::{page_pool::{MemoryDefaultAccess}, single_cached_memory::SingleCachedMemory},
 };
 
@@ -10,19 +10,35 @@ pub enum TargetError {
     MemoryWriteError,
     MemoryReadError,
     InvalidRegister(u8),
+    UnsupportedBreakpointKind,
+    InvalidBreakpointAddress(u32),
+    BreakpointDoesntExist(u32),
+    BreakpointAlreadyExists
 }
 
-pub struct TargetInterface {
-    pub emulator: EmulatorInterface<super::handlers::ExternalHandler>,
+struct Breakpoint{
+    addr: u32,
+    old_data: u32,
 }
 
-impl std::fmt::Debug for TargetInterface {
+pub struct TargetInterface<T: CpuExternalHandler> {
+    pub emulator: EmulatorInterface<T>,
+    breakpoints: Vec<Breakpoint>
+}
+
+impl<T: CpuExternalHandler> TargetInterface<T> {
+    pub fn new(emulator: EmulatorInterface<T>) -> Self{
+        Self { emulator, breakpoints: Default::default() }
+    }
+}
+
+impl<T: CpuExternalHandler> std::fmt::Debug for TargetInterface<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TargetInterface").finish()
     }
 }
 
-impl Target for TargetInterface {
+impl<T: CpuExternalHandler> Target for TargetInterface<T> {
     type Error = TargetError;
 
     fn inturrupt(&mut self) -> Result<(), Self::Error> {
@@ -65,18 +81,6 @@ impl Target for TargetInterface {
                 vec.push(mem.get_u8_be(addr.wrapping_add(i)));
             }
             Ok(vec)
-            // match cpu.raw_mem().slice_vec_or_none(
-            //     addr,
-            //     addr.checked_add(len).ok_or(TargetError::MemoryReadError)?,
-            // ) {
-            //     mips_emulator::memory::emulator_memory::TernaryOption::Option1(slice) => {
-            //         Ok((*slice).to_owned())
-            //     }
-            //     mips_emulator::memory::emulator_memory::TernaryOption::Option2(vec) => Ok(vec),
-            //     mips_emulator::memory::emulator_memory::TernaryOption::None => {
-            //         Err(TargetError::MemoryReadError)
-            //     }
-            // }
         })
     }
 
@@ -118,15 +122,69 @@ impl Target for TargetInterface {
     fn write_registers(&mut self, _data: [u32; 38]) -> Result<(), Self::Error> {
         todo!()
     }
+
+    fn insert_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
+        if kind == 4{
+            if self.breakpoints.iter().any(|val| val.addr == addr){
+                return Ok(())//Err(TargetError::BreakpointAlreadyExists)
+            }
+            if addr & 0b11 == 0{
+                self.emulator.cpu_mut(|cpu|{
+                    let mut mem = cpu.get_mem::<SingleCachedMemory>();
+                    let data = unsafe{ mem.get_u32_alligned_o_be(addr) };
+                    if let Some(old_data) = data {
+                        self.breakpoints.push(Breakpoint{addr, old_data});
+                        unsafe{
+                            mem.set_u32_alligned_be(addr, 0x00000000D);
+                        }
+                        Ok(())
+                    }else{
+                        Err(TargetError::InvalidBreakpointAddress(addr))
+                    }
+                })
+            }else{
+                Err(TargetError::InvalidBreakpointAddress(addr))
+            }
+        }else{
+            Err(TargetError::UnsupportedBreakpointKind)
+        }
+    }
+
+    fn remove_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
+        if kind == 4{
+            if let Some(breakpoint) = self.breakpoints.iter().find(|val| val.addr == addr){
+                self.emulator.cpu_mut(|cpu|{
+                    let mut mem = cpu.get_mem::<SingleCachedMemory>();
+                    _ = unsafe { mem.set_u32_alligned_o_be(addr, breakpoint.old_data) };
+                    Ok(())
+                })
+            }else{
+                Err(TargetError::BreakpointDoesntExist(addr))
+            }
+        }else{
+            Err(TargetError::UnsupportedBreakpointKind)
+        }
+    }
+
+    fn sw_breakpoint_hit(&mut self) {
+        self.emulator.cpu_mut(|cpu|{
+            let bp_addr = cpu.pc().wrapping_sub(4);
+            if self.breakpoints.iter().any(|val| val.addr == bp_addr){
+                //this is a debugger breakpoint so lets move the pc back one
+                cpu.set_pc(bp_addr)
+            }
+        })
+    }
 }
 
-pub trait Debugger: Sync + Send + 'static {
+pub trait Debugger<T: Target>: Sync + Send + 'static {
     fn on_start(&self);
     fn on_stop(&self);
     fn on_illegal_opcode(&self);
+    fn on_software_breakpoint(&self);
 }
 
-impl<C: Connection + Sync + Send + 'static, T: Target + Sync + Send + 'static> Debugger
+impl<C: Connection + Sync + Send + 'static, T: Target + Sync + Send + 'static> Debugger<T>
     for GDBAsyncNotifier<C, T>
 {
     fn on_start(&self) {
@@ -138,6 +196,10 @@ impl<C: Connection + Sync + Send + 'static, T: Target + Sync + Send + 'static> D
     }
 
     fn on_illegal_opcode(&self) {
-        self.on_stop();//self.target_stop_signal(gdb::stub::StopReason::Signal(Signal::SIGILL));
+        self.on_stop();
+    }
+
+    fn on_software_breakpoint(&self) {
+        self.target_stop_signal(gdb::stub::StopReason::SwBreak);
     }
 }

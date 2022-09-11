@@ -67,6 +67,12 @@ impl KeyboardMemory {
     pub fn update(&mut self, context: &egui::Context) {
         let input = context.input();
 
+        macro_rules! fn_key_code {
+            ($ex:expr) => {
+                unsafe { char::from_u32_unchecked('[' as u32 | ($ex) << 8) }
+            };
+        }
+
         for event in input.events.iter() {
             if let egui::Event::Key {
                 key,
@@ -126,26 +132,26 @@ impl KeyboardMemory {
                     egui::Key::X => 'X',
                     egui::Key::Y => 'Y',
                     egui::Key::Z => 'Z',
-                    egui::Key::F1 => todo!(),
-                    egui::Key::F2 => todo!(),
-                    egui::Key::F3 => todo!(),
-                    egui::Key::F4 => todo!(),
-                    egui::Key::F5 => todo!(),
-                    egui::Key::F6 => todo!(),
-                    egui::Key::F7 => todo!(),
-                    egui::Key::F8 => todo!(),
-                    egui::Key::F9 => todo!(),
-                    egui::Key::F10 => todo!(),
-                    egui::Key::F11 => todo!(),
-                    egui::Key::F12 => todo!(),
-                    egui::Key::F13 => todo!(),
-                    egui::Key::F14 => todo!(),
-                    egui::Key::F15 => todo!(),
-                    egui::Key::F16 => todo!(),
-                    egui::Key::F17 => todo!(),
-                    egui::Key::F18 => todo!(),
-                    egui::Key::F19 => todo!(),
-                    egui::Key::F20 => todo!(),
+                    egui::Key::F1 => fn_key_code!(1),
+                    egui::Key::F2 => fn_key_code!(2),
+                    egui::Key::F3 => fn_key_code!(3),
+                    egui::Key::F4 => fn_key_code!(4),
+                    egui::Key::F5 => fn_key_code!(5),
+                    egui::Key::F6 => fn_key_code!(6),
+                    egui::Key::F7 => fn_key_code!(7),
+                    egui::Key::F8 => fn_key_code!(8),
+                    egui::Key::F9 => fn_key_code!(9),
+                    egui::Key::F10 => fn_key_code!(10),
+                    egui::Key::F11 => fn_key_code!(11),
+                    egui::Key::F12 => fn_key_code!(12),
+                    egui::Key::F13 => fn_key_code!(13),
+                    egui::Key::F14 => fn_key_code!(14),
+                    egui::Key::F15 => fn_key_code!(15),
+                    egui::Key::F16 => fn_key_code!(16),
+                    egui::Key::F17 => fn_key_code!(17),
+                    egui::Key::F18 => fn_key_code!(18),
+                    egui::Key::F19 => fn_key_code!(19),
+                    egui::Key::F20 => fn_key_code!(20),
                 };
                 if *pressed {
                     self.pressed.retain(|x| x.key_code != key);

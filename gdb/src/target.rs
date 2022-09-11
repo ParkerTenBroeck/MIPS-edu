@@ -12,4 +12,8 @@ pub trait Target {
     fn read_register(&mut self, reg: u8) -> Result<u32, Self::Error>;
     fn write_register(&mut self, reg: u8, data: u32) -> Result<(), Self::Error>;
     fn write_registers(&mut self, data: [u32; 38]) -> Result<(), Self::Error>;
+
+    fn sw_breakpoint_hit(&mut self);
+    fn insert_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error>;
+    fn remove_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error>;
 }

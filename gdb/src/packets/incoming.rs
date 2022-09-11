@@ -40,12 +40,18 @@ pub enum Command {
     StepAt(Option<u32>),
     ContinueAtSignal(Signal, Option<u32>),
     StepAtSignal(Signal, Option<u32>),
+
     ReadRegisters,
     WriteRegisters(),
-    ReadMemory(u32, u32),
-    WriteMemory(u32, Vec<u8>),
     ReadRegister(u8),
     WriteRegister(u8, u32),
+
+    ReadMemory(u32, u32),
+    WriteMemory(u32, Vec<u8>),
+
+    InsertSoftwareBreakpoint(u8, u32),
+    RemoveSoftwareBreakpoint(u8, u32),
+
     Reset,
     MustReplayEmpty,
     ExceptionReason,
@@ -183,6 +189,19 @@ impl Command {
 
             "r" => Command::Reset,
             "k" => Command::Kill,
+
+            "z0," = args => {
+                let (addr, kind) = args.split_once(',').ok_or(CommandParseError::MalformedCommand)?;
+                let addr = u32::from_str_radix(addr, 16).map_err(CommandParseError::ParseIntError)?;
+                let kind = u8::from_str_radix(kind, 16).map_err(CommandParseError::ParseIntError)?;
+                Command::RemoveSoftwareBreakpoint(kind, addr)
+            },
+            "Z0," = args => {
+                let (addr, kind) = args.split_once(',').ok_or(CommandParseError::MalformedCommand)?;
+                let addr = u32::from_str_radix(addr, 16).map_err(CommandParseError::ParseIntError)?;
+                let kind = u8::from_str_radix(kind, 16).map_err(CommandParseError::ParseIntError)?;
+                Command::InsertSoftwareBreakpoint(kind, addr)
+            },
 
 
             'c' = arg => Command::ContinueAt(if arg.is_empty(){

@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub struct GDBAsyncNotifier<C: Connection, T: Target> {
-    gdb: Arc<Mutex<GDBStub<C, T>>>,
+    pub gdb: Arc<Mutex<GDBStub<C, T>>>,
 }
 
 impl<C: Connection, T: Target> GDBAsyncNotifier<C, T> {

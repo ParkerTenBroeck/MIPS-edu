@@ -147,19 +147,20 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 self.state = GDBState::Disconnected(DisconnectReason::TargetTerminated(sig));
             }
             StopReason::SwBreak => {
+                //self.target.sw_breakpoint_hit();
                 res.write(b'S').map_err(GDBError::ConnectionWrite)?;
                 res.write_hex(Signal::SIGTRAP as u8)
                     .map_err(GDBError::ConnectionWrite)?;
-                res.write_str("swbreak:;")
-                    .map_err(GDBError::ConnectionWrite)?;
+                // res.write_str("swbreak:;")
+                //     .map_err(GDBError::ConnectionWrite)?;
                 self.state = GDBState::Idle;
             }
             StopReason::HwBreak => {
                 res.write(b'S').map_err(GDBError::ConnectionWrite)?;
                 res.write_hex(Signal::SIGTRAP as u8)
                     .map_err(GDBError::ConnectionWrite)?;
-                res.write_str("hwbreak:;")
-                    .map_err(GDBError::ConnectionWrite)?;
+                // res.write_str("hwbreak:;")
+                //     .map_err(GDBError::ConnectionWrite)?;
                 self.state = GDBState::Idle;
             }
         }
@@ -375,6 +376,30 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                     .write_str("OK")
                     .map_err(GDBError::ConnectionWrite)?;
             }
+            Command::InsertSoftwareBreakpoint(kind, addr) => {
+                if let Err(err) = self.target.insert_software_breakpoint(kind,addr){
+                    response
+                        .write_str("E01")
+                        .map_err(GDBError::ConnectionWrite)?;
+                    Err(GDBError::TargetError(err))?
+                }else{
+                    response
+                        .write_str("OK")
+                        .map_err(GDBError::ConnectionWrite)?;
+                }
+            },
+            Command::RemoveSoftwareBreakpoint(kind, addr) => {
+                if let Err(err) = self.target.remove_software_breakpoint(kind,addr){
+                    response
+                        .write_str("E01")
+                        .map_err(GDBError::ConnectionWrite)?;
+                    Err(GDBError::TargetError(err))?
+                }else{
+                    response
+                        .write_str("OK")
+                        .map_err(GDBError::ConnectionWrite)?;
+                }
+            },
         }
         Ok((&self.state, response))
     }

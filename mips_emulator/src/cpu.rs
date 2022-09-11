@@ -410,6 +410,17 @@ impl Default for CP1 {
     }
 }
 
+trait Debugger<T: CpuExternalHandler>: 'static + Sync + Send{
+    fn start(&mut self, cpu: MipsCpu<T>) -> bool;
+    fn stop(&mut self, cpu: MipsCpu<T>);
+    fn on_syscall(&mut self, cpu: MipsCpu<T>) -> bool;
+    fn on_break(&mut self, cpu: MipsCpu<T>) -> bool;
+    fn check_memory_access(&mut self, cpu: MipsCpu<T>) -> bool;
+    fn on_memory_read(&mut self, cpu: MipsCpu<T>) -> bool;
+    fn on_memory_write(&mut self, cpu: MipsCpu<T>) -> bool;
+    
+}
+
 //-------------------------------------------------------- co processors
 #[repr(align(4096))]
 //#[repr(C)]
@@ -431,6 +442,8 @@ pub struct MipsCpu<T: CpuExternalHandler> {
     _inturupts: Mutex<Vec<()>>,
     dropped: bool,
     external_handler: T,
+
+    debugger: Mutex<Option<Box<dyn Debugger<T>>>>
 }
 
 impl<T: CpuExternalHandler> MipsCpu<T> {
@@ -477,6 +490,7 @@ pub unsafe trait CpuExternalHandler: Sync + Send + Sized + 'static {
     fn memory_error(&mut self, cpu: &mut MipsCpu<Self>, error_id: u32);
     fn invalid_opcode(&mut self, cpu: &mut MipsCpu<Self>);
     fn system_call(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32);
+    fn breakpoint(&mut self, cpu: &mut MipsCpu<Self>, call_id: u32);
     fn system_call_error(
         &mut self,
         cpu: &mut MipsCpu<Self>,
@@ -637,6 +651,10 @@ unsafe impl CpuExternalHandler for DefaultExternalHandler {
             message
         );
     }
+
+    fn breakpoint(&mut self, cpu: &mut MipsCpu<Self>, _call_id: u32) {
+        cpu.stop();
+    }
 }
 
 // impl<T: CpuExternalHandler> PagePoolListener for MipsCpu<T> {
@@ -679,6 +697,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             external_handler: handler,
             _inturupts: Default::default(),
             dropped: false,
+            debugger: Mutex::new(None),
         };
 
         let mut interface = EmulatorInterface::new(tmp);
@@ -691,11 +710,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         interface
     }
 
-    // unsafe fn ref_into_listener(&mut self) -> &'static mut (dyn PagePoolListener + Sync + Send) {
-    //     let test: &mut dyn PagePoolListener = self;
-    //     std::mem::transmute(test)
-    // }
-
     #[allow(unused)]
     pub fn get_mem<M: PagedMemoryImpl + Default + Send + Sync + 'static>(
         &mut self,
@@ -704,14 +718,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             .lock()
             .unwrap()
             .add_holder(Box::new(M::default()))
-    }
-
-    #[allow(unused)]
-    /// # Safety
-    ///
-    /// do not use this while the emulator is running or many many bad things can happen
-    pub unsafe fn raw_mem(&mut self) -> &mut SharedPagePoolMemory<Memory> {
-        &mut self.mem
     }
 
     /// # Safety
@@ -797,17 +803,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         }
     }
 
-    // fn pause_exclude_memory_event(&mut self) {
-    //     self.paused
-    //         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    //     while unsafe {
-    //         core::ptr::write_volatile(&mut self.check, true);
-    //         !(self.is_paused() || self.is_within_memory_event() || !self.is_running())
-    //     } {
-    //         std::hint::spin_loop();
-    //     }
-    // }
-
     fn resume(&mut self) {
         if self.paused.load(std::sync::atomic::Ordering::Relaxed) > 0 {
             self.paused
@@ -854,6 +849,11 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     fn system_call(&mut self, call_id: u32) {
         unsafe { core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler) }
             .system_call(self, call_id);
+    }
+
+    fn breakpoint(&mut self, call_id: u32) {
+        unsafe { core::mem::transmute::<&mut T, &mut T>(&mut self.external_handler) }
+            .breakpoint(self, call_id);
     }
 
     #[allow(dead_code)]
@@ -1238,7 +1238,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                                 }
                                 0b001101 => {
                                     //break
-                                    self.system_call((op >> 6) & 0b11111111111111111111)
+                                    self.breakpoint((op >> 6) & 0b11111111111111111111)
                                 }
                                 0b110100 => {
                                     //TEQ
@@ -1574,7 +1574,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                         _ => self.invalid_op_code(),
                     }
                 }
-                //self.run_opcode(op);
 
                 !self.check
             } {}
