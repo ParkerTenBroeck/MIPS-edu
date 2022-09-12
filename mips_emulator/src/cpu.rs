@@ -831,6 +831,20 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.resume();
     }
 
+    pub fn detach_debugger(&mut self) {
+        self.pause();
+        let c = self.debugger.clone();
+        let mut debugger = c.lock().unwrap();
+
+        let mut old_debugger = None;
+        std::mem::swap(&mut old_debugger, &mut *debugger);
+        if let Some(mut debugger) = old_debugger {
+            debugger.detach();
+        }
+        drop(debugger);
+        self.resume();
+    }
+
     fn resume(&mut self) {
         if self.paused.load(std::sync::atomic::Ordering::Relaxed) > 0 {
             self.paused

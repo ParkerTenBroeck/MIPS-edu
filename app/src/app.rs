@@ -1,3 +1,4 @@
+use crate::emulator::debug_target::MipsDebugger;
 use crate::{emulator::handlers::CPUAccessInfo, platform::sync::PlatSpecificLocking};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -109,22 +110,22 @@ impl Application {
                 for stream in socket.incoming() {
                     match stream {
                         Ok(socket) => {
-                            let target = crate::emulator::debug_target::TargetInterface::new(
+                            let target = crate::emulator::debug_target::MipsTargetInterface::new(
                                 emulator.clone(),
                             );
 
                             let stub = gdb::stub::GDBStub::new(target, socket);
                             let (stub, notifier) = gdb::async_target::create_async_stub(stub);
 
-                            emulator.cpu_mut(|cpu| unsafe {
-                                cpu.raw_handler().debugger = Some(Box::new(notifier));
+                            emulator.cpu_mut(|cpu| {
+                                cpu.attach_debugger(MipsDebugger::new(notifier));
                             });
 
                             log::trace!("Starting debugger in seperate thread");
                             log::info!("{:?}", stub.run_blocking());
 
-                            emulator.cpu_mut(|cpu| unsafe {
-                                cpu.raw_handler().debugger = None;
+                            emulator.cpu_mut(|cpu| {
+                                cpu.detach_debugger();
                             });
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {

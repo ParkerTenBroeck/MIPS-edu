@@ -14,8 +14,6 @@ use crate::{
     util::keyboard_util::KeyboardMemory,
 };
 
-use super::debug_target::{Debugger, TargetInterface};
-
 #[derive(Default, Clone, Copy, Debug)]
 pub enum AccessKind {
     SinglFrame,
@@ -85,7 +83,6 @@ pub struct ExternalHandler {
     image: ColorImage,
     screen_x: usize,
     screen_y: usize,
-    pub debugger: Option<Box<dyn Debugger<TargetInterface<Self>>>>,
 }
 
 impl ExternalHandler {
@@ -114,7 +111,6 @@ impl ExternalHandler {
             rand_seed: time,
             image_sender,
             access_info,
-            debugger: None,
         }
     }
 }
@@ -138,16 +134,10 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                 Self::opcode_address(cpu)
             );
         }
-        if let Some(debugger) = &mut self.debugger {
-            debugger.on_illegal_opcode();
-        }
         cpu.stop();
     }
 
     fn cpu_stop(&mut self) {
-        if let Some(debugger) = &mut self.debugger {
-            debugger.on_stop();
-        }
         let mut lock = self.access_info.lock().unwrap();
         lock.set_display(AccessKind::Nothing);
         lock.set_sound(AccessKind::Nothing);
@@ -383,10 +373,6 @@ unsafe impl CpuExternalHandler for ExternalHandler {
 
     fn breakpoint(&mut self, cpu: &mut MipsCpu<Self>, _call_id: u32) {
         cpu.stop();
-        cpu.set_pc(cpu.pc().wrapping_sub(4));
-        if let Some(debugger) = &mut self.debugger {
-            debugger.on_software_breakpoint();
-        }
     }
 }
 

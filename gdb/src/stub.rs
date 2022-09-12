@@ -30,6 +30,7 @@ pub enum GDBError<C: Connection, T: Target> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum DisconnectReason {
+    TargetDisconnected,
     TargetExited(u8),
     TargetTerminated(Signal),
     Kill,
@@ -48,7 +49,7 @@ impl Default for GDBStubCfg {
 
 pub struct GDBStub<C: Connection, T: Target> {
     connection: C,
-    target: T,
+    pub target: T,
     state: GDBState,
     ptm: PacketStateMachine,
     cfg: GDBStubCfg,
@@ -167,6 +168,11 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         res.flush().map_err(GDBError::ConnectionWrite)?;
         //self.async_data.push(buff);
         Ok(())
+    }
+
+    pub fn detach_and_kill(&mut self){
+        self.state = GDBState::Disconnected(DisconnectReason::TargetDisconnected);
+        let _ = self.connection.on_session_end();
     }
 
     pub fn is_target_running_or_inturrupt(&self) -> bool {

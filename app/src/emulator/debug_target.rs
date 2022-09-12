@@ -1,6 +1,6 @@
 use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::Target};
 use mips_emulator::{
-    cpu::{CpuExternalHandler, EmulatorInterface},
+    cpu::{CpuExternalHandler, EmulatorInterface, Debugger},
     memory::{page_pool::MemoryDefaultAccess, single_cached_memory::SingleCachedMemory},
 };
 
@@ -20,27 +20,29 @@ struct Breakpoint {
     old_data: u32,
 }
 
-pub struct TargetInterface<T: CpuExternalHandler> {
+pub struct MipsTargetInterface<T: CpuExternalHandler> {
     pub emulator: EmulatorInterface<T>,
     breakpoints: Vec<Breakpoint>,
+    first_start: bool, 
 }
 
-impl<T: CpuExternalHandler> TargetInterface<T> {
+impl<T: CpuExternalHandler> MipsTargetInterface<T> {
     pub fn new(emulator: EmulatorInterface<T>) -> Self {
         Self {
             emulator,
             breakpoints: Default::default(),
+            first_start: true,
         }
     }
 }
 
-impl<T: CpuExternalHandler> std::fmt::Debug for TargetInterface<T> {
+impl<T: CpuExternalHandler> std::fmt::Debug for MipsTargetInterface<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TargetInterface").finish()
     }
 }
 
-impl<T: CpuExternalHandler> Target for TargetInterface<T> {
+impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
     type Error = TargetError;
 
     fn inturrupt(&mut self) -> Result<(), Self::Error> {
@@ -179,29 +181,96 @@ impl<T: CpuExternalHandler> Target for TargetInterface<T> {
     }
 }
 
-pub trait Debugger<T: Target>: Sync + Send + 'static {
-    fn on_start(&self);
-    fn on_stop(&self);
-    fn on_illegal_opcode(&self);
-    fn on_software_breakpoint(&self);
+pub struct MipsDebugger<C: Connection + Sync + Send + 'static, T: CpuExternalHandler>{
+    gdb_async: GDBAsyncNotifier<C, MipsTargetInterface<T>>,
 }
 
-impl<C: Connection + Sync + Send + 'static, T: Target + Sync + Send + 'static> Debugger<T>
-    for GDBAsyncNotifier<C, T>
+impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> MipsDebugger<C, T>{
+    pub fn new(gdb_async: GDBAsyncNotifier<C, MipsTargetInterface<T>>) -> Self{
+        Self{
+            gdb_async
+        }
+    }
+}
+
+impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> Debugger<T>
+    for MipsDebugger<C, T>
 {
-    fn on_start(&self) {
-        //todo!()
+    fn detach(&mut self) {
+        self.gdb_async.detach();
     }
 
-    fn on_stop(&self) {
-        self.on_target_stop()
+    fn attach(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
+        
     }
 
-    fn on_illegal_opcode(&self) {
-        self.on_stop();
+    fn start(&mut self, cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        let target = &mut self.gdb_async.gdb.lock().unwrap().target;
+        if target.first_start{
+            cpu.reset();
+            target.first_start = false;
+        }
+        false
     }
 
-    fn on_software_breakpoint(&self) {
-        self.target_stop_signal(gdb::stub::StopReason::SwBreak);
+    fn stop(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
+        self.gdb_async.on_target_stop();
     }
+
+    fn on_syscall(&mut self, _id: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        false
+    }
+
+    fn on_break(&mut self, _id: u32, cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        cpu.stop();
+        self.gdb_async.target_stop_signal(gdb::stub::StopReason::SwBreak);
+        let bp_address = cpu.pc().wrapping_sub(4);
+        if self.gdb_async.gdb.lock().unwrap().target.breakpoints.iter().any(|bp| bp.addr == bp_address){
+            cpu.set_pc(bp_address);
+        }
+        true
+    }
+
+    fn check_memory_access(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        false
+    }
+
+    fn check_syscall_access(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        false
+    }
+
+    fn on_memory_read(&mut self, _addr: u32, _len: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        false
+    }
+
+    fn on_memory_write(&mut self, _addr: u32, _len: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+        false
+    }
+
+    fn memory_error(&mut self, _error_id: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
+        self.gdb_async.on_target_stop();
+    }
+
+    fn arithmitic_error(&mut self, _error_id: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
+        self.gdb_async.on_target_stop();
+    }
+
+    fn invalid_op_code(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
+        self.gdb_async.on_target_stop();
+    }
+    // fn on_start(&self) {
+    //     //todo!()
+    // }
+
+    // fn on_stop(&self) {
+    //     self.on_target_stop()
+    // }
+
+    // fn on_illegal_opcode(&self) {
+    //     self.on_stop();
+    // }
+
+    // fn on_software_breakpoint(&self) {
+    //     self.target_stop_signal(gdb::stub::StopReason::SwBreak);
+    // }
 }

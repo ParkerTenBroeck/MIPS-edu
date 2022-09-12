@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::{
     connection::Connection,
@@ -18,6 +18,11 @@ impl<C: Connection, T: Target> GDBAsyncNotifier<C, T> {
 
     pub fn target_stop_signal(&self, reason: StopReason) {
         self.send_stub_stop_signal(reason);
+    }
+
+    pub fn detach(&self){
+        let mut stub = self.gdb.lock().unwrap();
+        stub.detach_and_kill();
     }
 
     fn send_stub_stop_signal(&self, reason: StopReason) {
