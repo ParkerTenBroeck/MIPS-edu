@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 pub trait Target {
     type Error: Debug;
+    fn detach(&mut self);
 
     fn inturrupt(&mut self) -> Result<(), Self::Error>;
     fn step_at(&mut self, addr: Option<u32>);

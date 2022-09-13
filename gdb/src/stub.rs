@@ -26,6 +26,7 @@ pub enum GDBError<C: Connection, T: Target> {
     CommandError,
     ExternalError,
     TargetError(T::Error),
+    NotConnected(DisconnectReason),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -34,6 +35,7 @@ pub enum DisconnectReason {
     TargetExited(u8),
     TargetTerminated(Signal),
     Kill,
+    Error,
 }
 
 struct GDBStubCfg {
@@ -117,11 +119,9 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
     }
 
     pub fn target_stop(&mut self, reason: StopReason) -> Result<(), GDBError<C, T>> {
-        //if true{
-        //    return Ok(())
-        //}
-        //let mut buff = String::new();
-        //let mut f_conn = BufferedConnection::new(&mut buff);
+        if let GDBState::Disconnected(reason) = self.state {
+            return Err(GDBError::NotConnected(reason));
+        }
         let mut res = ResponseWritter::new(&mut self.connection);
         match reason {
             StopReason::DoneStep => {
@@ -170,8 +170,13 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         Ok(())
     }
 
-    pub fn detach_and_kill(&mut self){
-        self.state = GDBState::Disconnected(DisconnectReason::TargetDisconnected);
+    pub fn detach_target_and_disconnect(&mut self, reason: DisconnectReason) {
+        self.disconnect(reason);
+        self.target.detach();
+    }
+
+    pub fn disconnect(&mut self, reason: DisconnectReason) {
+        self.state = GDBState::Disconnected(reason);
         let _ = self.connection.on_session_end();
     }
 

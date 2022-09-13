@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     connection::Connection,
@@ -20,37 +20,67 @@ impl<C: Connection, T: Target> GDBAsyncNotifier<C, T> {
         self.send_stub_stop_signal(reason);
     }
 
-    pub fn detach(&self){
-        let mut stub = self.gdb.lock().unwrap();
-        stub.detach_and_kill();
+    pub fn on_target_detach(&self) {
+        self.gdb
+            .lock()
+            .unwrap()
+            .disconnect(DisconnectReason::TargetDisconnected)
     }
 
     fn send_stub_stop_signal(&self, reason: StopReason) {
         let mut stub = self.gdb.lock().unwrap();
-        if stub.is_target_running_or_inturrupt() {
-            stub.target_stop(reason);
+        if stub.is_target_running_or_inturrupt() && stub.target_stop(reason).is_err() {
+            stub.detach_target_and_disconnect(DisconnectReason::Error);
         }
     }
 }
 
 pub struct GDBAsyncStub<C: Connection, T: Target> {
-    gdb: Arc<Mutex<GDBStub<C, T>>>,
+    pub gdb: Arc<Mutex<GDBStub<C, T>>>,
+}
+
+impl<C: Connection, T: Target> Clone for GDBAsyncStub<C, T> {
+    fn clone(&self) -> Self {
+        Self {
+            gdb: self.gdb.clone(),
+        }
+    }
 }
 
 impl<C: Connection, T: Target> GDBAsyncStub<C, T> {
-    pub fn run_blocking(self) -> Result<DisconnectReason, GDBError<C, T>> {
+    pub fn run_blocking(mut self) -> Result<DisconnectReason, GDBError<C, T>> {
         loop {
-            let mut lock = self.gdb.lock().map_err(|_| GDBError::ExternalError)?;
-            while {
-                if let Some(reason) = lock.check_non_blocking()? {
-                    return Ok(reason);
+            match self.run_non_blocking() {
+                Ok(None) => {}
+                Ok(Some(disconnect_reason)) => {
+                    self.gdb
+                        .lock()
+                        .unwrap()
+                        .detach_target_and_disconnect(disconnect_reason);
+                    return Ok(disconnect_reason);
                 }
-                lock.has_data_to_read()
-            } {}
-            drop(lock);
+                Err(err) => {
+                    self.gdb
+                        .lock()
+                        .unwrap()
+                        .detach_target_and_disconnect(DisconnectReason::Error);
+                    return Err(err);
+                }
+            };
 
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+    }
+    fn run_non_blocking(&mut self) -> Result<Option<DisconnectReason>, GDBError<C, T>> {
+        let mut lock = self.gdb.lock().map_err(|_| GDBError::ExternalError)?;
+        while {
+            if let Some(reason) = lock.check_non_blocking()? {
+                return Ok(Some(reason));
+            }
+            lock.has_data_to_read()
+        } {}
+        drop(lock);
+        Ok(None)
     }
 }
 

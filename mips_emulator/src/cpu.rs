@@ -411,7 +411,7 @@ impl Default for CP1 {
 }
 
 pub trait Debugger<T: CpuExternalHandler>: 'static + Sync + Send {
-    fn detach(&mut self);
+    fn detach(&mut self, cpu: &mut MipsCpu<T>);
     fn attach(&mut self, cpu: &mut MipsCpu<T>);
 
     fn start(&mut self, cpu: &mut MipsCpu<T>) -> bool;
@@ -822,7 +822,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         let mut old_debugger = None;
         std::mem::swap(&mut old_debugger, &mut *debugger);
         if let Some(mut debugger) = old_debugger {
-            debugger.detach();
+            debugger.detach(self);
         }
 
         *debugger = Some(Box::new(new_debugger));
@@ -839,7 +839,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         let mut old_debugger = None;
         std::mem::swap(&mut old_debugger, &mut *debugger);
         if let Some(mut debugger) = old_debugger {
-            debugger.detach();
+            debugger.detach(self);
         }
         drop(debugger);
         self.resume();

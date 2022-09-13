@@ -1,7 +1,7 @@
 use std::net::TcpStream;
 
 pub trait Connection {
-    type Error;
+    type Error: std::fmt::Debug;
 
     fn write(&mut self, byte: u8) -> Result<(), Self::Error>;
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {

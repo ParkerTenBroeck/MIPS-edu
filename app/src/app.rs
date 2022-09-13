@@ -1,4 +1,4 @@
-use crate::emulator::debug_target::MipsDebugger;
+use crate::emulator::debugger_thread;
 use crate::{emulator::handlers::CPUAccessInfo, platform::sync::PlatSpecificLocking};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -93,53 +93,29 @@ impl Application {
             dock: Default::default(),
         };
         {
-            let mut emulator = ret.cpu.clone();
-
-            let _ = crate::platform::thread::start_thread(move || {
-                let socket = match std::net::TcpListener::bind("localhost:1234") {
-                    Ok(ok) => ok,
-                    Err(e) => {
-                        log::error!("debugger encountered IO error: {e}");
-                        return;
-                    }
-                };
-                if socket.set_nonblocking(true).is_err() {
-                    log::error!("Failed to put debugger socket into non blocking mode");
-                    return;
-                }
-                for stream in socket.incoming() {
-                    match stream {
-                        Ok(socket) => {
-                            let target = crate::emulator::debug_target::MipsTargetInterface::new(
-                                emulator.clone(),
-                            );
-
-                            let stub = gdb::stub::GDBStub::new(target, socket);
-                            let (stub, notifier) = gdb::async_target::create_async_stub(stub);
-
-                            emulator.cpu_mut(|cpu| {
-                                cpu.attach_debugger(MipsDebugger::new(notifier));
-                            });
-
-                            log::trace!("Starting debugger in seperate thread");
-                            log::info!("{:?}", stub.run_blocking());
-
-                            emulator.cpu_mut(|cpu| {
-                                cpu.detach_debugger();
-                            });
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                            continue;
-                        }
-                        Err(e) => {
-                            log::error!("debugger encountered IO error: {e}");
-                            return;
+            let emulator = ret.cpu.clone();
+            let builder = debugger_thread::mips_emulator_debugger_builder(
+                emulator,
+                Box::new(|| {
+                    let socket = std::net::TcpListener::bind("localhost:1234")?;
+                    socket.set_nonblocking(true)?;
+                    for _ in 0..100 {
+                        match socket.incoming().next() {
+                            Some(Ok(socket)) => return Ok(socket),
+                            Some(Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                            }
+                            Some(Err(e)) => return Err(e.into()),
+                            None => break,
                         }
                     }
-                }
-            });
-        }
+                    Err("Failed to connect to client: Time out".into())
+                }),
+            );
+            if let Err(err) = debugger_thread::start(builder) {
+                log::error!("Failed to start debugger: {}", err);
+            }
+        };
 
         ret.add_cpu_memory_tab();
         ret.add_cpu_screen_tab();

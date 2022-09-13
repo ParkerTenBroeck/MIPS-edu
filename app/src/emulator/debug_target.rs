@@ -1,6 +1,6 @@
 use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::Target};
 use mips_emulator::{
-    cpu::{CpuExternalHandler, EmulatorInterface, Debugger},
+    cpu::{CpuExternalHandler, Debugger, EmulatorInterface},
     memory::{page_pool::MemoryDefaultAccess, single_cached_memory::SingleCachedMemory},
 };
 
@@ -23,7 +23,7 @@ struct Breakpoint {
 pub struct MipsTargetInterface<T: CpuExternalHandler> {
     pub emulator: EmulatorInterface<T>,
     breakpoints: Vec<Breakpoint>,
-    first_start: bool, 
+    first_start: bool,
 }
 
 impl<T: CpuExternalHandler> MipsTargetInterface<T> {
@@ -179,34 +179,38 @@ impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
             }
         })
     }
+
+    fn detach(&mut self) {
+        self.emulator.cpu_mut(|cpu| {
+            let mut mem = cpu.get_mem::<SingleCachedMemory>();
+            for bp in self.breakpoints.iter() {
+                _ = unsafe { mem.set_u32_alligned_o_be(bp.addr, bp.old_data) };
+            }
+            cpu.detach_debugger();
+        });
+    }
 }
 
-pub struct MipsDebugger<C: Connection + Sync + Send + 'static, T: CpuExternalHandler>{
+pub struct MipsDebugger<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> {
     gdb_async: GDBAsyncNotifier<C, MipsTargetInterface<T>>,
 }
 
-impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> MipsDebugger<C, T>{
-    pub fn new(gdb_async: GDBAsyncNotifier<C, MipsTargetInterface<T>>) -> Self{
-        Self{
-            gdb_async
-        }
+impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> MipsDebugger<C, T> {
+    pub fn new(gdb_async: GDBAsyncNotifier<C, MipsTargetInterface<T>>) -> Self {
+        Self { gdb_async }
     }
 }
 
 impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> Debugger<T>
     for MipsDebugger<C, T>
 {
-    fn detach(&mut self) {
-        self.gdb_async.detach();
-    }
+    fn detach(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {}
 
-    fn attach(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
-        
-    }
+    fn attach(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {}
 
     fn start(&mut self, cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
         let target = &mut self.gdb_async.gdb.lock().unwrap().target;
-        if target.first_start{
+        if target.first_start {
             cpu.reset();
             target.first_start = false;
         }
@@ -223,9 +227,19 @@ impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> Debugger<T>
 
     fn on_break(&mut self, _id: u32, cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
         cpu.stop();
-        self.gdb_async.target_stop_signal(gdb::stub::StopReason::SwBreak);
+        self.gdb_async
+            .target_stop_signal(gdb::stub::StopReason::SwBreak);
         let bp_address = cpu.pc().wrapping_sub(4);
-        if self.gdb_async.gdb.lock().unwrap().target.breakpoints.iter().any(|bp| bp.addr == bp_address){
+        if self
+            .gdb_async
+            .gdb
+            .lock()
+            .unwrap()
+            .target
+            .breakpoints
+            .iter()
+            .any(|bp| bp.addr == bp_address)
+        {
             cpu.set_pc(bp_address);
         }
         true
@@ -239,11 +253,21 @@ impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> Debugger<T>
         false
     }
 
-    fn on_memory_read(&mut self, _addr: u32, _len: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+    fn on_memory_read(
+        &mut self,
+        _addr: u32,
+        _len: u32,
+        _cpu: &mut mips_emulator::cpu::MipsCpu<T>,
+    ) -> bool {
         false
     }
 
-    fn on_memory_write(&mut self, _addr: u32, _len: u32, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) -> bool {
+    fn on_memory_write(
+        &mut self,
+        _addr: u32,
+        _len: u32,
+        _cpu: &mut mips_emulator::cpu::MipsCpu<T>,
+    ) -> bool {
         false
     }
 
