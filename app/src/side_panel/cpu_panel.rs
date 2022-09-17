@@ -411,9 +411,9 @@ impl SideTab for CPUSidePanel {
                     let test_prog = buf.as_slice();
                     unsafe {
                         cpu.get_mem::<SingleCachedMemory>()
-                            .copy_into_raw(0, test_prog);
+                            .copy_into_raw(0x10, test_prog);
                     }
-                    log::info!("Loaded Demo 2 CPU");
+                    log::info!("Loaded Demo 3 CPU");
                 });
                 ui.ctx().request_repaint();
             }

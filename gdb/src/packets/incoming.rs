@@ -58,6 +58,9 @@ pub enum Command {
     Unreconized,
     Kill,
 
+    qLaunchGDBServer,
+    qQueryGDBServer,
+
     qSupported(Vec<(String, bool, Option<String>)>),
     qTStatus,
     qfThreadInfo,
@@ -256,6 +259,10 @@ impl Command {
                 }
                 Command::qSupported(args)
             },
+            
+            "qQueryGDBServer" => Command::qQueryGDBServer,
+            "qLaunchGDBServer" = _args => Command::qLaunchGDBServer,
+
             "qTStatus" => Command::qTStatus,
             "qfThreadInfo" => Command::qfThreadInfo,
             "qsThreadInfo" => Command::qsThreadInfo,

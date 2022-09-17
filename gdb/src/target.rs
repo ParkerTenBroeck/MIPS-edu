@@ -1,10 +1,14 @@
 use std::fmt::Debug;
 
+pub enum InturruptType{
+    Async,
+    Sync
+}
 pub trait Target {
     type Error: Debug;
     fn detach(&mut self);
 
-    fn inturrupt(&mut self) -> Result<(), Self::Error>;
+    fn inturrupt(&mut self) -> Result<InturruptType, Self::Error>;
     fn step_at(&mut self, addr: Option<u32>);
     fn continue_at(&mut self, addr: Option<u32>);
     fn write_memory(&mut self, addr: u32, data: &[u8]) -> Result<(), Self::Error>;

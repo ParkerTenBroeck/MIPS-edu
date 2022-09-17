@@ -9,14 +9,14 @@ pub struct ResponseWritter<'a, C: Connection> {
 }
 
 impl<'a, C: Connection> ResponseWritter<'a, C> {
-    pub fn flush(mut self) -> Result<(), C::Error> {
+    pub fn flush(mut self) -> Result<usize, C::Error> {
         let checksum = self.check_sum;
         self.write(b'#')?;
         self.write_hex(checksum)?;
         log::trace!("--> {}", String::from_utf8_lossy(&self.msg));
         self.conn.write_all(&self.msg)?;
         self.conn.flush()?;
-        Ok(())
+        Ok(self.msg.len())
     }
 
     fn inner_write(&mut self, byte: u8) -> Result<(), C::Error> {

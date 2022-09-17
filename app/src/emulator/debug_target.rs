@@ -1,4 +1,4 @@
-use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::Target};
+use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::{Target, InturruptType}, stub::StopReason, signal::Signal};
 use mips_emulator::{
     cpu::{CpuExternalHandler, Debugger, EmulatorInterface},
     memory::{page_pool::MemoryDefaultAccess, single_cached_memory::SingleCachedMemory},
@@ -13,9 +13,11 @@ pub enum TargetError {
     InvalidBreakpointAddress(u32),
     BreakpointDoesntExist(u32),
     BreakpointAlreadyExists,
+    InturruptError,
 }
 
-struct Breakpoint {
+#[derive(Debug, Clone, Copy)]
+pub struct Breakpoint {
     addr: u32,
     old_data: u32,
 }
@@ -34,6 +36,10 @@ impl<T: CpuExternalHandler> MipsTargetInterface<T> {
             first_start: true,
         }
     }
+
+    pub(crate) fn breakpoints(&self) -> &[Breakpoint] {
+        &self.breakpoints
+    }
 }
 
 impl<T: CpuExternalHandler> std::fmt::Debug for MipsTargetInterface<T> {
@@ -42,13 +48,18 @@ impl<T: CpuExternalHandler> std::fmt::Debug for MipsTargetInterface<T> {
     }
 }
 
+
+
 impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
     type Error = TargetError;
 
-    fn inturrupt(&mut self) -> Result<(), Self::Error> {
-        self.emulator
-            .stop()
-            .map_err(|_| TargetError::MemoryWriteError)
+    fn inturrupt(&mut self) -> Result<InturruptType, Self::Error> {
+        if let Ok(()) = self.emulator.stop(){
+            Ok(InturruptType::Async)
+        }else{
+            //handle actual errors
+            Ok(InturruptType::Sync)
+        }
     }
 
     fn step_at(&mut self, addr: Option<u32>) {
@@ -114,6 +125,8 @@ impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
                 35 => 0,
                 36 => 0,
                 37 => self.emulator.pc(),
+                38 => 0, //fsr
+                39 => 0, //fir
                 _ => Err(TargetError::InvalidRegister(reg))?,
             }
         })
@@ -130,7 +143,7 @@ impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
     fn insert_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
         if kind == 4 {
             if self.breakpoints.iter().any(|val| val.addr == addr) {
-                return Ok(()); //Err(TargetError::BreakpointAlreadyExists)
+                return Err(TargetError::BreakpointAlreadyExists)
             }
             if addr & 0b11 == 0 {
                 self.emulator.cpu_mut(|cpu| {
@@ -156,10 +169,11 @@ impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
 
     fn remove_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
         if kind == 4 {
-            if let Some(breakpoint) = self.breakpoints.iter().find(|val| val.addr == addr) {
+            if let Some(breakpoint) = self.breakpoints.iter().position(|val| val.addr == addr) {
                 self.emulator.cpu_mut(|cpu| {
                     let mut mem = cpu.get_mem::<SingleCachedMemory>();
-                    _ = unsafe { mem.set_u32_alligned_o_be(addr, breakpoint.old_data) };
+                    _ = unsafe { mem.set_u32_alligned_o_be(addr, self.breakpoints[breakpoint].old_data) };
+                    self.breakpoints.remove(breakpoint);
                     Ok(())
                 })
             } else {
@@ -282,19 +296,8 @@ impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> Debugger<T>
     fn invalid_op_code(&mut self, _cpu: &mut mips_emulator::cpu::MipsCpu<T>) {
         self.gdb_async.on_target_stop();
     }
-    // fn on_start(&self) {
-    //     //todo!()
-    // }
 
-    // fn on_stop(&self) {
-    //     self.on_target_stop()
-    // }
-
-    // fn on_illegal_opcode(&self) {
-    //     self.on_stop();
-    // }
-
-    // fn on_software_breakpoint(&self) {
-    //     self.target_stop_signal(gdb::stub::StopReason::SwBreak);
-    // }
+    fn on_emu_panic(&mut self) {
+        self.gdb_async.target_stop_signal(StopReason::Signal(Signal::SIGSYS));
+    }
 }

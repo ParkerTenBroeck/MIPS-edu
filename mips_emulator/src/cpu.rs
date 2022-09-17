@@ -2,7 +2,7 @@ use core::panic;
 use std::{
     panic::AssertUnwindSafe,
     pin::Pin,
-    sync::{atomic::AtomicUsize, Arc, Mutex, MutexGuard},
+    sync::{atomic::AtomicUsize, Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
@@ -416,6 +416,7 @@ pub trait Debugger<T: CpuExternalHandler>: 'static + Sync + Send {
 
     fn start(&mut self, cpu: &mut MipsCpu<T>) -> bool;
     fn stop(&mut self, cpu: &mut MipsCpu<T>);
+    fn on_emu_panic(&mut self);
     fn on_syscall(&mut self, id: u32, cpu: &mut MipsCpu<T>) -> bool;
     fn on_break(&mut self, id: u32, cpu: &mut MipsCpu<T>) -> bool;
     fn check_memory_access(&mut self, cpu: &mut MipsCpu<T>) -> bool;
@@ -753,6 +754,13 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         }
     }
 
+    #[allow(unused)]
+    pub fn is_going_to_stop(&self) -> bool {
+        unsafe {
+            !*core::ptr::read_volatile(&&self.running)
+        }
+    }
+
     pub fn paused_or_stopped(&self) -> bool {
         self.is_paused() || !self.is_running()
     }
@@ -856,9 +864,16 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.running = false;
         self.finished = true;
         self.check = false;
-        self.paused.store(0, std::sync::atomic::Ordering::Relaxed);
         self.is_paused = true;
-        self.clear();
+        //self.clear();
+        
+        let mut debugger = self.debugger.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(debugger) = &mut *debugger{
+            debugger.on_emu_panic();
+        }
+        *debugger = debugger.take();
+        self.debugger.clear_poison();
+        drop(debugger);
     }
 
     #[inline(never)]
@@ -926,9 +941,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             return;
         }
 
-        self.running = true;
-        self.finished = false;
-
         //stack overflows occur so we need to make a custom thread with a larger stack to account for that and it fixes the problem
         let _handle = std::thread::Builder::new()
             .stack_size(32 * 1024 * 1024)
@@ -938,7 +950,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 let start = std::time::SystemTime::now();
 
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    self.run();
+                    self.run(false);
                 }));
 
                 let since_the_epoch = std::time::SystemTime::now()
@@ -962,10 +974,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             return;
         }
 
-        self.running = false;
-        self.finished = false;
-        self.check = true;
-
         let _handle = std::thread::Builder::new()
             .stack_size(32 * 1024 * 1024)
             .spawn(|| {
@@ -973,7 +981,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 let start = std::time::SystemTime::now();
 
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    self.run();
+                    self.run(true);
                 }));
 
                 let since_the_epoch = std::time::SystemTime::now()
@@ -997,12 +1005,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             return;
         }
 
-        self.running = true;
-        self.finished = false;
-        self.check = true;
-
         log::info!("CPU Started");
-        self.run();
+        self.run(false);
         log::info!("CPU Step Stopping");
     }
 
@@ -1012,13 +1016,9 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
             return;
         }
 
-        self.running = false;
-        self.finished = false;
-        self.check = true;
-
         log::info!("CPU Step Started");
 
-        self.run();
+        self.run(true);
 
         log::info!("CPU Step Stopped");
     }
@@ -1693,18 +1693,27 @@ macro_rules! core_emu {
 impl<T: CpuExternalHandler> MipsCpu<T> {
     #[inline(never)]
     #[link_section = ".text.emu_run"]
-    fn run(&mut self) {
+    fn run(&mut self, step: bool) {
         let debugger = self.debugger.clone();
-        let lock = debugger.lock();
-        if let Ok(mut debugger) = lock {
-            if let Some(debugger) = &mut *debugger {
-                if debugger.start(self) {
-                    self.running = false;
-                    self.finished = true;
-                    return;
-                }
+        let mut debugger = debugger.lock().unwrap();
+        
+        if let Some(debugger) = &mut *debugger {
+            if debugger.start(self) {
+                self.running = false;
+                self.finished = true;
+                return;
             }
         }
+        if step{
+            self.finished = false;
+            self.running = false;
+            self.check = true;
+        }else{
+            self.finished = false;
+            self.running = true;
+        }
+        drop(debugger);
+        
         self.external_handler.cpu_start();
 
         self.is_paused = false;

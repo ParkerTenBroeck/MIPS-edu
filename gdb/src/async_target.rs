@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     connection::Connection,
     signal::Signal,
-    stub::{DisconnectReason, GDBError, GDBStub, StopReason},
+    stub::{DisconnectReason, GDBError, GDBStub, StopReason, GDBState},
     target::Target,
 };
 
@@ -77,7 +77,7 @@ impl<C: Connection, T: Target> GDBAsyncStub<C, T> {
             if let Some(reason) = lock.check_non_blocking()? {
                 return Ok(Some(reason));
             }
-            lock.has_data_to_read()
+            lock.has_data_to_read() && matches!(lock.state(), GDBState::Idle | GDBState::Running)
         } {}
         drop(lock);
         Ok(None)

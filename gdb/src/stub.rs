@@ -9,7 +9,8 @@ use crate::{
     target::Target,
 };
 
-enum GDBState {
+#[derive(Clone, Copy, Debug)]
+pub enum GDBState {
     Idle,
     Running,
     CtrlCInt,
@@ -56,6 +57,10 @@ pub struct GDBStub<C: Connection, T: Target> {
     ptm: PacketStateMachine,
     cfg: GDBStubCfg,
     async_data: Vec<String>,
+    packets_sent: usize,
+    packets_receved: usize,
+    bytes_sent: usize,
+    bytes_receved: usize,
 }
 
 impl<C: Connection, T: Target> Drop for GDBStub<C, T> {
@@ -82,11 +87,39 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
             ptm: PacketStateMachine::new(),
             cfg: Default::default(),
             async_data: Vec::new(),
+            packets_sent: 0,
+            packets_receved: 0,
+            bytes_sent: 0,
+            bytes_receved: 0,
         }
+    }
+
+    pub fn packets_sent(&self) -> usize{
+        self.packets_sent
+    }
+
+    pub fn packets_receved(&self) -> usize{
+        self.packets_receved   
+    }
+
+    pub fn bytes_sent(&self) -> usize{
+        self.bytes_sent
+    }
+
+    pub fn bytes_receved(&self) -> usize{
+        self.bytes_receved
+    }
+
+    pub fn connection_string_repr(&self) -> Option<String>{
+        self.connection.string_repr()
     }
 
     pub fn has_data_to_read(&mut self) -> bool {
         self.connection.peek().map(|b| b.is_some()).unwrap_or(true)
+    }
+
+    pub fn state(&self) -> GDBState{
+        self.state
     }
 
     pub fn check_non_blocking(&mut self) -> Result<Option<DisconnectReason>, GDBError<C, T>> {
@@ -94,7 +127,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
             match self.state {
                 GDBState::Idle | GDBState::Running => {
                     let byte = self.connection.read().map_err(GDBError::ConnectionRead)?;
-
+                    self.bytes_receved += 1;
                     self.incomming_data(byte)?;
 
                     // for message in &self.async_data{
@@ -165,7 +198,9 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 self.state = GDBState::Idle;
             }
         }
-        res.flush().map_err(GDBError::ConnectionWrite)?;
+        let len = res.flush().map_err(GDBError::ConnectionWrite)?;
+        self.bytes_sent += len;
+        self.packets_sent += 1;
         //self.async_data.push(buff);
         Ok(())
     }
@@ -188,6 +223,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         if let Some(buf) = self.ptm.incomming_data(byte) {
             let packet = Packet::from_buff(buf).map_err(GDBError::PacketParseError)?;
             log::trace!("<-- {:?}", packet);
+            self.packets_receved += 1;
             self.incomming_packet(packet)?;
         }
         Ok(())
@@ -199,7 +235,13 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
             Packet::Nack => Err(GDBError::ClientSentNack),
             Packet::Interrupt => {
                 self.state = GDBState::CtrlCInt;
-                self.target.inturrupt().map_err(GDBError::TargetError)?;
+                let res = self.target.inturrupt().map_err(GDBError::TargetError)?;
+                match res{
+                    crate::target::InturruptType::Async => {},
+                    crate::target::InturruptType::Sync => {
+                        self.target_stop(StopReason::Signal(Signal::SIGTRAP))?
+                    },
+                }
                 Ok(())
             }
             Packet::Command(command) => {
@@ -213,7 +255,9 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 let (state, response) = self.handle_command(command)?;
 
                 if !matches!(state, GDBState::Disconnected(DisconnectReason::Kill)) {
-                    response.flush().map_err(GDBError::ConnectionFlush)?;
+                    let len = response.flush().map_err(GDBError::ConnectionFlush)?;
+                    self.bytes_sent += len;
+                    self.packets_sent += 1;
                 }
                 Ok(())
             }
@@ -263,9 +307,9 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                         .write_hex_buff(&reg.to_be_bytes())
                         .map_err(GDBError::ConnectionWrite)?;
                 } else {
-                    response
-                        .write_str("E01")
-                        .map_err(GDBError::ConnectionWrite)?;
+                    // response
+                    //     .write_str("E01")
+                    //     .map_err(GDBError::ConnectionWrite)?;
                 }
             }
             Command::ReadRegisters => {
@@ -354,6 +398,8 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                         .map_err(GDBError::ConnectionWrite)?;
                 }
             }
+
+            //TODO!()
             Command::qMemoryRegionInfo(region) => {
                 response
                     .write_str("start:")
@@ -365,6 +411,8 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                     .write_str(";size:ffffffff;permissions:rwx;")
                     .map_err(GDBError::ConnectionWrite)?
             }
+            //TODO!()
+
             Command::SelectExecutionThread(_) => {
                 response
                     .write_str("OK")
@@ -410,6 +458,19 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                         .map_err(GDBError::ConnectionWrite)?;
                 }
             }
+
+            //TODO!()
+            Command::qQueryGDBServer => {
+                response
+                    .write_str("[{\"port\": 1234}]")
+                    .map_err(GDBError::ConnectionWrite)?;
+            },
+            Command::qLaunchGDBServer => {
+                response
+                    .write_str("port:1234;")
+                    .map_err(GDBError::ConnectionWrite)?;
+            },
+            //TODO!()
         }
         Ok((&self.state, response))
     }

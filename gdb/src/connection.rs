@@ -15,6 +15,8 @@ pub trait Connection {
     fn on_session_end(&mut self) -> Result<(), Self::Error>;
     fn read(&mut self) -> Result<u8, Self::Error>;
     fn peek(&mut self) -> Result<Option<u8>, Self::Error>;
+
+    fn string_repr(&self) -> Option<String> { None }
 }
 
 impl Connection for TcpStream {
@@ -63,5 +65,19 @@ impl Connection for TcpStream {
     fn on_session_end(&mut self) -> Result<(), Self::Error> {
         self.shutdown(std::net::Shutdown::Both)?;
         Ok(())
+    }
+
+    fn string_repr(&self) -> Option<String> {
+        let local = if let Ok(local) = self.local_addr(){
+            local
+        }else{
+            return None;
+        };
+        let peer = if let Ok(peer) = self.peer_addr(){
+            peer
+        }else{
+            return None;
+        };
+        Some(format!("{{\n\tlocal: {}\n\tpeer:  {}\n}}", local,peer))
     }
 }

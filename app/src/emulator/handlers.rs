@@ -318,17 +318,19 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                         .unwrap()
                         .set_display(AccessKind::SinglFrame);
                     //cpu.pause_exclude_memory_event()
-                    while !cpu.is_being_dropped() {
-                        if let Ok(val) = self.image_sender.lock() {
-                            if val.0 > frame {
+                    Self::pause_block(cpu, |cpu|{
+                        while !cpu.is_being_dropped() && cpu.is_going_to_stop() {
+                            if let Ok(val) = self.image_sender.lock() {
+                                if val.0 > frame {
+                                    break;
+                                }
+                            } else {
                                 break;
                             }
-                        } else {
-                            break;
+    
+                            std::thread::sleep(std::time::Duration::from_micros(250))
                         }
-
-                        std::thread::sleep(std::time::Duration::from_micros(250))
-                    }
+                    });
                 }
                 155 => {
                     //hsv to rgb

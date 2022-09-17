@@ -1,4 +1,4 @@
-use crate::emulator::debugger_thread;
+use crate::emulator::debugger_thread::{self};
 use crate::{emulator::handlers::CPUAccessInfo, platform::sync::PlatSpecificLocking};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -112,8 +112,16 @@ impl Application {
                     Err("Failed to connect to client: Time out".into())
                 }),
             );
-            if let Err(err) = debugger_thread::start(builder) {
-                log::error!("Failed to start debugger: {}", err);
+            //let thing: Arc<Mutex<dyn DebuggerConnection<crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>>>>;
+            
+            match debugger_thread::start(builder){
+                Ok(ok) => {
+                    //let thing = ok.clone();
+                    ret.add_debugger_tab(ok);
+                },
+                Err(err) => {
+                    log::error!("Failed to start debugger: {}", err);
+                },
             }
         };
 
@@ -164,6 +172,12 @@ impl Application {
     }
     pub fn add_cpu_terminal_tab(&mut self) {
         let tab = crate::tabs::terminal_tab::TerminalTab::new();
+        self.add_tab(tab);
+        //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
+    }
+
+    pub fn add_debugger_tab(&mut self, debugger: Arc<Mutex<dyn debugger_thread::DebuggerConnection<crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>>>>) {
+        let tab = crate::tabs::debugger_tab::DebuggerTab::new(debugger);
         self.add_tab(tab);
         //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
     }
