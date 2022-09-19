@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
-pub enum InturruptType{
+pub enum InturruptType {
     Async,
-    Sync
+    Sync,
 }
 pub trait Target {
     type Error: Debug;

@@ -16,7 +16,9 @@ pub trait Connection {
     fn read(&mut self) -> Result<u8, Self::Error>;
     fn peek(&mut self) -> Result<Option<u8>, Self::Error>;
 
-    fn string_repr(&self) -> Option<String> { None }
+    fn string_repr(&self) -> Option<String> {
+        None
+    }
 }
 
 impl Connection for TcpStream {
@@ -68,16 +70,16 @@ impl Connection for TcpStream {
     }
 
     fn string_repr(&self) -> Option<String> {
-        let local = if let Ok(local) = self.local_addr(){
+        let local = if let Ok(local) = self.local_addr() {
             local
-        }else{
+        } else {
             return None;
         };
-        let peer = if let Ok(peer) = self.peer_addr(){
+        let peer = if let Ok(peer) = self.peer_addr() {
             peer
-        }else{
+        } else {
             return None;
         };
-        Some(format!("{{\n\tlocal: {}\n\tpeer:  {}\n}}", local,peer))
+        Some(format!("{{\n\tlocal: {}\n\tpeer:  {}\n}}", local, peer))
     }
 }

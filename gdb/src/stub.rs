@@ -94,23 +94,23 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         }
     }
 
-    pub fn packets_sent(&self) -> usize{
+    pub fn packets_sent(&self) -> usize {
         self.packets_sent
     }
 
-    pub fn packets_receved(&self) -> usize{
-        self.packets_receved   
+    pub fn packets_receved(&self) -> usize {
+        self.packets_receved
     }
 
-    pub fn bytes_sent(&self) -> usize{
+    pub fn bytes_sent(&self) -> usize {
         self.bytes_sent
     }
 
-    pub fn bytes_receved(&self) -> usize{
+    pub fn bytes_receved(&self) -> usize {
         self.bytes_receved
     }
 
-    pub fn connection_string_repr(&self) -> Option<String>{
+    pub fn connection_string_repr(&self) -> Option<String> {
         self.connection.string_repr()
     }
 
@@ -118,7 +118,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
         self.connection.peek().map(|b| b.is_some()).unwrap_or(true)
     }
 
-    pub fn state(&self) -> GDBState{
+    pub fn state(&self) -> GDBState {
         self.state
     }
 
@@ -236,11 +236,11 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
             Packet::Interrupt => {
                 self.state = GDBState::CtrlCInt;
                 let res = self.target.inturrupt().map_err(GDBError::TargetError)?;
-                match res{
-                    crate::target::InturruptType::Async => {},
+                match res {
+                    crate::target::InturruptType::Async => {}
                     crate::target::InturruptType::Sync => {
                         self.target_stop(StopReason::Signal(Signal::SIGTRAP))?
-                    },
+                    }
                 }
                 Ok(())
             }
@@ -412,7 +412,6 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                     .map_err(GDBError::ConnectionWrite)?
             }
             //TODO!()
-
             Command::SelectExecutionThread(_) => {
                 response
                     .write_str("OK")
@@ -464,12 +463,12 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 response
                     .write_str("[{\"port\": 1234}]")
                     .map_err(GDBError::ConnectionWrite)?;
-            },
+            }
             Command::qLaunchGDBServer => {
                 response
                     .write_str("port:1234;")
                     .map_err(GDBError::ConnectionWrite)?;
-            },
+            }
             //TODO!()
         }
         Ok((&self.state, response))

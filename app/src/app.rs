@@ -1,4 +1,5 @@
 use crate::emulator::debugger_thread::{self};
+use crate::tabs::settings::{SettingsTab, EguiMemoryTab, EguiInspectionTab};
 use crate::{emulator::handlers::CPUAccessInfo, platform::sync::PlatSpecificLocking};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -8,7 +9,7 @@ use eframe::{
     epaint::{Color32, ColorImage, TextureHandle},
     App, Frame,
 };
-use egui_dock::Tab;
+use egui_dock::{Tab, DockArea, DynamicTabViewer, DynamicTree};
 //use egui_glium::{Painter, egui_winit::egui::Painter};
 use mips_emulator::cpu::{EmulatorInterface, MipsCpu};
 
@@ -57,7 +58,7 @@ pub struct Application {
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub cpu_virtual_keyboard: Arc<Mutex<KeyboardMemory>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    pub dock: egui_dock::DockArea,
+    pub tabs: DynamicTree,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub side_panel: Arc<Mutex<SideTabbedPanel>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -90,7 +91,7 @@ impl Application {
             cpu_screen,
             cpu_screen_texture,
             cpu_virtual_keyboard,
-            dock: Default::default(),
+            tabs: Default::default(),
         };
         {
             let emulator = ret.cpu.clone();
@@ -99,29 +100,29 @@ impl Application {
                 Box::new(|| {
                     let socket = std::net::TcpListener::bind("localhost:1234")?;
                     socket.set_nonblocking(true)?;
-                    for _ in 0..100 {
+                    for _ in 0..100{
                         match socket.incoming().next() {
-                            Some(Ok(socket)) => return Ok(socket),
+                            Some(Ok(socket)) => return Ok(Some(socket)),
                             Some(Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                std::thread::sleep(std::time::Duration::from_millis(100));
-                            }
+                                std::thread::sleep(std::time::Duration::from_millis(10))
+                            },
                             Some(Err(e)) => return Err(e.into()),
-                            None => break,
-                        }
+                            None => {},
+                        };
                     }
-                    Err("Failed to connect to client: Time out".into())
+                    Ok(None)
                 }),
             );
             //let thing: Arc<Mutex<dyn DebuggerConnection<crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>>>>;
-            
-            match debugger_thread::start(builder){
+
+            match debugger_thread::start(builder) {
                 Ok(ok) => {
                     //let thing = ok.clone();
                     ret.add_debugger_tab(ok);
-                },
+                }
                 Err(err) => {
                     log::error!("Failed to start debugger: {}", err);
-                },
+                }
             }
         };
 
@@ -168,7 +169,7 @@ impl Application {
     }
 
     pub fn add_tab(&mut self, tab: impl Tab + 'static) {
-        self.dock.push_to_active_leaf(tab);
+        self.tabs.push_to_focused_leaf(Box::new(tab));
     }
     pub fn add_cpu_terminal_tab(&mut self) {
         let tab = crate::tabs::terminal_tab::TerminalTab::new();
@@ -176,7 +177,16 @@ impl Application {
         //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
     }
 
-    pub fn add_debugger_tab(&mut self, debugger: Arc<Mutex<dyn debugger_thread::DebuggerConnection<crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>>>>) {
+    pub fn add_debugger_tab(
+        &mut self,
+        debugger: Arc<
+            Mutex<
+                dyn debugger_thread::DebuggerConnection<
+                    crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>,
+                >,
+            >,
+        >,
+    ) {
         let tab = crate::tabs::debugger_tab::DebuggerTab::new(debugger);
         self.add_tab(tab);
         //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
@@ -209,6 +219,19 @@ impl Application {
         }
         //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![Box::new(tab)]);
     }
+
+    pub fn add_settings_tab(&mut self){
+        self.add_tab(SettingsTab{})
+    }
+
+    pub fn add_egui_memory_tab(&mut self){
+        self.add_tab(EguiMemoryTab{})
+    }
+
+    pub fn add_egui_inspection_tab(&mut self){
+        self.add_tab(EguiInspectionTab{})
+    }
+
 }
 
 impl App for Application {
@@ -338,13 +361,9 @@ impl App for Application {
         let frame = frame_no_marg;
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            //self.tabbed_area.ui(ui);
-
             let style = egui_dock::Style::from_egui(&ui.ctx().style());
-            //egui_dock::TabBuilder::new
-            //egui_dock::tab::TabBuilder
-            //let mut tree = egui_dock::Tree::new(vec![tab]);
-            self.dock.show(ui, ui.id(), &style)
+            
+            DockArea::new(&mut self.tabs).style(style).show(ctx, &mut DynamicTabViewer{});
         });
 
         self.frame += 1;

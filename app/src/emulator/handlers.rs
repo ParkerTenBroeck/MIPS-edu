@@ -318,7 +318,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                         .unwrap()
                         .set_display(AccessKind::SinglFrame);
                     //cpu.pause_exclude_memory_event()
-                    Self::pause_block(cpu, |cpu|{
+                    Self::pause_block(cpu, |cpu| {
                         while !cpu.is_being_dropped() && cpu.is_going_to_stop() {
                             if let Ok(val) = self.image_sender.lock() {
                                 if val.0 > frame {
@@ -327,7 +327,7 @@ unsafe impl CpuExternalHandler for ExternalHandler {
                             } else {
                                 break;
                             }
-    
+
                             std::thread::sleep(std::time::Duration::from_micros(250))
                         }
                     });

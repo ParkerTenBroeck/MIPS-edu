@@ -759,8 +759,7 @@ dependencies = [
 
 [[package]]
 name = "egui_dock"
-version = "0.1.0"
-source = "git+https://github.com/ParkerTenBroeck/egui_dock.git#c07baf9d173dbe7b6143410be02de5fed042d294"
+version = "0.2.1"
 dependencies = [
  "egui",
 ]

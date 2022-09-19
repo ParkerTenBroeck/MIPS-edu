@@ -1,6 +1,7 @@
 use std::{
+    any::Any,
     error::Error,
-    sync::{Arc, Mutex}, any::Any,
+    sync::{Arc, Mutex},
 };
 
 use gdb::{
@@ -8,14 +9,17 @@ use gdb::{
     connection::Connection,
     target::Target,
 };
-use mips_emulator::{cpu::{CpuExternalHandler, EmulatorInterface}};
+use mips_emulator::cpu::{CpuExternalHandler, EmulatorInterface};
 
-use super::{debug_target::{MipsDebugger, MipsTargetInterface, Breakpoint}, handlers::ExternalHandler};
+use super::{
+    debug_target::{Breakpoint, MipsDebugger, MipsTargetInterface},
+    handlers::ExternalHandler,
+};
 
 //------------------------------------------------------------------------
 
 pub type CreateTarget<T> = Box<dyn FnOnce() -> Result<T, Box<dyn Error>> + Send>;
-pub type CreateConnection<C> = Box<dyn FnOnce() -> Result<C, Box<dyn Error>> + Send>;
+pub type CreateConnection<C> = Box<dyn FnMut() -> Result<Option<C>, Box<dyn Error>> + Send>;
 pub type AttachDebugger<C, T> =
     Box<dyn FnOnce(GDBAsyncNotifier<C, T>) -> Result<(), Box<dyn Error>> + Send>;
 pub struct DebuggerBuilder<C: Connection + Send + Sync + 'static, T: Target + Send + Sync + 'static>
@@ -35,7 +39,7 @@ pub enum State {
 }
 
 #[derive(Debug)]
-pub struct ConnectionInfo{
+pub struct ConnectionInfo {
     pub connection_str_repr: Option<String>,
     pub packets_sent: usize,
     pub packets_receved: usize,
@@ -117,21 +121,17 @@ pub fn start<
         fn get_connection_info(&mut self) -> Result<ConnectionInfo, Box<dyn Error>> {
             if let Some(stub) = &mut self.stub {
                 let lock = stub.gdb.try_lock();
-                match lock{
-                    Ok(lock) => {
-                        Ok(ConnectionInfo { 
-                            connection_str_repr: lock.connection_string_repr(), 
-                            packets_sent: lock.packets_sent(), 
-                            packets_receved: lock.packets_receved(),
-                            bytes_sent: lock.bytes_sent(), 
-                            bytes_receved: lock.bytes_receved(),
-                        })
-                    },
-                    Err(err) => {
-                        Err(err.to_string().into())
-                    },
+                match lock {
+                    Ok(lock) => Ok(ConnectionInfo {
+                        connection_str_repr: lock.connection_string_repr(),
+                        packets_sent: lock.packets_sent(),
+                        packets_receved: lock.packets_receved(),
+                        bytes_sent: lock.bytes_sent(),
+                        bytes_receved: lock.bytes_receved(),
+                    }),
+                    Err(err) => Err(err.to_string().into()),
                 }
-            }else{
+            } else {
                 Err("No connection present".into())
             }
         }
@@ -139,24 +139,18 @@ pub fn start<
         fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>> {
             if let Some(stub) = &mut self.stub {
                 let lock = stub.gdb.try_lock();
-                match lock{
-                    Ok(lock) => {
-                        Ok(Some(ConnectionInfo { 
-                            connection_str_repr: lock.connection_string_repr(), 
-                            packets_sent: lock.packets_sent(), 
-                            packets_receved: lock.packets_receved(),
-                            bytes_sent: lock.bytes_sent(), 
-                            bytes_receved: lock.bytes_receved(),
-                        }))
-                    },
-                    Err(std::sync::TryLockError::WouldBlock)=> {
-                        Ok(None)
-                    }
-                    Err(err) => {
-                        Err(err.to_string().into())
-                    },
+                match lock {
+                    Ok(lock) => Ok(Some(ConnectionInfo {
+                        connection_str_repr: lock.connection_string_repr(),
+                        packets_sent: lock.packets_sent(),
+                        packets_receved: lock.packets_receved(),
+                        bytes_sent: lock.bytes_sent(),
+                        bytes_receved: lock.bytes_receved(),
+                    })),
+                    Err(std::sync::TryLockError::WouldBlock) => Ok(None),
+                    Err(err) => Err(err.to_string().into()),
                 }
-            }else{
+            } else {
                 Err("No connection present".into())
             }
         }
@@ -177,12 +171,25 @@ pub fn start<
             internal: &Arc<Mutex<DThread<C, T>>>,
             builder: DebuggerBuilder<C, T>,
         ) -> Result<GDBAsyncStub<C, T>, Box<dyn Error>> {
+            let DebuggerBuilder {
+                create_target,
+                mut create_connetion,
+                attach,
+            } = builder;
+
             internal.lock().unwrap().state = State::Connecting;
-            let c = (builder.create_connetion)()?;
-            let t = (builder.create_target)()?;
+            let c = loop {
+                if let Some(con) = (create_connetion)()? {
+                    break con;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            };
+
+            let t = (create_target)()?;
+            
             let stub = gdb::stub::GDBStub::new(t, c);
             let (stub, notifier) = gdb::async_target::create_async_stub(stub);
-            (builder.attach)(notifier)?;
+            (attach)(notifier)?;
             internal.lock().unwrap().state = State::Connected;
             internal.lock().unwrap().stub = Some(stub.clone());
             Ok(stub)
@@ -190,7 +197,6 @@ pub fn start<
 
         match create_stub(&c, builder) {
             Ok(stub) => {
-                
                 log::trace!("Starting debugger in seperate thread");
                 log::info!("{:?}", stub.run_blocking());
             }
@@ -228,32 +234,33 @@ impl<T: Target> DebuggerConnection<T> for DisconnectedDebuggerConnection {
     fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>> {
         Err("No Connection".into())
     }
-
 }
 
-pub trait MipsDebuggerConnection{
+pub trait MipsDebuggerConnection {
     fn state(&self) -> State;
 
     fn get_breakpoints(&mut self) -> Vec<Breakpoint>;
-    fn try_get_breakpoints(&mut self)  -> Vec<Breakpoint>;
+    fn try_get_breakpoints(&mut self) -> Vec<Breakpoint>;
 
     fn get_connection_info(&mut self) -> Result<ConnectionInfo, Box<dyn Error>>;
-    fn try_get_connection_info(&mut self)  -> Result<Option<ConnectionInfo>, Box<dyn Error>>;
+    fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>>;
 }
 
-impl<T> MipsDebuggerConnection for T where
-    T: DebuggerConnection<MipsTargetInterface<ExternalHandler>>{
+impl<T> MipsDebuggerConnection for T
+where
+    T: DebuggerConnection<MipsTargetInterface<ExternalHandler>>,
+{
     fn get_breakpoints(&mut self) -> Vec<Breakpoint> {
         let mut breakpoints = Vec::new();
-        self.target(Box::new(|target|{
+        self.target(Box::new(|target| {
             breakpoints = target.breakpoints().to_vec()
         }));
         breakpoints
     }
 
-    fn try_get_breakpoints(&mut self)  -> Vec<Breakpoint> {
+    fn try_get_breakpoints(&mut self) -> Vec<Breakpoint> {
         let mut breakpoints = Vec::new();
-        self.try_target(Box::new(|target|{
+        self.try_target(Box::new(|target| {
             breakpoints = target.breakpoints().to_vec()
         }));
         breakpoints
@@ -267,7 +274,7 @@ impl<T> MipsDebuggerConnection for T where
         DebuggerConnection::get_connection_info(self)
     }
 
-    fn try_get_connection_info(&mut self)  -> Result<Option<ConnectionInfo>, Box<dyn Error>> {
+    fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>> {
         DebuggerConnection::try_get_connection_info(self)
     }
 }

@@ -1,4 +1,10 @@
-use gdb::{async_target::GDBAsyncNotifier, connection::Connection, target::{Target, InturruptType}, stub::StopReason, signal::Signal};
+use gdb::{
+    async_target::GDBAsyncNotifier,
+    connection::Connection,
+    signal::Signal,
+    stub::StopReason,
+    target::{InturruptType, Target},
+};
 use mips_emulator::{
     cpu::{CpuExternalHandler, Debugger, EmulatorInterface},
     memory::{page_pool::MemoryDefaultAccess, single_cached_memory::SingleCachedMemory},
@@ -48,15 +54,13 @@ impl<T: CpuExternalHandler> std::fmt::Debug for MipsTargetInterface<T> {
     }
 }
 
-
-
 impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
     type Error = TargetError;
 
     fn inturrupt(&mut self) -> Result<InturruptType, Self::Error> {
-        if let Ok(()) = self.emulator.stop(){
+        if let Ok(()) = self.emulator.stop() {
             Ok(InturruptType::Async)
-        }else{
+        } else {
             //handle actual errors
             Ok(InturruptType::Sync)
         }
@@ -143,7 +147,7 @@ impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
     fn insert_software_breakpoint(&mut self, kind: u8, addr: u32) -> Result<(), Self::Error> {
         if kind == 4 {
             if self.breakpoints.iter().any(|val| val.addr == addr) {
-                return Err(TargetError::BreakpointAlreadyExists)
+                return Err(TargetError::BreakpointAlreadyExists);
             }
             if addr & 0b11 == 0 {
                 self.emulator.cpu_mut(|cpu| {
@@ -172,7 +176,9 @@ impl<T: CpuExternalHandler> Target for MipsTargetInterface<T> {
             if let Some(breakpoint) = self.breakpoints.iter().position(|val| val.addr == addr) {
                 self.emulator.cpu_mut(|cpu| {
                     let mut mem = cpu.get_mem::<SingleCachedMemory>();
-                    _ = unsafe { mem.set_u32_alligned_o_be(addr, self.breakpoints[breakpoint].old_data) };
+                    _ = unsafe {
+                        mem.set_u32_alligned_o_be(addr, self.breakpoints[breakpoint].old_data)
+                    };
                     self.breakpoints.remove(breakpoint);
                     Ok(())
                 })
@@ -298,6 +304,7 @@ impl<C: Connection + Sync + Send + 'static, T: CpuExternalHandler> Debugger<T>
     }
 
     fn on_emu_panic(&mut self) {
-        self.gdb_async.target_stop_signal(StopReason::Signal(Signal::SIGSYS));
+        self.gdb_async
+            .target_stop_signal(StopReason::Signal(Signal::SIGSYS));
     }
 }

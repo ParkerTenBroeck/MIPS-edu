@@ -259,7 +259,7 @@ impl Command {
                 }
                 Command::qSupported(args)
             },
-            
+
             "qQueryGDBServer" => Command::qQueryGDBServer,
             "qLaunchGDBServer" = _args => Command::qLaunchGDBServer,
 

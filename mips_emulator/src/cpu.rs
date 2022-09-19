@@ -756,9 +756,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
 
     #[allow(unused)]
     pub fn is_going_to_stop(&self) -> bool {
-        unsafe {
-            !*core::ptr::read_volatile(&&self.running)
-        }
+        unsafe { !*core::ptr::read_volatile(&&self.running) }
     }
 
     pub fn paused_or_stopped(&self) -> bool {
@@ -866,9 +864,9 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.check = false;
         self.is_paused = true;
         //self.clear();
-        
+
         let mut debugger = self.debugger.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(debugger) = &mut *debugger{
+        if let Some(debugger) = &mut *debugger {
             debugger.on_emu_panic();
         }
         *debugger = debugger.take();
@@ -1696,7 +1694,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     fn run(&mut self, step: bool) {
         let debugger = self.debugger.clone();
         let mut debugger = debugger.lock().unwrap();
-        
+
         if let Some(debugger) = &mut *debugger {
             if debugger.start(self) {
                 self.running = false;
@@ -1704,16 +1702,16 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
                 return;
             }
         }
-        if step{
+        if step {
             self.finished = false;
             self.running = false;
             self.check = true;
-        }else{
+        } else {
             self.finished = false;
             self.running = true;
         }
         drop(debugger);
-        
+
         self.external_handler.cpu_start();
 
         self.is_paused = false;

@@ -36,7 +36,9 @@ impl SideTabbedPanel {
                 ui.add_space(max_height - ui.max_rect().bottom() - 3.0);
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.set_max_height(max_height);
-                    if ui.selectable_label(false, "⚙").clicked() {}
+                    if ui.selectable_label(false, "⚙").clicked() {
+                        app.add_settings_tab();
+                    }
                     if ui
                         .selectable_label(ui.ctx().debug_on_hover(), "🐛")
                         .on_hover_text("debug on hover")

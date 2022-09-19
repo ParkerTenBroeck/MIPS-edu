@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     connection::Connection,
     signal::Signal,
-    stub::{DisconnectReason, GDBError, GDBStub, StopReason, GDBState},
+    stub::{DisconnectReason, GDBError, GDBState, GDBStub, StopReason},
     target::Target,
 };
 

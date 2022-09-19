@@ -13,5 +13,5 @@ members = [
 [patch.crates-io]
 "egui" = { git = "https://github.com/ParkerTenBroeck/egui" }
 "eframe" = { git = "https://github.com/ParkerTenBroeck/egui" }
-"egui_dock" = {  git = "https://github.com/ParkerTenBroeck/egui_dock.git" }
-#"egui_dock" = { path = "/home/may/Documents/GitHub/egui_dock" }
+#"egui_dock" = {  git = "https://github.com/ParkerTenBroeck/egui_dock" }
+"egui_dock" = { path = "/home/may/Documents/GitHub/egui_dock" }
