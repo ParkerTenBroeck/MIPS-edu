@@ -12,8 +12,7 @@ use gdb::{
 use mips_emulator::cpu::{CpuExternalHandler, EmulatorInterface};
 
 use super::{
-    debug_target::{Breakpoint, MipsDebugger, MipsTargetInterface},
-    handlers::ExternalHandler,
+    debug_target::{MipsDebugger, MipsTargetInterface}
 };
 
 //------------------------------------------------------------------------
@@ -53,6 +52,7 @@ pub trait DebuggerConnection<T: Target>: Any {
     fn try_target<'a>(&mut self, accessor: Box<dyn FnOnce(&mut T) + 'a>);
     fn get_connection_info(&mut self) -> Result<ConnectionInfo, Box<dyn Error>>;
     fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>>;
+    fn force_close(&mut self);
 }
 
 pub fn mips_emulator_debugger_builder<
@@ -90,6 +90,7 @@ pub fn start<
 ) -> Result<DebuggerInfo<T>, Box<dyn Error>> {
     struct DThread<C: Connection + Send + Sync + 'static, T: Target + Send + Sync + 'static> {
         state: State,
+        force_close: bool,
         stub: Option<GDBAsyncStub<C, T>>,
     }
 
@@ -154,11 +155,21 @@ pub fn start<
                 Err("No connection present".into())
             }
         }
+
+        fn force_close(&mut self) {
+            self.force_close = true;
+            if let Some(stub) = &self.stub{
+                if let Ok(mut stub) = stub.gdb.try_lock(){
+                    stub.disconnect(gdb::stub::DisconnectReason::Kill)
+                }
+            }
+        }
     }
 
     let internal = Arc::new(Mutex::new(DThread::<C, T> {
         state: State::Disconnected,
         stub: None,
+        force_close: false,
     }));
 
     let c = internal.clone();
@@ -181,6 +192,10 @@ pub fn start<
             let c = loop {
                 if let Some(con) = (create_connetion)()? {
                     break con;
+                }
+                if internal.lock().unwrap().force_close{
+                    internal.lock().unwrap().state = State::Disconnected;
+                    return Err("Forced to disconnect by user".into());
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             };
@@ -212,69 +227,4 @@ pub fn start<
         return Err(err);
     }
     Ok(internal)
-}
-
-//------------------------------------------------------------------------
-
-pub struct DisconnectedDebuggerConnection {}
-
-impl<T: Target> DebuggerConnection<T> for DisconnectedDebuggerConnection {
-    fn state(&self) -> State {
-        State::Disconnected
-    }
-
-    fn target<'a>(&mut self, _accessor: Box<dyn FnOnce(&mut T) + 'a>) {}
-
-    fn try_target<'a>(&mut self, _accessor: Box<dyn FnOnce(&mut T) + 'a>) {}
-
-    fn get_connection_info(&mut self) -> Result<ConnectionInfo, Box<dyn Error>> {
-        Err("No Connection".into())
-    }
-
-    fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>> {
-        Err("No Connection".into())
-    }
-}
-
-pub trait MipsDebuggerConnection {
-    fn state(&self) -> State;
-
-    fn get_breakpoints(&mut self) -> Vec<Breakpoint>;
-    fn try_get_breakpoints(&mut self) -> Vec<Breakpoint>;
-
-    fn get_connection_info(&mut self) -> Result<ConnectionInfo, Box<dyn Error>>;
-    fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>>;
-}
-
-impl<T> MipsDebuggerConnection for T
-where
-    T: DebuggerConnection<MipsTargetInterface<ExternalHandler>>,
-{
-    fn get_breakpoints(&mut self) -> Vec<Breakpoint> {
-        let mut breakpoints = Vec::new();
-        self.target(Box::new(|target| {
-            breakpoints = target.breakpoints().to_vec()
-        }));
-        breakpoints
-    }
-
-    fn try_get_breakpoints(&mut self) -> Vec<Breakpoint> {
-        let mut breakpoints = Vec::new();
-        self.try_target(Box::new(|target| {
-            breakpoints = target.breakpoints().to_vec()
-        }));
-        breakpoints
-    }
-
-    fn state(&self) -> State {
-        DebuggerConnection::state(self)
-    }
-
-    fn get_connection_info(&mut self) -> Result<ConnectionInfo, Box<dyn Error>> {
-        DebuggerConnection::get_connection_info(self)
-    }
-
-    fn try_get_connection_info(&mut self) -> Result<Option<ConnectionInfo>, Box<dyn Error>> {
-        DebuggerConnection::try_get_connection_info(self)
-    }
 }

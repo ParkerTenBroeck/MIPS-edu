@@ -851,6 +851,19 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.resume();
     }
 
+    pub fn has_debugger(&mut self) -> Option<bool> {
+        self.pause();
+        let mut has_debugger = None;
+        match self.debugger.try_lock(){
+            Ok(debugger) => {
+                has_debugger = Some(debugger.is_some())
+            },
+            Err(_) => {},
+        }
+        self.resume();
+        has_debugger
+    }
+
     fn resume(&mut self) {
         if self.paused.load(std::sync::atomic::Ordering::Relaxed) > 0 {
             self.paused

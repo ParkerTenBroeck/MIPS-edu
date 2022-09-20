@@ -203,7 +203,7 @@ impl SideTab for CPUSidePanel {
             let start = self.thing[0];
             let end = *self.thing.last().unwrap();
             if let Option::Some(val) =
-                ((end.1 - start.1) * 1000000000).checked_div((end.0 - start.0) as u64)
+                ((end.1.wrapping_sub(start.1)).wrapping_mul(1000000000)).checked_div((end.0.wrapping_sub(start.0)) as u64)
             {
                 ins_p_s = val;
             } else {
@@ -394,7 +394,7 @@ impl SideTab for CPUSidePanel {
             ui.ctx().request_repaint();
         }
         #[allow(clippy::collapsible_if)]
-        if cfg!(debug_assertions) {
+        if cfg!(debug_assertions) | true {
             if ui.button("Load Demo 3").clicked() {
                 let _ = app.cpu.stop();
                 app.cpu.cpu_mut(|cpu| {
@@ -452,6 +452,10 @@ impl SideTab for CPUSidePanel {
                 }
                 if ui.button("Memory").clicked() {
                     app.add_cpu_memory_tab()
+                }
+                drop(access);
+                if ui.button("Attach Debugger").clicked() {
+                    app.create_debugger();
                 }
             });
         });

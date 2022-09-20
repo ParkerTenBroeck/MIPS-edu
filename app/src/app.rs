@@ -11,7 +11,7 @@ use eframe::{
 };
 use egui_dock::{Tab, DockArea, DynamicTabViewer, DynamicTree};
 //use egui_glium::{Painter, egui_winit::egui::Painter};
-use mips_emulator::cpu::{EmulatorInterface, MipsCpu};
+use mips_emulator::cpu::{EmulatorInterface, MipsCpu, CpuExternalHandler};
 
 use crate::{
     emulator::handlers::ExternalHandler, side_panel::side_tabbed_panel::SideTabbedPanel,
@@ -93,38 +93,6 @@ impl Application {
             cpu_virtual_keyboard,
             tabs: Default::default(),
         };
-        {
-            let emulator = ret.cpu.clone();
-            let builder = debugger_thread::mips_emulator_debugger_builder(
-                emulator,
-                Box::new(|| {
-                    let socket = std::net::TcpListener::bind("localhost:1234")?;
-                    socket.set_nonblocking(true)?;
-                    for _ in 0..100{
-                        match socket.incoming().next() {
-                            Some(Ok(socket)) => return Ok(Some(socket)),
-                            Some(Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                std::thread::sleep(std::time::Duration::from_millis(10))
-                            },
-                            Some(Err(e)) => return Err(e.into()),
-                            None => {},
-                        };
-                    }
-                    Ok(None)
-                }),
-            );
-            //let thing: Arc<Mutex<dyn DebuggerConnection<crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>>>>;
-
-            match debugger_thread::start(builder) {
-                Ok(ok) => {
-                    //let thing = ok.clone();
-                    ret.add_debugger_tab(ok);
-                }
-                Err(err) => {
-                    log::error!("Failed to start debugger: {}", err);
-                }
-            }
-        };
 
         ret.add_cpu_memory_tab();
         ret.add_cpu_screen_tab();
@@ -171,10 +139,10 @@ impl Application {
     pub fn add_tab(&mut self, tab: impl Tab + 'static) {
         self.tabs.push_to_focused_leaf(Box::new(tab));
     }
+
     pub fn add_cpu_terminal_tab(&mut self) {
         let tab = crate::tabs::terminal_tab::TerminalTab::new();
         self.add_tab(tab);
-        //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
     }
 
     pub fn add_debugger_tab(
@@ -182,21 +150,78 @@ impl Application {
         debugger: Arc<
             Mutex<
                 dyn debugger_thread::DebuggerConnection<
-                    crate::emulator::debug_target::MipsTargetInterface<ExternalHandler>,
+                    crate::emulator::debug_target::MipsTargetInterface<impl CpuExternalHandler>,
                 >,
             >,
         >,
     ) {
         let tab = crate::tabs::debugger_tab::DebuggerTab::new(debugger);
         self.add_tab(tab);
-        //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
+    }
+
+    pub fn create_debugger(&mut self){
+        let has_debugger = self.cpu.cpu_mut(|cpu|{
+            let has_debugger = loop{
+                if let Some(has_debugger) = cpu.has_debugger(){
+                    break has_debugger;
+                }
+            };
+            has_debugger
+        });
+
+        if has_debugger {
+            log::error!("Cannot attach debugger emulator already has debugger");
+            return;
+        }
+
+        let emulator = self.cpu.clone();
+
+        enum TwoStep<Y, T>{
+            One(T),
+            Two(Y),
+            None
+        }
+        let mut socket = TwoStep::One(std::net::TcpListener::bind("localhost:1234"));
+
+        let builder = debugger_thread::mips_emulator_debugger_builder(
+            emulator.clone(),
+            Box::new(move || {
+                let mut tmp = TwoStep::None;
+                std::mem::swap(&mut tmp, &mut socket);
+                if let TwoStep::One(tmp) = tmp{
+                    let tmp = tmp?;
+                    tmp.set_nonblocking(true)?;
+                    socket = TwoStep::Two(tmp);
+                }else{
+                    socket = tmp;
+                }
+
+                if let TwoStep::Two(socket) = &mut socket{
+                    match socket.incoming().next() {
+                        Some(Ok(socket)) => Ok(Some(socket)),
+                        Some(Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+                        Some(Err(e)) => Err(e.into()),
+                        None => Ok(None),
+                    }
+                }else{
+                    panic!();
+                }
+            }),
+        );
+
+        match debugger_thread::start(builder) {
+            Ok(ok) => {
+                self.add_debugger_tab(ok);
+            }
+            Err(err) => {
+                log::error!("Failed to start debugger: {}", err);
+            }
+        }
     }
 
     pub fn add_cpu_memory_tab(&mut self) {
         let tab = crate::tabs::hex_editor::HexEditor::new(self.cpu.clone());
         self.add_tab(tab);
-        //self.tabbed_area.add_tab(tab);
-        //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
     }
 
     pub fn add_cpu_screen_tab(&mut self) {
@@ -205,19 +230,14 @@ impl Application {
             self.access_info.clone(),
         );
         self.add_tab(tab);
-        //self.tabbed_area.add_tab(tab);
-
-        //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![tab]);
     }
 
     pub fn add_cpu_sound_tab(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
-        //self.tabbed_area.add_tab(Box::new(crate::tabs::sound::SoundTab::new()));
         {
             let tab = crate::tabs::sound::SoundTab::new();
             self.add_tab(tab);
         }
-        //self.tab_tree.split_below(NodeIndex::root(), 0.5, vec![Box::new(tab)]);
     }
 
     pub fn add_settings_tab(&mut self){

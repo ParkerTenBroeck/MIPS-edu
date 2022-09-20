@@ -1,33 +1,34 @@
+use std::sync::{Mutex, Arc};
+
 use eframe::egui::RichText;
 use egui_dock::Tab;
+use mips_emulator::cpu::CpuExternalHandler;
 
 use crate::{
     emulator::{
-        debug_target::Breakpoint,
-        debugger_thread::{ConnectionInfo, State},
+        debug_target::{Breakpoint, MipsTargetInterface},
+        debugger_thread::{ConnectionInfo, State, DebuggerConnection},
     },
     platform,
 };
 
-type Debugger = std::sync::Arc<
-    std::sync::Mutex<
-        dyn crate::emulator::debugger_thread::DebuggerConnection<
-            crate::emulator::debug_target::MipsTargetInterface<
-                crate::emulator::handlers::ExternalHandler,
-            >,
-        >,
-    >,
->;
+type Debugger<T> = Arc<Mutex<dyn DebuggerConnection<MipsTargetInterface<T>>>>;
 
-pub struct DebuggerTab {
-    debugger: Debugger,
+pub struct DebuggerTab<T: CpuExternalHandler> {
+    debugger: Debugger<T>,
     con_info: Option<ConnectionInfo>,
     bps: Option<Vec<Breakpoint>>,
     status: State,
+    show_close_dailog: bool,
+    force_close: bool,
 }
-impl Tab for DebuggerTab {
+
+impl<T: CpuExternalHandler> Tab for DebuggerTab<T> {
     fn ui(&mut self, ui: &mut eframe::egui::Ui) {
         if let Ok(mut debugger) = self.debugger.try_lock() {
+            if self.force_close {
+                debugger.force_close();
+            }
             let debugger = &mut *debugger;
             self.status = debugger.state();
             
@@ -44,6 +45,20 @@ impl Tab for DebuggerTab {
             }
         }
 
+        if self.show_close_dailog{
+           eframe::egui::Window::new("Are you sure").show(ui.ctx(), |ui|{
+                ui.label("Closing this tab will disconnect the debugger");
+                ui.horizontal(|ui|{
+                    if ui.button("Close").clicked(){
+                        self.force_close = true;
+                    }
+                    if ui.button("Cancel").clicked(){
+                        self.show_close_dailog = false;
+                    }
+                });
+            });
+        }
+
         
 
         if matches!(self.status, State::Connected | State::Connecting){
@@ -57,6 +72,22 @@ impl Tab for DebuggerTab {
         ui.label(format!("{:#?}", self.con_info));
         ui.label("Breakpoints");
         ui.label(format!("{:#?}", self.bps));
+    }
+
+    fn on_close(&mut self) -> bool {
+        if matches!(self.status, State::Disconnected){
+            return true;
+        }
+        self.show_close_dailog = true;
+        false
+    }
+
+    fn force_close(&mut self) -> bool {
+        if matches!(self.status, State::Disconnected){
+            self.force_close
+        }else{
+            false
+        }
     }
 
     fn title(&mut self) -> eframe::egui::WidgetText {
@@ -81,13 +112,16 @@ impl Tab for DebuggerTab {
         }
     }
 }
-impl DebuggerTab {
-    pub fn new(debugger: Debugger) -> Self {
+
+impl<T: CpuExternalHandler> DebuggerTab<T> {
+    pub fn new(debugger: Debugger<T>) -> Self {
         Self {
             debugger,
             con_info: None,
             bps: None,
             status: State::Disconnected,
+            show_close_dailog: false,
+            force_close: false,
         }
     }
 }
