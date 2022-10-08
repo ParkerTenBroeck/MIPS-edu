@@ -1,9 +1,10 @@
 use core::panic;
 use std::{
+    cell::UnsafeCell,
     panic::AssertUnwindSafe,
     pin::Pin,
     sync::{atomic::AtomicUsize, Arc, Mutex, MutexGuard, PoisonError},
-    time::Duration, cell::UnsafeCell,
+    time::Duration,
 };
 
 use crate::memory::{
@@ -123,11 +124,9 @@ pub struct EmulatorInterface<T: CpuExternalHandler> {
     inner: Pin<Arc<(UnsafeCell<MipsCpu<T>>, AtomicUsize)>>,
 }
 
-unsafe impl <T: CpuExternalHandler> Send for EmulatorInterface<T>{
-}
+unsafe impl<T: CpuExternalHandler> Send for EmulatorInterface<T> {}
 
-unsafe impl <T: CpuExternalHandler> Sync for EmulatorInterface<T>{
-}
+unsafe impl<T: CpuExternalHandler> Sync for EmulatorInterface<T> {}
 
 impl<T: CpuExternalHandler> Clone for EmulatorInterface<T> {
     fn clone(&self) -> Self {

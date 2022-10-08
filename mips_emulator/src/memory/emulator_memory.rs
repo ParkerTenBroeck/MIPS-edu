@@ -1,4 +1,8 @@
-use std::{error::Error, ptr::NonNull, sync::{Arc, Mutex}};
+use std::{
+    error::Error,
+    ptr::NonNull,
+    sync::{Arc, Mutex},
+};
 
 //use crate::{set_mem_alligned, get_mem_alligned, set_mem_alligned_o, get_mem_alligned_o};
 
@@ -111,7 +115,7 @@ impl Memory {
                 let val = val.create_page(self, (addr >> 16) as u16);
 
                 let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
-                
+
                 if let Ok(ok) = val {
                     *p = Option::Some(ok);
                 }
@@ -340,7 +344,10 @@ impl Memory {
         match &self.page_pool.clone() {
             Some(val) => {
                 //set_thing(&mut self.going_to_lock);
-                let _ = val.lock().unwrap().remove_page(self, (address >> 16) as u16);
+                let _ = val
+                    .lock()
+                    .unwrap()
+                    .remove_page(self, (address >> 16) as u16);
                 //unset_thing(&mut self.going_to_lock);
                 self.page_table[(address >> 16) as usize] = Option::None;
             }

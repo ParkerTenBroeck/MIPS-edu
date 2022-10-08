@@ -1210,8 +1210,8 @@ impl<'a> Tokenizer<'a> {
     pub fn curr_str(&self) -> String {
         if self.matching {
             String::from_utf8_lossy(
-                &self.bytes[self.start_curr.index_real
-                    ..(self.current.index_real - self.c.len_utf8())],
+                &self.bytes
+                    [self.start_curr.index_real..(self.current.index_real - self.c.len_utf8())],
             )
             .to_string()
         } else {
