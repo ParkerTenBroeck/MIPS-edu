@@ -156,10 +156,7 @@ impl Layer {
                             rect,
                             Rect::from_min_max(
                                 pos2((pos_x as f32) / size.x, (pos_y as f32) / size.y),
-                                pos2(
-                                    (pos_x as f32 + 1.0) / size.x,
-                                    (pos_y as f32 + 1.0) / size.y,
-                                ),
+                                pos2((pos_x as f32 + 1.0) / size.x, (pos_y as f32 + 1.0) / size.y),
                             ),
                             Color32::from_rgba_unmultiplied(
                                 tile.tint[0],
