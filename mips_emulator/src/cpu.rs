@@ -3,7 +3,7 @@ use std::{
     panic::AssertUnwindSafe,
     pin::Pin,
     sync::{atomic::AtomicUsize, Arc, Mutex, MutexGuard, PoisonError},
-    time::Duration,
+    time::Duration, cell::UnsafeCell,
 };
 
 use crate::memory::{
@@ -120,7 +120,13 @@ macro_rules! register_a {
 
 //Macros
 pub struct EmulatorInterface<T: CpuExternalHandler> {
-    inner: Pin<Arc<(MipsCpu<T>, AtomicUsize)>>,
+    inner: Pin<Arc<(UnsafeCell<MipsCpu<T>>, AtomicUsize)>>,
+}
+
+unsafe impl <T: CpuExternalHandler> Send for EmulatorInterface<T>{
+}
+
+unsafe impl <T: CpuExternalHandler> Sync for EmulatorInterface<T>{
 }
 
 impl<T: CpuExternalHandler> Clone for EmulatorInterface<T> {
@@ -134,7 +140,7 @@ impl<T: CpuExternalHandler> Clone for EmulatorInterface<T> {
 impl<T: CpuExternalHandler> EmulatorInterface<T> {
     pub fn new(cpu: MipsCpu<T>) -> Self {
         Self {
-            inner: Arc::pin((cpu, 0.into())),
+            inner: Arc::pin((UnsafeCell::new(cpu), 0.into())),
         }
     }
     fn lock<R>(&mut self, fn_once: impl FnOnce(&mut Self) -> R) -> R {
@@ -278,7 +284,7 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
         })
     }
     unsafe fn raw_cpu_mut(&mut self) -> *mut MipsCpu<T> {
-        &self.inner.0 as *const MipsCpu<T> as *mut MipsCpu<T>
+        self.inner.0.get() as *mut MipsCpu<T>
     }
 
     /// # Safety
@@ -300,7 +306,7 @@ impl<T: CpuExternalHandler> EmulatorInterface<T> {
     ///
     /// This can give rise to race conditions if dereferencing the pointer
     pub unsafe fn raw_cpu(&self) -> *const MipsCpu<T> {
-        &self.inner.0 as *const MipsCpu<T>
+        self.inner.0.get()
     }
 
     /// # Safety
@@ -665,18 +671,6 @@ unsafe impl CpuExternalHandler for DefaultExternalHandler {
     }
 }
 
-// impl<T: CpuExternalHandler> PagePoolListener for MipsCpu<T> {
-//     fn lock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
-//         self.pause_exclude_memory_event();
-//         Result::Ok(())
-//     }
-
-//     fn unlock(&mut self, _initiator: bool) -> Result<(), Box<dyn std::error::Error>> {
-//         self.resume();
-//         Result::Ok(())
-//     }
-// }
-
 impl<T: CpuExternalHandler> Drop for MipsCpu<T> {
     fn drop(&mut self) {
         self.dropped = true;
@@ -725,7 +719,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
         self.get_mem_controller()
             .lock()
             .unwrap()
-            .add_holder(Box::new(M::default()))
+            .add_holder(Box::default())
     }
 
     /// # Safety
@@ -738,7 +732,7 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     #[allow(unused)]
     pub fn get_mem_controller(&mut self) -> std::sync::Arc<std::sync::Mutex<PagePoolController>> {
         match &self.mem.page_pool {
-            Some(val) => val.clone_page_pool_mutex(),
+            Some(val) => val.clone(),
             None => panic!(),
         }
     }
@@ -774,10 +768,6 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     pub fn is_being_dropped(&self) -> bool {
         unsafe { *core::ptr::read_volatile(&&self.dropped) }
     }
-
-    // fn is_within_memory_event(&self) -> bool {
-    //     unsafe { *core::ptr::read_volatile(&&self.is_within_memory_event) }
-    // }
 
     #[allow(unused)]
     pub fn stop(&mut self) {
@@ -854,11 +844,8 @@ impl<T: CpuExternalHandler> MipsCpu<T> {
     pub fn has_debugger(&mut self) -> Option<bool> {
         self.pause();
         let mut has_debugger = None;
-        match self.debugger.try_lock(){
-            Ok(debugger) => {
-                has_debugger = Some(debugger.is_some())
-            },
-            Err(_) => {},
+        if let Ok(debugger) = self.debugger.try_lock() {
+            has_debugger = Some(debugger.is_some())
         }
         self.resume();
         has_debugger
@@ -1111,6 +1098,11 @@ macro_rules! core_emu {
                     0 => {
                         match op & 0b111111 {
                             // REGISTER formatted instructions
+
+                            //special
+                            0b001111 => {
+                                //sync
+                            }
 
                             //arithmatic
                             0b100000 => {
@@ -1645,6 +1637,39 @@ macro_rules! core_emu {
                         } else {
                             drop($debugger_lock);
                             $self.memory_error(1);
+                            break 'cpu_loop;
+                        }
+                    }
+
+                    0b110000 => {
+                        //LL
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                        .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                        as u32;
+
+                        if core::intrinsics::likely($address & 0b11 == 0) {
+                            $rhw
+                            $self.reg[immediate_t!(op)] = get_mem_alligned!($address, u32);
+                        //$self.mem.get_u32_alligned(address) as u32
+                        } else {
+                            drop($debugger_lock);
+                            $self.memory_error(1);
+                            break 'cpu_loop;
+                        }
+                    }
+                    0b111000 => {
+                        //SC
+                        let $address = (($self.reg[immediate_s!(op)] as i32)
+                            .wrapping_add(immediate_immediate_signed_extended!(op) as i32))
+                            as u32;
+                        if core::intrinsics::likely($address & 0b11 == 0) {
+                            $ww
+                            set_mem_alligned!($address, $self.reg[immediate_t!(op)], u32);
+                            $self.reg[immediate_t!(op)] = 1;
+                        } else {
+                            $self.reg[immediate_t!(op)] = 0;
+                            drop($debugger_lock);
+                            $self.memory_error(4);
                             break 'cpu_loop;
                         }
                     }

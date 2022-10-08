@@ -1,4 +1,4 @@
-use std::{error::Error, ptr::NonNull};
+use std::{error::Error, ptr::NonNull, sync::{Arc, Mutex}};
 
 //use crate::{set_mem_alligned, get_mem_alligned, set_mem_alligned_o, get_mem_alligned_o};
 
@@ -6,14 +6,14 @@ use crate::cpu::EmulatorPause;
 
 use super::page_pool::{
     Page, PageImpl, PagePool, PagePoolController, PagedMemoryImpl, PagedMemoryInterface,
-    SharedPagePool, SharedPagePoolMemory, TryLockError, SEG_SIZE,
+    SharedPagePoolMemory, TryLockError, SEG_SIZE,
 };
 
 //stupid workaround
 const INIT: Option<NonNull<Page>> = None;
 pub struct Memory {
     //pub(crate) listener: Option<&'static mut (dyn PagePoolListener + Send + Sync + 'static)>,
-    pub(crate) page_pool: Option<SharedPagePool>,
+    pub(crate) page_pool: Option<Arc<Mutex<PagePoolController>>>,
     //pub(crate) going_to_lock: Option<&'static mut bool>,
     pub(crate) page_table: [Option<NonNull<Page>>; SEG_SIZE],
     emulator: Option<Box<dyn EmulatorPause>>,
@@ -23,7 +23,7 @@ unsafe impl Sync for Memory {}
 unsafe impl Send for Memory {}
 
 impl PagedMemoryImpl for Memory {
-    fn init_notifier(&mut self, notifier: SharedPagePool) {
+    fn init_page_pool_memory(&mut self, notifier: Arc<Mutex<PagePoolController>>) {
         self.page_pool = Option::Some(notifier);
     }
 
@@ -64,7 +64,7 @@ impl PagedMemoryImpl for Memory {
         Result::Ok(())
     }
 
-    fn get_notifier(&mut self) -> Option<&mut SharedPagePool> {
+    fn get_notifier(&mut self) -> Option<&mut Arc<Mutex<PagePoolController>>> {
         self.page_pool.as_mut()
     }
 
@@ -104,18 +104,22 @@ impl Memory {
     #[inline(never)]
     #[cold]
     unsafe fn create_page(&mut self, addr: u32) -> NonNull<Page> {
-        let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
         //set_thing(&mut self.going_to_lock);
-        match &self.page_pool {
+        match &self.page_pool.clone() {
             Some(val) => {
-                let mut val = val.lock();
-                let val = val.create_page((addr >> 16) as u16);
+                let mut val = val.lock().unwrap();
+                let val = val.create_page(self, (addr >> 16) as u16);
+
+                let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
+                
                 if let Ok(ok) = val {
                     *p = Option::Some(ok);
                 }
             }
             None => todo!(),
         }
+
+        let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
         //unset_thing(&mut self.going_to_lock);
 
         match p {
@@ -267,15 +271,18 @@ impl<'a> super::page_pool::PagedMemoryInterface<'a> for Memory {
         match self.page_table.get_unchecked_mut(addr) {
             Some(val) => Ok(*val),
             None => {
-                let p = self.page_table.get_unchecked_mut(addr as usize >> 16);
-                match &self.page_pool {
+                match &self.page_pool.clone() {
                     Some(val) => {
                         let mut val = val.try_lock()?;
-                        let val = val.try_create_page((addr >> 16) as u16)?;
+                        let val = val.try_create_page(self, (addr >> 16) as u16)?;
+
+                        let p = self.page_table.get_unchecked_mut(addr >> 16);
                         *p = Option::Some(val);
                     }
                     None => todo!(),
                 }
+
+                let p = self.page_table.get_unchecked_mut(addr >> 16);
 
                 match p {
                     Some(val) => Ok(*val),
@@ -330,10 +337,10 @@ impl Memory {
     // }
 
     pub fn unload_page_at_address(&mut self, address: u32) {
-        match &self.page_pool {
+        match &self.page_pool.clone() {
             Some(val) => {
                 //set_thing(&mut self.going_to_lock);
-                let _ = val.lock().remove_page((address >> 16) as u16);
+                let _ = val.lock().unwrap().remove_page(self, (address >> 16) as u16);
                 //unset_thing(&mut self.going_to_lock);
                 self.page_table[(address >> 16) as usize] = Option::None;
             }
@@ -341,10 +348,10 @@ impl Memory {
         }
     }
     pub fn unload_all_pages(&mut self) {
-        match &self.page_pool {
+        match &self.page_pool.clone() {
             Some(val) => {
                 //set_thing(&mut self.going_to_lock);
-                let _ = val.lock().remove_all_pages();
+                let _ = val.lock().unwrap().remove_all_pages(self);
                 //unset_thing(&mut self.going_to_lock);
                 self.page_table.iter_mut().for_each(|page| {
                     *page = None;

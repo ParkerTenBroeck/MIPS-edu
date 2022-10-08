@@ -1,4 +1,4 @@
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 
 use eframe::egui::RichText;
 use egui_dock::Tab;
@@ -7,7 +7,7 @@ use mips_emulator::cpu::CpuExternalHandler;
 use crate::{
     emulator::{
         debug_target::{Breakpoint, MipsTargetInterface},
-        debugger_thread::{ConnectionInfo, State, DebuggerConnection},
+        debugger_thread::{ConnectionInfo, DebuggerConnection, State},
     },
     platform,
 };
@@ -31,39 +31,36 @@ impl<T: CpuExternalHandler> Tab for DebuggerTab<T> {
             }
             let debugger = &mut *debugger;
             self.status = debugger.state();
-            
-            if matches!(self.status, State::Connected){ 
+
+            if matches!(self.status, State::Connected) {
                 if let Ok(con_info) = debugger.try_get_connection_info() {
-                    if con_info.is_some(){
+                    if con_info.is_some() {
                         self.con_info = con_info;
                     }
                 }
                 debugger.try_target(Box::new(|target| {
-                    
                     self.bps = Some(target.breakpoints().to_owned())
-                }));       
+                }));
             }
         }
 
-        if self.show_close_dailog{
-           eframe::egui::Window::new("Are you sure").show(ui.ctx(), |ui|{
+        if self.show_close_dailog {
+            eframe::egui::Window::new("Are you sure").show(ui.ctx(), |ui| {
                 ui.label("Closing this tab will disconnect the debugger");
-                ui.horizontal(|ui|{
-                    if ui.button("Close").clicked(){
+                ui.horizontal(|ui| {
+                    if ui.button("Close").clicked() {
                         self.force_close = true;
                     }
-                    if ui.button("Cancel").clicked(){
+                    if ui.button("Cancel").clicked() {
                         self.show_close_dailog = false;
                     }
                 });
             });
         }
 
-        
-
-        if matches!(self.status, State::Connected | State::Connecting){
+        if matches!(self.status, State::Connected | State::Connecting) {
             ui.ctx().request_repaint();
-        }else{
+        } else {
             self.con_info = None;
             self.bps = None;
         }
@@ -75,7 +72,7 @@ impl<T: CpuExternalHandler> Tab for DebuggerTab<T> {
     }
 
     fn on_close(&mut self) -> bool {
-        if matches!(self.status, State::Disconnected){
+        if matches!(self.status, State::Disconnected) {
             return true;
         }
         self.show_close_dailog = true;
@@ -83,9 +80,9 @@ impl<T: CpuExternalHandler> Tab for DebuggerTab<T> {
     }
 
     fn force_close(&mut self) -> bool {
-        if matches!(self.status, State::Disconnected){
+        if matches!(self.status, State::Disconnected) {
             self.force_close
-        }else{
+        } else {
             false
         }
     }

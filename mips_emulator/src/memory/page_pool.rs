@@ -49,8 +49,8 @@ impl PageImpl for &mut Page {
 }
 
 pub trait PagedMemoryImpl: Sync + Send {
-    fn init_notifier(&mut self, _notifier: SharedPagePool) {}
-    fn get_notifier(&mut self) -> Option<&mut SharedPagePool>;
+    fn init_page_pool_memory(&mut self, _notifier: Arc<Mutex<PagePoolController>>) {}
+    fn get_notifier(&mut self) -> Option<&mut Arc<Mutex<PagePoolController>>>;
     fn lock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
     fn unlock(&mut self, initiator: bool, page_pool: &PagePool) -> Result<(), Box<dyn Error>>;
 
@@ -74,7 +74,7 @@ impl<'a> PageImpl for PageGuard<'a> {
 
 //------------------------------------------------------------------------------------------------------
 pub struct ControllerGuard<'a, T> {
-    _guard: SharedPagePoolGuard<'a>,
+    _guard: MutexGuard<'a, PagePoolController>,
     pub data: T,
 }
 impl<'a, T> std::ops::Deref for ControllerGuard<'a, T> {
@@ -94,7 +94,6 @@ impl<'a, T> std::ops::DerefMut for ControllerGuard<'a, T> {
 
 pub struct SharedPagePool {
     page_pool: Arc<Mutex<PagePoolController>>,
-    id: Option<NonZeroU64>,
 }
 
 unsafe impl Send for SharedPagePool {}
@@ -103,16 +102,14 @@ unsafe impl Sync for SharedPagePool {}
 
 impl SharedPagePool {
     pub fn lock(&self) -> SharedPagePoolGuard {
-        let mut controller = self.page_pool.lock().unwrap();
-        controller.last_lock_id = self.id;
+        let controller = self.page_pool.lock().unwrap();
 
         SharedPagePoolGuard { guard: controller }
     }
 
     pub fn try_lock(&self) -> Result<SharedPagePoolGuard, TryLockError<Box<dyn Error>>> {
         match self.page_pool.try_lock() {
-            Ok(mut controller) => {
-                controller.last_lock_id = self.id;
+            Ok(controller) => {
                 Ok(SharedPagePoolGuard { guard: controller })
             }
             Err(err) => match err {
@@ -129,7 +126,7 @@ impl SharedPagePool {
     }
 
     pub fn new_controller_guard<T>(
-        guard: SharedPagePoolGuard<'_>,
+        guard: MutexGuard<'_, PagePoolController>,
         data: T,
     ) -> ControllerGuard<'_, T> {
         ControllerGuard {
@@ -145,11 +142,6 @@ pub struct SharedPagePoolGuard<'a> {
     guard: MutexGuard<'a, PagePoolController>,
 }
 
-impl<'a> Drop for SharedPagePoolGuard<'a> {
-    fn drop(&mut self) {
-        self.guard.last_lock_id = None;
-    }
-}
 impl<'a> Deref for SharedPagePoolGuard<'a> {
     type Target = MutexGuard<'a, PagePoolController>;
 
@@ -220,9 +212,8 @@ pub struct PagePool {
 
 pub struct PagePoolController {
     page_pool: PagePool,
-    holders: Vec<NonNull<dyn PagedMemoryImpl + Send + Sync>>,
-    myself: Weak<Mutex<PagePoolController>>,
-    last_lock_id: Option<NonZeroU64>,
+    holders: Vec<NonNull<dyn PagedMemoryImpl>>,
+    myself: Option<Weak<Mutex<PagePoolController>>>,
 }
 
 impl Debug for PagePoolController {
@@ -237,8 +228,13 @@ impl Debug for PagePoolController {
 unsafe impl Send for PagePoolController {}
 unsafe impl Sync for PagePoolController {}
 
-fn addr_of_trait_object(ptr: NonNull<dyn PagedMemoryImpl + Send + Sync>) -> NonZeroU64 {
+fn addr_of_trait_object_nonnull_ptr(ptr: NonNull<dyn PagedMemoryImpl>) -> NonZeroU64 {
     let tmp = ptr.as_ptr().cast::<()>() as u64;
+    NonZeroU64::new(tmp).unwrap()
+}
+
+fn addr_of_trait_object(ptr: &dyn PagedMemoryImpl) -> NonZeroU64 {
+    let tmp = (ptr as *const dyn PagedMemoryImpl).cast::<()>() as u64;
     NonZeroU64::new(tmp).unwrap()
 }
 
@@ -258,51 +254,36 @@ impl<T> From<std::sync::TryLockError<T>> for TryLockError<Box<dyn Error>> {
 
 impl PagePoolController {
     pub fn new() -> Arc<Mutex<Self>> {
-        let arc;
-        unsafe {
-            let tmp = mem::MaybeUninit::<PagePoolController>::zeroed();
-            arc = Arc::new(Mutex::new(tmp.assume_init()));
-            let weak = Arc::downgrade(&arc);
-
-            match arc.lock().as_mut() {
-                Ok(val) => {
-                    let test = val.deref_mut() as *mut PagePoolController;
-                    test.write(PagePoolController {
-                        page_pool: PagePool::default(),
-                        holders: Vec::new(),
-                        myself: weak,
-                        last_lock_id: None,
-                    });
-                }
-                Err(_err) => {
-                    panic!();
-                }
+        let arc = Arc::new(Mutex::new(PagePoolController {
+            page_pool: PagePool::default(),
+            holders: Vec::new(),
+            myself: None,
+        }));
+        
+        match arc.lock().as_mut() {
+            Ok(val) => {
+                val.myself = Some(Arc::downgrade(&arc));
+            }
+            Err(_err) => {
+                panic!();
             }
         }
         arc
     }
 
-    pub fn add_holder<T: PagedMemoryImpl + Send + Sync + 'static>(
+    pub fn add_holder<T: PagedMemoryImpl + 'static>(
         &mut self,
         paged_memory: Box<T>,
     ) -> SharedPagePoolMemory<T> {
         let mut ptr = NonNull::new(Box::into_raw(paged_memory)).unwrap();
 
-        let id = ptr.as_ptr() as u64;
-        let id = NonZeroU64::new(id);
-
         self.holders.push(ptr);
 
         let shared = SharedPagePoolMemory {
             inner: ptr,
-            page_pool: self.myself.upgrade().unwrap(),
+            page_pool: self.myself.as_mut().unwrap().upgrade().unwrap(),
         };
-
-        unsafe { ptr.as_mut() }.init_notifier(SharedPagePool {
-            page_pool: self.myself.upgrade().unwrap(),
-            id,
-        });
-
+        unsafe { ptr.as_mut() }.init_page_pool_memory(self.myself.as_mut().unwrap().upgrade().unwrap());
         shared
     }
 
@@ -310,7 +291,7 @@ impl PagePoolController {
         let index = self
             .holders
             .iter()
-            .position(|ptr| addr_of_trait_object(*ptr) == id);
+            .position(|ptr| addr_of_trait_object_nonnull_ptr(*ptr) == id);
         //self.holders.iter_mut().f
         if let Some(index) = index {
             let item = self.holders.remove(index);
@@ -322,14 +303,24 @@ impl PagePoolController {
         }
     }
 
-    fn try_lock(&mut self) -> Result<(), TryLockError<Box<dyn Error>>> {
+    fn try_lock(&mut self, requester: &mut dyn PagedMemoryImpl) -> Result<(), TryLockError<Box<dyn Error>>> {
         let mut index = 0;
         let (unlock_index, err) = loop {
             let mut holder = self.holders[index];
-            match unsafe { holder.as_mut() }.try_lock(
-                Some(addr_of_trait_object(holder)) == self.last_lock_id,
-                &self.page_pool,
-            ) {
+
+            let initiator = addr_of_trait_object_nonnull_ptr(holder) == addr_of_trait_object(requester);
+            
+
+            match {
+                if initiator{
+                    requester.try_lock(initiator, &self.page_pool)
+                }else{
+                    unsafe { holder.as_mut() }.try_lock(
+                        initiator,
+                        &self.page_pool,
+                    )
+                }
+            } {
                 Ok(_) => {}
                 Err(err) => {
                     if index == 0 {
@@ -349,7 +340,7 @@ impl PagePoolController {
             for i in 0..unlock_index {
                 let mut holder = self.holders[i];
                 match unsafe { holder.as_mut() }.try_unlock(
-                    Some(addr_of_trait_object(holder)) == self.last_lock_id,
+                    addr_of_trait_object_nonnull_ptr(holder) == addr_of_trait_object(requester),
                     &self.page_pool,
                 ) {
                     Ok(_) => {}
@@ -369,12 +360,12 @@ impl PagePoolController {
         }
     }
 
-    fn try_unlock(&mut self) -> Result<(), Box<dyn Error>> {
+    fn try_unlock(&mut self, requester: &mut dyn PagedMemoryImpl) -> Result<(), Box<dyn Error>> {
         let mut vec = Vec::new();
 
         for holder in &mut self.holders {
             match unsafe { holder.as_mut() }.try_unlock(
-                Some(addr_of_trait_object(*holder)) == self.last_lock_id,
+                addr_of_trait_object_nonnull_ptr(*holder) == addr_of_trait_object(requester),
                 &self.page_pool,
             ) {
                 Ok(_) => {}
@@ -389,14 +380,20 @@ impl PagePoolController {
         }
     }
 
-    fn lock(&mut self) -> Result<(), Box<dyn Error>> {
+    fn lock(&mut self, requester: &mut dyn PagedMemoryImpl) -> Result<(), Box<dyn Error>> {
         let mut err: bool = false;
 
         for holder in &mut self.holders {
-            let tmp = unsafe { holder.as_mut() };
+            let mut tmp = unsafe { holder.as_mut() };
 
+            let initiator = addr_of_trait_object_nonnull_ptr(*holder) == addr_of_trait_object(requester);
+            if initiator{
+                tmp = requester;
+            }
+
+            //if Some(addr_of_trait_object_nonnull_ptr(*holder)) != addr_of_trait_object(requester){
             match tmp.lock(
-                Some(addr_of_trait_object(*holder)) == self.last_lock_id,
+                initiator,
                 &self.page_pool,
             ) {
                 Ok(_) => {}
@@ -404,8 +401,9 @@ impl PagePoolController {
                     err = true;
                 }
             };
+            //}            
             if err {
-                let _ = self.unlock();
+                let _ = self.unlock(requester);
                 return Result::Err("Failed to lock".into());
             }
         }
@@ -413,12 +411,12 @@ impl PagePoolController {
     }
 
     #[inline(always)]
-    fn unlock(&mut self) -> Result<(), Box<dyn Error>> {
+    fn unlock(&mut self, requester: &mut dyn PagedMemoryImpl) -> Result<(), Box<dyn Error>> {
         let mut err: bool = false;
         for holder in &mut self.holders {
             let tmp = unsafe { holder.as_mut() };
             match tmp.unlock(
-                Some(addr_of_trait_object(*holder)) == self.last_lock_id,
+                addr_of_trait_object_nonnull_ptr(*holder) == addr_of_trait_object(requester),
                 &self.page_pool,
             ) {
                 Ok(_) => {}
@@ -457,7 +455,7 @@ impl PagePoolController {
     ///
     /// The returned pointer must also be destroyed after this `SharedPagePool` calls lock
     #[inline(never)]
-    pub unsafe fn create_page(&mut self, addr: u16) -> Result<NonNull<Page>, Box<dyn Error>> {
+    pub unsafe fn create_page(&mut self, requester: &mut dyn PagedMemoryImpl, addr: u16) -> Result<NonNull<Page>, Box<dyn Error>> {
         match self
             .page_pool
             .address_mapping
@@ -466,19 +464,19 @@ impl PagePoolController {
         {
             Some(index) => {
                 let val = unsafe { *self.page_pool.address_mapping.get_unchecked(index) };
-                if val as u16 == addr {
+                if val == addr {
                 } else {
-                    self.lock()?;
+                    self.lock(requester)?;
                     self.page_pool.address_mapping.insert(index, addr);
                     self.page_pool.pool.insert(index, Page::new());
-                    self.unlock()?;
+                    self.unlock(requester)?;
                 }
             }
             None => {
-                self.lock()?;
+                self.lock(requester)?;
                 self.page_pool.address_mapping.push(addr);
                 self.page_pool.pool.push(Page::new());
-                self.unlock()?;
+                self.unlock(requester)?;
             }
         }
 
@@ -505,6 +503,7 @@ impl PagePoolController {
     #[inline(never)]
     pub unsafe fn try_create_page(
         &mut self,
+        requester: &mut dyn PagedMemoryImpl,
         addr: u16,
     ) -> Result<NonNull<Page>, TryLockError<Box<dyn Error>>> {
         impl From<Box<dyn Error>> for TryLockError<Box<dyn Error>> {
@@ -521,19 +520,19 @@ impl PagePoolController {
         {
             Some(index) => {
                 let val = unsafe { *self.page_pool.address_mapping.get_unchecked(index) };
-                if val as u16 == addr {
+                if val == addr {
                 } else {
-                    self.try_lock()?;
+                    self.try_lock(requester)?;
                     self.page_pool.address_mapping.insert(index, addr);
                     self.page_pool.pool.insert(index, Page::new());
-                    self.try_unlock()?;
+                    self.try_unlock(requester)?;
                 }
             }
             None => {
-                self.try_lock()?;
+                self.try_lock(requester)?;
                 self.page_pool.address_mapping.push(addr);
                 self.page_pool.pool.push(Page::new());
-                self.try_unlock()?;
+                self.try_unlock(requester)?;
             }
         }
 
@@ -552,50 +551,50 @@ impl PagePoolController {
         )
     }
 
-    pub fn remove_all_pages(&mut self) -> Result<(), Box<dyn Error>> {
-        self.lock()?;
+    pub fn remove_all_pages(&mut self, requester: &mut dyn PagedMemoryImpl) -> Result<(), Box<dyn Error>> {
+        self.lock(requester)?;
         self.page_pool.address_mapping.clear();
         self.page_pool.pool.clear();
-        self.unlock()?;
+        self.unlock(requester)?;
         Result::Ok(())
     }
 
-    pub fn try_remove_all_pages(&mut self) -> Result<(), TryLockError<Box<dyn Error>>> {
-        self.try_lock()?;
+    pub fn try_remove_all_pages(&mut self, requester: &mut dyn PagedMemoryImpl) -> Result<(), TryLockError<Box<dyn Error>>> {
+        self.try_lock(requester)?;
         self.page_pool.address_mapping.clear();
         self.page_pool.pool.clear();
-        self.try_lock()?;
+        self.try_lock(requester)?;
         Result::Ok(())
     }
 
     #[inline(never)]
-    pub fn remove_page(&mut self, add: u16) -> Result<(), Box<dyn Error>> {
+    pub fn remove_page(&mut self, requester: &mut dyn PagedMemoryImpl, add: u16) -> Result<(), Box<dyn Error>> {
         let pos = self
             .page_pool
             .address_mapping
             .iter()
             .position(|i| *i == add);
         if let Some(add) = pos {
-            self.lock()?;
+            self.lock(requester)?;
             self.page_pool.address_mapping.remove(add);
             self.page_pool.pool.remove(add);
-            self.unlock()?;
+            self.unlock(requester)?;
         }
         Result::Ok(())
     }
 
     #[inline(never)]
-    pub fn try_remove_page(&mut self, add: u16) -> Result<(), TryLockError<Box<dyn Error>>> {
+    pub fn try_remove_page(&mut self, requester: &mut dyn PagedMemoryImpl, add: u16) -> Result<(), TryLockError<Box<dyn Error>>> {
         let pos = self
             .page_pool
             .address_mapping
             .iter()
             .position(|i| *i == add);
         if let Some(add) = pos {
-            self.try_lock()?;
+            self.try_lock(requester)?;
             self.page_pool.address_mapping.remove(add);
             self.page_pool.pool.remove(add);
-            self.try_unlock()?;
+            self.try_unlock(requester)?;
         }
         Result::Ok(())
     }

@@ -106,8 +106,8 @@ impl CPUSidePanel {
         } else {
             [
                 "$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$10", "$11", "$12",
-                "$13", "$14", "$15", "$16", "$17", "$18", "$19", "$20", "$21", "$22", "$23", "$24", "$25",
-                "$26", "$27", "$28", "$29", "$30", "$31",
+                "$13", "$14", "$15", "$16", "$17", "$18", "$19", "$20", "$21", "$22", "$23", "$24",
+                "$25", "$26", "$27", "$28", "$29", "$30", "$31",
             ][reg]
         }
     }
@@ -202,8 +202,8 @@ impl SideTab for CPUSidePanel {
             }
             let start = self.thing[0];
             let end = *self.thing.last().unwrap();
-            if let Option::Some(val) =
-                ((end.1.wrapping_sub(start.1)).wrapping_mul(1000000000)).checked_div((end.0.wrapping_sub(start.0)) as u64)
+            if let Option::Some(val) = ((end.1.wrapping_sub(start.1)).wrapping_mul(1000000000))
+                .checked_div((end.0.wrapping_sub(start.0)) as u64)
             {
                 ins_p_s = val;
             } else {

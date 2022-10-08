@@ -11,9 +11,7 @@ use gdb::{
 };
 use mips_emulator::cpu::{CpuExternalHandler, EmulatorInterface};
 
-use super::{
-    debug_target::{MipsDebugger, MipsTargetInterface}
-};
+use super::debug_target::{MipsDebugger, MipsTargetInterface};
 
 //------------------------------------------------------------------------
 
@@ -158,8 +156,8 @@ pub fn start<
 
         fn force_close(&mut self) {
             self.force_close = true;
-            if let Some(stub) = &self.stub{
-                if let Ok(mut stub) = stub.gdb.try_lock(){
+            if let Some(stub) = &self.stub {
+                if let Ok(mut stub) = stub.gdb.try_lock() {
                     stub.disconnect(gdb::stub::DisconnectReason::Kill)
                 }
             }
@@ -193,7 +191,7 @@ pub fn start<
                 if let Some(con) = (create_connetion)()? {
                     break con;
                 }
-                if internal.lock().unwrap().force_close{
+                if internal.lock().unwrap().force_close {
                     internal.lock().unwrap().state = State::Disconnected;
                     return Err("Forced to disconnect by user".into());
                 }
@@ -201,7 +199,7 @@ pub fn start<
             };
 
             let t = (create_target)()?;
-            
+
             let stub = gdb::stub::GDBStub::new(t, c);
             let (stub, notifier) = gdb::async_target::create_async_stub(stub);
             (attach)(notifier)?;

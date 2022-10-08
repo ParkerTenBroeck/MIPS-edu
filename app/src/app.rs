@@ -1,5 +1,5 @@
 use crate::emulator::debugger_thread::{self};
-use crate::tabs::settings::{SettingsTab, EguiMemoryTab, EguiInspectionTab};
+use crate::tabs::settings::{EguiInspectionTab, EguiMemoryTab, SettingsTab};
 use crate::{emulator::handlers::CPUAccessInfo, platform::sync::PlatSpecificLocking};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -9,9 +9,9 @@ use eframe::{
     epaint::{Color32, ColorImage, TextureHandle},
     App, Frame,
 };
-use egui_dock::{Tab, DockArea, DynamicTabViewer, DynamicTree};
+use egui_dock::{DockArea, DynamicTabViewer, DynamicTree, Tab};
 //use egui_glium::{Painter, egui_winit::egui::Painter};
-use mips_emulator::cpu::{EmulatorInterface, MipsCpu, CpuExternalHandler};
+use mips_emulator::cpu::{CpuExternalHandler, EmulatorInterface, MipsCpu};
 
 use crate::{
     emulator::handlers::ExternalHandler, side_panel::side_tabbed_panel::SideTabbedPanel,
@@ -159,14 +159,11 @@ impl Application {
         self.add_tab(tab);
     }
 
-    pub fn create_debugger(&mut self){
-        let has_debugger = self.cpu.cpu_mut(|cpu|{
-            let has_debugger = loop{
-                if let Some(has_debugger) = cpu.has_debugger(){
-                    break has_debugger;
-                }
-            };
-            has_debugger
+    pub fn create_debugger(&mut self) {
+        let has_debugger = self.cpu.cpu_mut(|cpu| loop {
+            if let Some(has_debugger) = cpu.has_debugger() {
+                break has_debugger;
+            }
         });
 
         if has_debugger {
@@ -176,34 +173,34 @@ impl Application {
 
         let emulator = self.cpu.clone();
 
-        enum TwoStep<Y, T>{
+        enum TwoStep<Y, T> {
             One(T),
             Two(Y),
-            None
+            None,
         }
         let mut socket = TwoStep::One(std::net::TcpListener::bind("localhost:1234"));
 
         let builder = debugger_thread::mips_emulator_debugger_builder(
-            emulator.clone(),
+            emulator,
             Box::new(move || {
                 let mut tmp = TwoStep::None;
                 std::mem::swap(&mut tmp, &mut socket);
-                if let TwoStep::One(tmp) = tmp{
+                if let TwoStep::One(tmp) = tmp {
                     let tmp = tmp?;
                     tmp.set_nonblocking(true)?;
                     socket = TwoStep::Two(tmp);
-                }else{
+                } else {
                     socket = tmp;
                 }
 
-                if let TwoStep::Two(socket) = &mut socket{
+                if let TwoStep::Two(socket) = &mut socket {
                     match socket.incoming().next() {
                         Some(Ok(socket)) => Ok(Some(socket)),
                         Some(Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
                         Some(Err(e)) => Err(e.into()),
                         None => Ok(None),
                     }
-                }else{
+                } else {
                     panic!();
                 }
             }),
@@ -240,18 +237,17 @@ impl Application {
         }
     }
 
-    pub fn add_settings_tab(&mut self){
-        self.add_tab(SettingsTab{})
+    pub fn add_settings_tab(&mut self) {
+        self.add_tab(SettingsTab {})
     }
 
-    pub fn add_egui_memory_tab(&mut self){
-        self.add_tab(EguiMemoryTab{})
+    pub fn add_egui_memory_tab(&mut self) {
+        self.add_tab(EguiMemoryTab {})
     }
 
-    pub fn add_egui_inspection_tab(&mut self){
-        self.add_tab(EguiInspectionTab{})
+    pub fn add_egui_inspection_tab(&mut self) {
+        self.add_tab(EguiInspectionTab {})
     }
-
 }
 
 impl App for Application {
@@ -382,8 +378,10 @@ impl App for Application {
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let style = egui_dock::Style::from_egui(&ui.ctx().style());
-            
-            DockArea::new(&mut self.tabs).style(style).show(ctx, &mut DynamicTabViewer{});
+
+            DockArea::new(&mut self.tabs)
+                .style(style)
+                .show(ctx, &mut DynamicTabViewer {});
         });
 
         self.frame += 1;

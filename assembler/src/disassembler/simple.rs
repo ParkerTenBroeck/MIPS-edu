@@ -1,5 +1,3 @@
-
-
 pub fn fmt_reg(reg: usize, use_names: bool) -> &'static str {
     if use_names {
         nammed_regs(reg)
@@ -8,19 +6,19 @@ pub fn fmt_reg(reg: usize, use_names: bool) -> &'static str {
     }
 }
 
-pub fn nammed_regs(reg: usize) -> &'static str{
+pub fn nammed_regs(reg: usize) -> &'static str {
     [
-        "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2",
-        "$t3", "$t4", "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6",
-        "$s7", "$t8", "$t9", "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
+        "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3",
+        "$t4", "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8",
+        "$t9", "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
     ][reg]
 }
 
-pub fn numbered_regs(reg: usize) -> &'static str{
+pub fn numbered_regs(reg: usize) -> &'static str {
     [
-            "$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$10", "$11", "$12",
-            "$13", "$14", "$15", "$16", "$17", "$18", "$19", "$20", "$21", "$22", "$23", "$24", "$25",
-            "$26", "$27", "$28", "$29", "$30", "$31",
+        "$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$10", "$11", "$12", "$13",
+        "$14", "$15", "$16", "$17", "$18", "$19", "$20", "$21", "$22", "$23", "$24", "$25", "$26",
+        "$27", "$28", "$29", "$30", "$31",
     ][reg]
 }
 
@@ -143,7 +141,7 @@ fn register_encoding(opcode: u32, _add: u32) -> String {
         {
             format!("slt   ${}, ${}, ${}", d, s, t)
         }
-        0b101001 =>
+        0b101011 =>
         //sltu
         {
             format!("sltu  ${}, ${}, ${}", d, s, t)

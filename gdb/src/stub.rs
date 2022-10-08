@@ -468,8 +468,7 @@ impl<C: Connection, T: Target> GDBStub<C, T> {
                 response
                     .write_str("port:1234;")
                     .map_err(GDBError::ConnectionWrite)?;
-            }
-            //TODO!()
+            } //TODO!()
         }
         Ok((&self.state, response))
     }

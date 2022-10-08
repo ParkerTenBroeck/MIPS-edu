@@ -155,10 +155,10 @@ impl Layer {
                         mesh.add_rect_with_uv(
                             rect,
                             Rect::from_min_max(
-                                pos2((pos_x as f32) / size.x, (pos_y as f32) / size.y as f32),
+                                pos2((pos_x as f32) / size.x, (pos_y as f32) / size.y),
                                 pos2(
                                     (pos_x as f32 + 1.0) / size.x,
-                                    (pos_y as f32 + 1.0) / size.y as f32 as f32,
+                                    (pos_y as f32 + 1.0) / size.y,
                                 ),
                             ),
                             Color32::from_rgba_unmultiplied(
@@ -201,8 +201,8 @@ impl Layer {
                     let mut rect = Rect::from_min_max(
                         pos,
                         pos2(
-                            pos.x + dis_size.x * sprite_width as f32 / resolution[0] as f32,
-                            pos.y + dis_size.y * sprite_height as f32 / resolution[1] as f32,
+                            pos.x + dis_size.x * sprite_width / resolution[0] as f32,
+                            pos.y + dis_size.y * sprite_height / resolution[1] as f32,
                         ),
                     );
                     rect = rect.translate(display_area.min.to_vec2());
@@ -280,8 +280,8 @@ impl Layer {
                             if range.contains(&rect.min.y) || range.contains(&rect.max.y) {
                                 let y = y as f32 + 0.5 - bb_height / 2.0;
 
-                                let tmp_x = 0.0 - y * sin - 0.5 + sprite_width as f32 / 2.0;
-                                let tmp_y = y * cos - 0.5 + sprite_height as f32 / 2.0;
+                                let tmp_x = 0.0 - y * sin - 0.5 + sprite_width / 2.0;
+                                let tmp_y = y * cos - 0.5 + sprite_height / 2.0;
 
                                 for x in 0..new_width {
                                     let x = x as f32 + tmp_1;
@@ -295,7 +295,7 @@ impl Layer {
                                         % sprite_text.size()[0]
                                         + (y as isize + sprite.sp_pos[1] as isize) as usize
                                             % sprite_text.size()[1]
-                                            * sprite_text.size()[0] as usize;
+                                            * sprite_text.size()[0];
 
                                     if x > sprite.x_size as usize - 1
                                         || y > sprite.y_size as usize - 1
