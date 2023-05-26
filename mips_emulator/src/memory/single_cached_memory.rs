@@ -165,10 +165,10 @@ impl SingleCachedMemory {
     }
 
     pub fn new() -> Box<Self> {
-        box SingleCachedMemory {
+        Box::new(SingleCachedMemory {
             page_pool: Option::None,
             cache: Mutex::new(Option::None),
-        }
+        })
     }
 }
 

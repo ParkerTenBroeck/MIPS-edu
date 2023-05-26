@@ -1,4 +1,3 @@
-#![feature(box_syntax)]
 #![feature(core_intrinsics)]
 #![feature(mutex_unpoison)]
 

@@ -313,13 +313,13 @@ impl Memory {
         let mut lock = controller.lock();
         match lock.as_mut() {
             Ok(lock) => {
-                let mem = box Memory {
+                let mem = Box::new(Memory {
                     //going_to_lock: Option::None,
                     page_pool: Option::None,
                     page_table: [INIT; SEG_SIZE],
                     emulator: Option::None,
                     //listener: Option::None,
-                };
+                });
                 lock.add_holder(mem)
             }
             Err(err) => panic!("{err}"),
